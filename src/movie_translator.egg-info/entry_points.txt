@@ -1,0 +1,2 @@
+[console_scripts]
+movie-translator = movie_translator.main:main

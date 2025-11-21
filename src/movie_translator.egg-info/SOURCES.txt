@@ -1,0 +1,16 @@
+LICENSE
+README.md
+pyproject.toml
+src/movie_translator/__init__.py
+src/movie_translator/config.py
+src/movie_translator/constants.py
+src/movie_translator/exceptions.py
+src/movie_translator/local_llm_provider.py
+src/movie_translator/main.py
+src/movie_translator/translator_adapter.py
+src/movie_translator.egg-info/PKG-INFO
+src/movie_translator.egg-info/SOURCES.txt
+src/movie_translator.egg-info/dependency_links.txt
+src/movie_translator.egg-info/entry_points.txt
+src/movie_translator.egg-info/requires.txt
+src/movie_translator.egg-info/top_level.txt

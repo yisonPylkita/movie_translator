@@ -1,3 +1,30 @@
+Metadata-Version: 2.4
+Name: movie-translator
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: appdirs>=1.4.4
+Requires-Dist: babel>=2.17.0
+Requires-Dist: blinker>=1.9.0
+Requires-Dist: httpx>=0.28.1
+Requires-Dist: llm-subtrans
+Requires-Dist: openai>=2.8.1
+Requires-Dist: pysubs2>=1.8.0
+Requires-Dist: python-dotenv>=1.2.1
+Requires-Dist: regex>=2025.11.3
+Requires-Dist: requests>=2.32.5
+Requires-Dist: srt>=3.5.3
+Requires-Dist: tenacity>=9.1.2
+Requires-Dist: tqdm>=4.67.1
+Requires-Dist: transformers>=4.30.0
+Requires-Dist: torch>=2.0.0
+Requires-Dist: sentencepiece>=0.1.99
+Requires-Dist: accelerate>=0.20.0
+Requires-Dist: sacremoses>=0.1.1
+Dynamic: license-file
+
 # Movie Translator
 
 Automatically translate MKV subtitle files from English to Polish using AI-powered context-aware translation.
