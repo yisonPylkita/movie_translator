@@ -1,5 +1,5 @@
 # Model and device settings
-DEFAULT_MODEL = "sdadas/flan-t5-base-translator-en-pl"  # Confirmed working EN->PL model
+DEFAULT_MODEL = "gsarti/opus-mt-tc-en-pl"  # Marian EN->PL - stable tokenizer without sentencepiece
 DEFAULT_DEVICE = "auto"  # Auto-detects MPS on M1/M2
 DEFAULT_BATCH_SIZE = 16  # Optimized for M1 MacBook Air
 

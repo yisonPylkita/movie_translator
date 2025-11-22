@@ -1,0 +1,12 @@
+1
+00:00:01,000 --> 00:00:03,000
+Halo, to jest testowy napis.
+
+2
+00:00:04,000 --> 00:00:06,000
+Szybki brązowy lisek skacze nad leniwym psem.
+
+3
+00:00:07,000 --> 00:00:09,000
+Będzie to tłumaczone na język polski za pomocą lokalnego LLM.
+

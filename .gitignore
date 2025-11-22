@@ -20,4 +20,8 @@ build/
 
 # Project specific
 movies/
-src/movie_translator/models/  # Cached translation models
+test_output.srt  # Test translation output
+
+# Cached translation models (exclude from git)
+src/movie_translator/models/
+**/models/
