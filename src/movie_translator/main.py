@@ -1,7 +1,6 @@
 import argparse
 import json
 import logging
-import os
 import shutil
 import subprocess
 import sys
@@ -17,13 +16,10 @@ from movie_translator.constants import (
     LANGUAGE_ENGLISH,
     LANGUAGE_ENGLISH_SHORT,
     LANGUAGE_POLISH,
-    ENV_OPENAI_API_KEY,
     POLISH_TRACK_NAME,
     DEFAULT_MODEL,
-    PROVIDER_OPENAI,
-    PROVIDER_LOCAL,
-    DEFAULT_PROVIDER,
     DEFAULT_DEVICE,
+    DEFAULT_BATCH_SIZE,
 )
 from movie_translator.exceptions import (
     SubtitleNotFoundError,
@@ -87,14 +83,10 @@ class MovieProcessor:
             translate_file(
                 input_path=str(extracted_srt),
                 output_path=str(translated_srt),
-                provider=self.config.provider,
-                api_key=self.config.api_key,
-                target_language=self.config.target_language,
-                movie_name=mkv_path.stem,
                 model=self.config.model,
-                batch_size=self.config.batch_size,
-                scene_threshold=self.config.scene_threshold,
+                target_language=self.config.target_language,
                 device=self.config.device,
+                batch_size=self.config.batch_size,
             )
 
             if not translated_srt.exists():
@@ -167,31 +159,25 @@ class MovieProcessor:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Translate MKV subtitles using AI (OpenAI or local LLM).",
+        description="Translate MKV subtitles using a local translation model.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\nExamples:
-  # Using OpenAI (default)
+  # Using default local model
   movie-translator /path/to/movies
-  movie-translator /path/to/movies --model gpt-4o
   
-  # Using local BiDi model
-  movie-translator /path/to/movies --provider local
-  movie-translator /path/to/movies --provider local --device cuda
-        """,
+  # Using a specific local model
+  movie-translator /path/to/movies --model allegro/BiDi-eng-pol
+  movie-translator /path/to/movies --model some/other-local-model --device cuda
+""",
     )
     parser.add_argument(
         "directory", type=Path, help="Directory containing MKV files to process"
     )
     parser.add_argument(
-        "--api-key",
-        type=str,
-        help=f"OpenAI API Key (or set {ENV_OPENAI_API_KEY} env var)",
-    )
-    parser.add_argument(
         "--model",
         type=str,
         default=DEFAULT_MODEL,
-        help=f"OpenAI model to use (default: {DEFAULT_MODEL})",
+        help=f"Local translation model to use (default: {DEFAULT_MODEL})",
     )
     parser.add_argument(
         "--target-language",
@@ -200,38 +186,30 @@ def main() -> None:
         help=f"Target language for translation (default: {LANGUAGE_POLISH})",
     )
     parser.add_argument(
-        "--provider",
-        type=str,
-        choices=[PROVIDER_OPENAI, PROVIDER_LOCAL],
-        default=DEFAULT_PROVIDER,
-        help=f"Translation provider (default: {DEFAULT_PROVIDER})",
-    )
-    parser.add_argument(
         "--device",
         type=str,
-        choices=["auto", "cpu", "cuda", "mps"],
+        choices=["auto", "cpu", "cuda", "mps", "hf"],
         default=DEFAULT_DEVICE,
         help=f"Device for local LLM (default: {DEFAULT_DEVICE})",
+    )
+
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help=f"Number of subtitle lines to translate per batch (default: {DEFAULT_BATCH_SIZE})",
     )
 
     args = parser.parse_args()
 
     setup_logging()
 
-    api_key = args.api_key or os.environ.get(ENV_OPENAI_API_KEY)
-    if args.provider == PROVIDER_OPENAI and not api_key:
-        logger.error(
-            f"API key required for OpenAI provider. Set {ENV_OPENAI_API_KEY} or use --api-key."
-        )
-        sys.exit(1)
-
     try:
         config = TranslationConfig(
-            provider=args.provider,
-            api_key=api_key,
             model=args.model,
             target_language=args.target_language,
             device=args.device,
+            batch_size=args.batch_size,
         )
     except ValueError as e:
         logger.error(f"Invalid configuration: {e}")

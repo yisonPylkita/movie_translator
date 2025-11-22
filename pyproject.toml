@@ -5,24 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "appdirs>=1.4.4",
-    "babel>=2.17.0",
-    "blinker>=1.9.0",
-    "httpx>=0.28.1",
-    "llm-subtrans",
-    "openai>=2.8.1",
     "pysubs2>=1.8.0",
-    "python-dotenv>=1.2.1",
-    "regex>=2025.11.3",
-    "requests>=2.32.5",
-    "srt>=3.5.3",
-    "tenacity>=9.1.2",
     "tqdm>=4.67.1",
     "transformers>=4.30.0",
     "torch>=2.0.0",
     "sentencepiece>=0.1.99",
-    "accelerate>=0.20.0",
     "sacremoses>=0.1.1",
+    "protobuf>=3.20.0",
+    "ruff>=0.6.0",
 ]
 
 [project.scripts]

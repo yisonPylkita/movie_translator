@@ -1,12 +1,8 @@
-DEFAULT_MODEL = "gpt-4o-mini"
-DEFAULT_BATCH_SIZE = 50
+DEFAULT_BATCH_SIZE = 2
 DEFAULT_SCENE_THRESHOLD = 30.0
 
-PROVIDER_OPENAI = "openai"
-PROVIDER_LOCAL = "local"
-DEFAULT_PROVIDER = PROVIDER_OPENAI
-
-BIDI_MODEL_NAME = "allegro/BiDi-eng-pol"
+# Default local translation model (can be overridden via CLI)
+DEFAULT_MODEL = "sdadas/flan-t5-base-translator-en-pl"
 DEFAULT_DEVICE = "auto"
 
 LANGUAGE_POLISH = "Polish"
@@ -19,7 +15,5 @@ EXTENSION_SRT = ".srt"
 TRACK_TYPE_SUBTITLE = "subtitles"
 
 POLISH_TRACK_NAME = "Polish (AI)"
-
-ENV_OPENAI_API_KEY = "OPENAI_API_KEY"
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"

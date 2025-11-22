@@ -1,0 +1,4 @@
+movies/
+
+# Local cached translation models
+src/movie_translator/models/
