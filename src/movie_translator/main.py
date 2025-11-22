@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-from movie_translator.translator_adapter import translate_file
+from movie_translator.local_llm_provider import translate_file_local
 from movie_translator.config import setup_logging, TranslationConfig
 from movie_translator.constants import (
     EXTENSION_MKV,
@@ -80,10 +80,10 @@ class MovieProcessor:
             self.extract_subtitle(mkv_path, track_id, extracted_srt)
 
             logger.info(f"Translating subtitles for {mkv_path.name}...")
-            translate_file(
+            translate_file_local(
                 input_path=str(extracted_srt),
                 output_path=str(translated_srt),
-                model=self.config.model,
+                model_name=self.config.model,
                 target_language=self.config.target_language,
                 device=self.config.device,
                 batch_size=self.config.batch_size,
@@ -159,15 +159,20 @@ class MovieProcessor:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Translate MKV subtitles using a local translation model.",
+        description="Translate MKV subtitles using a local translation model (optimized for M1 MacBook Air).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\nExamples:
-  # Using default local model
+  # Using default model (Helsinki-NLP/opus-mt-en-pl, 78MB, fast)
   movie-translator /path/to/movies
-  
-  # Using a specific local model
-  movie-translator /path/to/movies --model allegro/BiDi-eng-pol
-  movie-translator /path/to/movies --model some/other-local-model --device cuda
+
+  # Force CPU mode (slower)
+  movie-translator /path/to/movies --device cpu
+
+  # Using a different model
+  movie-translator /path/to/movies --model Helsinki-NLP/opus-mt-en-de
+
+  # Adjust batch size (higher = faster but more memory)
+  movie-translator /path/to/movies --batch-size 32
 """,
     )
     parser.add_argument(
@@ -188,9 +193,9 @@ def main() -> None:
     parser.add_argument(
         "--device",
         type=str,
-        choices=["auto", "cpu", "cuda", "mps", "hf"],
+        choices=["auto", "cpu", "cuda", "mps"],
         default=DEFAULT_DEVICE,
-        help=f"Device for local LLM (default: {DEFAULT_DEVICE})",
+        help=f"Device for local LLM - 'auto' detects M1/MPS automatically (default: {DEFAULT_DEVICE})",
     )
 
     parser.add_argument(

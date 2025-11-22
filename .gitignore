@@ -1,4 +1,23 @@
-movies/
+# Python runtime
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
 
-# Local cached translation models
-src/movie_translator/models/
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+
+# macOS
+.DS_Store
+
+# Project specific
+movies/
+src/movie_translator/models/  # Cached translation models

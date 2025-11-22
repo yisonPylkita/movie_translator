@@ -1,18 +1,16 @@
 [project]
 name = "movie-translator"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI-powered subtitle translator optimized for M1 MacBook Air"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.14"  # Python 3.14 has sentencepiece compatibility issues
 dependencies = [
-    "pysubs2>=1.8.0",
-    "tqdm>=4.67.1",
-    "transformers>=4.30.0",
-    "torch>=2.0.0",
-    "sentencepiece>=0.1.99",
-    "sacremoses>=0.1.1",
-    "protobuf>=3.20.0",
-    "ruff>=0.6.0",
+    "pysubs2>=1.8.0",      # SRT subtitle parsing
+    "tqdm>=4.67.1",         # Progress bars
+    "transformers>=4.30.0", # ML models
+    "torch>=2.0.0",         # PyTorch for model inference
+    "sentencepiece>=0.1.99", # Tokenizer for T5 models
+    "protobuf>=3.20.0",     # Required by transformers
 ]
 
 [project.scripts]
@@ -20,9 +18,3 @@ movie-translator = "movie_translator.main:main"
 
 [tool.uv]
 package = true
-
-[tool.uv.sources]
-llm-subtrans = { git = "https://github.com/machinewrapped/llm-subtrans.git" }
-
-[tool.pyrefly]
-project-includes = ["**/*.py*", "**/*.ipynb"]
