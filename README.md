@@ -1,133 +1,132 @@
-# Movie Translator
+# SRT Translator 🚀
 
-Automatically translate MKV subtitle files from English to Polish using AI-powered context-aware translation.
+**Simple, fast, local SRT subtitle translator** from English to Polish.
+
+Optimized for **M1/M2 MacBook Air** - runs completely offline using local ML models.
 
 ## Features
 
-- **Sophisticated Translation**: Uses the `llm-subtrans` library for context-aware subtitle translation
-- **Scene Detection**: Automatically batches subtitles into scenes for better translation context
-- **Robust Error Handling**: Comprehensive error handling with detailed logging
-- **In-place Processing**: Embeds translated subtitles directly into MKV files
-- **Batch Processing**: Processes all MKV files in a directory automatically
+- ✅ **100% Local** - No API keys, no internet, no cloud
+- ⚡ **M1 Optimized** - Uses MPS acceleration + float16 for 3-5x speed
+- 🎯 **Single Purpose** - Input SRT → Output SRT, nothing else
+- 🪶 **Lightweight** - ~222MB model, 2-4GB RAM
+- 🔋 **Fast** - ~50-100 lines/second on M1 with MPS
 
 ## Requirements
 
-- Python 3.10+
-- `uv` (Python package manager)
-- MKVToolNix (`mkvmerge` and `mkvextract` must be in PATH)
-- OpenAI API key
+- **Python 3.13** (3.10-3.13 supported, NOT 3.14)
+- `uv` package manager
+- M1/M2 Mac (or any system with CPU/CUDA)
 
 ## Installation
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd movie_translator
+# 1. Install Python 3.13 (if needed)
+brew install python@3.13
 
-# Sync dependencies with uv
+# 2. Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 3. Clone and sync
+git clone git@github.com:yisonPylkita/movie_translator.git
+cd movie_translator
 uv sync
 ```
 
 ## Usage
 
-### Basic Usage
+### Basic Translation
 
 ```bash
-# Set your OpenAI API key
-export OPENAI_API_KEY="your-api-key-here"
-
-# Run the translator on a directory of MKV files
-uv run movie-translator /path/to/movies
+# Simple: input.srt → output.srt
+uv run srt-translate input.srt output.srt
 ```
 
-### Advanced Usage
+### Advanced Options
 
 ```bash
-# Specify the API key directly
-uv run movie-translator /path/to/movies --api-key your-key
+# Force CPU (slower but more compatible)
+uv run srt-translate input.srt output.srt --device cpu
 
-# Use a different OpenAI model
-uv run movie-translator /path/to/movies --model gpt-4o
+# Increase batch size for speed (if you have RAM)
+uv run srt-translate input.srt output.srt --batch-size 32
 
-# Translate to a different language
-uv run movie-translator /path/to/movies --target-language French
+# Use different model
+uv run srt-translate input.srt output.srt --model allegro/p5-eng2many
 ```
 
-### Configuration Options
+### Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--api-key` | OpenAI API key (or use `OPENAI_API_KEY` env var) | - |
-| `--model` | OpenAI model to use | `gpt-4o-mini` |
-| `--target-language` | Target language for translation | `Polish` |
-
-### Programmatic Usage
-
-You can also use the package programmatically:
-
-```python
-from movie_translator import translate_file, TranslationConfig
-
-config = TranslationConfig(
-    api_key="your-api-key",
-    target_language="Polish",
-    model="gpt-4o-mini"
-)
-
-translate_file(
-    input_path="movie_en.srt",
-    output_path="movie_pl.srt",
-    api_key=config.api_key,
-    movie_name="The Matrix"
-)
-```
+| `--model` | Translation model | `gsarti/opus-mt-tc-en-pl` |
+| `--device` | `auto`, `cpu`, `cuda`, or `mps` | `auto` (detects M1) |
+| `--batch-size` | Lines per batch (higher = faster + more RAM) | `16` |
 
 ## How It Works
 
-1. **Scans directory** for MKV files
-2. **Identifies English subtitle tracks** using mkvmerge
-3. **Extracts subtitles** to SRT format using mkvextract
-4. **Translates** using AI with scene context and batch processing
-5. **Embeds translated subtitles** back into MKV file
-6. **Replaces original file** with the updated version
+1. **Loads** SRT file and extracts subtitle lines
+2. **Batches** lines for efficient processing
+3. **Translates** using local Marian MT model:
+   - Auto-detects M1/MPS acceleration
+   - Uses float16 precision for 2x speed
+   - Greedy decoding for fastest results
+4. **Saves** translated SRT with original timing
+
+## Performance
+
+**M1 MacBook Air (MPS + float16):**
+- First run: ~10-15s (model loading)
+- Translation: ~50-100 lines/second
+- Memory: 2-4GB RAM
+
+**CPU mode:**
+- Translation: ~10-20 lines/second
+- Slower but more compatible
 
 ## Troubleshooting
 
-### "mkvmerge: command not found"
+### "Failed to load model: not a string"
 
-Install MKVToolNix:
-- **macOS**: `brew install mkvtoolnix`
-- **Ubuntu/Debian**: `sudo apt-get install mkvtoolnix`
-- **Windows**: Download from [MKVToolNix website](https://mkvtoolnix.download/)
+**Cause:** Python 3.14 incompatibility with sentencepiece
 
-### "No API key provided"
-
-Either:
-- Set the environment variable: `export OPENAI_API_KEY="your-key"`
-- Pass it as an argument: `--api-key your-key`
-
-### Translation fails with rate limit errors
-
-The `llm-subtrans` library includes automatic retry logic with exponential backoff. If you're still hitting rate limits, consider:
-- Using a higher tier API key
-- Reducing the batch size (requires code modification)
-- Adding delays between files (manual)
-
-## Project Structure
-
+**Fix:**
+```bash
+brew install python@3.13
+rm -rf .venv
+uv sync
 ```
-movie_translator/
-├── src/movie_translator/
-│   ├── __init__.py          # Package exports
-│   ├── config.py            # Configuration management
-│   ├── constants.py         # Shared constants
-│   ├── exceptions.py        # Custom exceptions
-│   ├── main.py              # CLI and batch processor
-│   └── translator_adapter.py # Translation logic adapter
-├── pyproject.toml           # Project configuration
-└── README.md                # This file
-```
+
+### Model loads but translation is slow
+
+- Check MPS is detected: Look for "Detected M1/M2 Mac - using MPS acceleration" in logs
+- Close other apps to free GPU
+- CPU fallback is slower but always works
+
+### Out of memory
+
+- Reduce batch size: `--batch-size 8` or `--batch-size 4`
+- Use CPU mode: `--device cpu` (uses less memory)
+
+## Model
+
+Currently using **`gsarti/opus-mt-tc-en-pl`**:
+- Marian MT architecture (no sentencepiece issues)
+- 222MB model size
+- Trained on EN→PL translation
+- Good quality for general subtitles
+
+## Design Philosophy
+
+**One tool, one job:** This tool only does SRT translation.
+
+For a complete subtitle workflow:
+1. **Extract** subtitles from MKV: Use `mkvextract`
+2. **Translate** SRT file: Use this tool
+3. **Merge** back into MKV: Use `mkvmerge`
+
+Decoupling these steps gives you more control and flexibility.
 
 ## License
 
-MIT License
+MIT
