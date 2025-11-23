@@ -59,13 +59,17 @@ def merge_subtitle(
     ]
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        if result.stdout:
+            logger.info(f"mkvmerge stdout: {result.stdout}")
+        if result.stderr:
+            logger.info(f"mkvmerge stderr: {result.stderr}")
         logger.info(f"  → Created {output_path.name}")
     except subprocess.CalledProcessError as e:
         error_msg = f"Failed to merge subtitles into {mkv_path.name}."
+        if e.stdout:
+            error_msg += f"\nmkvmerge stdout: {e.stdout}"
         if e.stderr:
-            error_msg += f"\nmkvmerge error: {e.stderr}"
-        else:
-            error_msg += " Is mkvmerge installed?"
+            error_msg += f"\nmkvmerge stderr: {e.stderr}"
         raise MKVProcessingError(error_msg) from e
 
 

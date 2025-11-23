@@ -283,3 +283,32 @@ srt-translate downloaded.srt translated.srt
 ## License
 
 MIT
+
+
+
+
+
+[INFO] Step 3/3: Applying subtitles to MKV...
+2025-11-23 22:00:57,344 - INFO - Applying subtitles to: SPY x FAMILY - S01E01.mkv
+2025-11-23 22:00:57,344 - WARNING - Backup mode: OFF (original file will be overwritten)
+2025-11-23 22:00:57,344 - INFO - Merging subtitles into SPY x FAMILY - S01E01.mkv...
+2025-11-23 22:00:57,344 - INFO -   → Keeping only English and Polish subtitle tracks
+2025-11-23 22:00:58,288 - ERROR - Apply failed: Failed to merge subtitles into SPY x FAMILY - S01E01.mkv.
+mkvmerge stdout: mkvmerge v96.0 ('It's My Life') 64-bit
+'/Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01.mkv': Using the demultiplexer for the format 'Matroska'.
+'/Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01_en.srt': Using the demultiplexer for the format 'SSA/ASS subtitles'.
+'/Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01_pl.srt': Using the demultiplexer for the format 'SRT subtitles'.
+Warning: '/Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01_pl.srt' track 0: Warning in line 314: The start timestamp is smaller than that of the previous entry. All entries from this file will be sorted by their start time.
+'/Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01.mkv' track 0: Using the output module for the format 'HEVC/H.265'.
+'/Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01.mkv' track 1: Using the output module for the format 'AAC'.
+'/Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01.mkv' track 2: Using the output module for the format 'AAC'.
+'/Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01_en.srt' track 0: Using the output module for the format 'SSA/ASS text subtitles'.
+'/Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01_pl.srt' track 0: Using the output module for the format 'text subtitles'.
+The file '/var/folders/v_/_xkq0yzj7gzgv3534zh9wssr0000gn/T/tmpxrwhu5ka/SPY x FAMILY - S01E01.mkv' has been opened for writing.
+Progress: 0%
+Progress: 51%
+Progress: 100%
+The cue entries (the index) are being written...
+Multiplexing took 1 second.
+
+[ERROR] Apply failed for SPY x FAMILY - S01E01.mkv
