@@ -36,7 +36,7 @@ def merge_subtitle(
     # 1. Copy video and audio from original MKV
     # 2. Remove ALL existing subtitle tracks (-S flag)
     # 3. Add English subtitle with proper metadata
-    # 4. Add Polish subtitle with proper metadata
+    # 4. Add Polish subtitle with proper metadata and UTF-8 encoding
     #
     # Note: Track options must come BEFORE each input file
     cmd = [
@@ -47,14 +47,24 @@ def merge_subtitle(
         "-S",  # Don't copy subtitle tracks
         str(mkv_path),
         # Add English subtitle track (options before the file)
-        "--language", "0:eng",
-        "--track-name", "0:English",
-        "--default-track", "0:yes",
+        "--language",
+        "0:eng",
+        "--track-name",
+        "0:English",
+        "--default-track",
+        "0:yes",
+        "--sub-charset",
+        "0:UTF-8",  # Explicit UTF-8 encoding
         str(english_srt),
         # Add Polish subtitle track (options before the file)
-        "--language", "0:pol",
-        "--track-name", f"0:{POLISH_TRACK_NAME}",
-        "--default-track", "0:no",
+        "--language",
+        "0:pol",
+        "--track-name",
+        f"0:{POLISH_TRACK_NAME}",
+        "--default-track",
+        "0:no",
+        "--sub-charset",
+        "0:UTF-8",  # Explicit UTF-8 encoding for Polish characters
         str(polish_srt),
     ]
     # Run mkvmerge (don't use check=True because warnings cause non-zero exit codes)
@@ -72,8 +82,8 @@ def merge_subtitle(
     # Log warnings if present (exit code 1 usually means warnings, not errors)
     if result.returncode == 1 and result.stdout:
         logger.warning("mkvmerge reported warnings (non-critical):")
-        for line in result.stdout.split('\n'):
-            if 'Warning' in line or 'warning' in line:
+        for line in result.stdout.split("\n"):
+            if "Warning" in line or "warning" in line:
                 logger.warning(f"  {line.strip()}")
 
     logger.info(f"  → Created {output_path.name}")
@@ -115,19 +125,17 @@ def apply_subtitles_to_file(mkv_path: Path, backup: bool = False) -> None:
     # Polish subtitle is always .srt
     polish_srt = Path(f"{base_name}_pl.srt")
     if not polish_srt.exists():
-        raise FileNotFoundError(
-            f"Polish subtitle not found: {polish_srt.name}"
-        )
+        raise FileNotFoundError(f"Polish subtitle not found: {polish_srt.name}")
 
     # Create intermediate copies for comparison
     intermediate_dir = mkv_path.parent / f"{mkv_path.stem}_subtitles"
     intermediate_dir.mkdir(exist_ok=True)
-    
+
     # Copy English subtitle (preserving original format)
     english_intermediate = intermediate_dir / f"original_english{english_srt.suffix}"
     shutil.copy2(english_srt, english_intermediate)
     logger.info(f"  → Saved original English: {english_intermediate.name}")
-    
+
     # Copy Polish subtitle (always .srt)
     polish_intermediate = intermediate_dir / "translated_polish.srt"
     shutil.copy2(polish_srt, polish_intermediate)
