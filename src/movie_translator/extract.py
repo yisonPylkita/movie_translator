@@ -61,93 +61,87 @@ def extract_subtitle(mkv_path: Path, track_id: int, output_path: Path) -> None:
         ) from e
 
 
-def extract_subtitles_from_directory(directory: Path) -> None:
-    """Extract English subtitles from all MKV files in directory."""
-    if not directory.exists():
-        raise FileNotFoundError(f"Directory not found: {directory}")
+def extract_subtitle_from_file(mkv_path: Path, force: bool = False) -> Path:
+    """Extract English subtitle from a single MKV file.
 
-    mkv_files = list(directory.glob(f"*{EXTENSION_MKV}"))
-    if not mkv_files:
-        logger.warning(f"No MKV files found in {directory}")
-        return
+    Args:
+        mkv_path: Path to MKV file
+        force: If True, overwrite existing _en.srt file
 
-    logger.info(f"Found {len(mkv_files)} MKV file(s)")
-    extracted_count = 0
-    skipped_count = 0
+    Returns:
+        Path to extracted SRT file
 
-    for mkv_file in mkv_files:
-        try:
-            # Generate output filename: movie.mkv -> movie_en.srt
-            output_srt = mkv_file.with_suffix("").with_name(
-                f"{mkv_file.stem}_en.srt"
-            )
+    Raises:
+        SubtitleNotFoundError: If no English subtitle track found
+        MKVProcessingError: If extraction fails
+    """
+    if not mkv_path.exists():
+        raise FileNotFoundError(f"MKV file not found: {mkv_path}")
 
-            # Skip if already extracted
-            if output_srt.exists():
-                logger.info(f"Skipping {mkv_file.name} (already extracted)")
-                skipped_count += 1
-                continue
+    # Generate output filename: movie.mkv -> movie_en.srt
+    output_srt = mkv_path.with_suffix("").with_name(f"{mkv_path.stem}_en.srt")
 
-            track_info = get_track_info(mkv_file)
-            eng_sub_track = find_english_subtitle_track(track_info)
+    # Skip if already extracted (unless force=True)
+    if output_srt.exists() and not force:
+        logger.info(f"Skipping {mkv_path.name} (already extracted)")
+        return output_srt
 
-            if not eng_sub_track:
-                logger.warning(
-                    f"Skipping {mkv_file.name}: No English subtitle track found"
-                )
-                skipped_count += 1
-                continue
+    track_info = get_track_info(mkv_path)
+    eng_sub_track = find_english_subtitle_track(track_info)
 
-            track_id = eng_sub_track["id"]
-            extract_subtitle(mkv_file, track_id, output_srt)
-            extracted_count += 1
+    if not eng_sub_track:
+        raise SubtitleNotFoundError(
+            f"No English subtitle track found in {mkv_path.name}"
+        )
 
-        except (SubtitleNotFoundError, MKVProcessingError) as e:
-            logger.error(f"Failed to process {mkv_file.name}: {e}")
-            skipped_count += 1
-        except Exception as e:
-            logger.error(
-                f"Unexpected error processing {mkv_file.name}: {e}", exc_info=True
-            )
-            skipped_count += 1
+    track_id = eng_sub_track["id"]
+    extract_subtitle(mkv_path, track_id, output_srt)
 
-    logger.info(
-        f"✓ Extraction complete: {extracted_count} extracted, {skipped_count} skipped"
-    )
+    return output_srt
 
 
 def main() -> None:
     """Main entry point for subtitle extraction."""
     parser = argparse.ArgumentParser(
-        description="Extract English subtitles from MKV files",
+        description="Extract English subtitles from a single MKV file",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     parser.add_argument(
-        "directory",
+        "mkv_file",
         type=Path,
-        help="Directory containing MKV files",
+        help="MKV file to extract subtitles from",
+    )
+
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing _en.srt file if it exists",
     )
 
     args = parser.parse_args()
     setup_logging()
 
-    if not args.directory.exists():
-        logger.error(f"Directory not found: {args.directory}")
+    if not args.mkv_file.exists():
+        logger.error(f"MKV file not found: {args.mkv_file}")
         sys.exit(1)
 
-    if not args.directory.is_dir():
-        logger.error(f"Not a directory: {args.directory}")
+    if not args.mkv_file.suffix.lower() == ".mkv":
+        logger.error(f"Not an MKV file: {args.mkv_file}")
         sys.exit(1)
 
     try:
-        logger.info(f"Extracting subtitles from: {args.directory}")
-        extract_subtitles_from_directory(args.directory)
+        logger.info(f"Extracting subtitles from: {args.mkv_file.name}")
+        output_srt = extract_subtitle_from_file(args.mkv_file, force=args.force)
+        logger.info(f"✓ Extraction complete: {output_srt.name}")
+    except (SubtitleNotFoundError, MKVProcessingError) as e:
+        logger.error(f"Extraction failed: {e}")
+        sys.exit(1)
     except KeyboardInterrupt:
         logger.warning("Extraction interrupted by user")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"Extraction failed: {e}")
+        logger.error(f"Unexpected error: {e}")
         sys.exit(1)
 
 

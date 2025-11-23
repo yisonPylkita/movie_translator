@@ -198,12 +198,29 @@ def translate_file(
         batch_events = subs[i : i + batch_size]
 
         # Always strip formatting tags from source text before translation
-        batch_texts = [strip_html_tags(event.text) for event in batch_events]
+        # Preserve line break structure by translating line-by-line
+        batch_texts = []
+        line_break_structures = []
+
+        for event in batch_events:
+            clean_text = strip_html_tags(event.text)
+            # Split by \N (pysubs2 line break marker)
+            lines = clean_text.split('\\N')
+            line_break_structures.append(len(lines))
+            # Add each line separately for translation
+            batch_texts.extend(lines)
 
         translated_batch = provider.translate_batch(batch_texts)
 
-        for event, translation in zip(batch_events, translated_batch):
-            # Strip formatting tags from output as well (model may preserve them)
+        # Reconstruct with original line break structure
+        translated_idx = 0
+        for event, num_lines in zip(batch_events, line_break_structures):
+            # Get the translated lines for this event
+            translated_lines = translated_batch[translated_idx:translated_idx + num_lines]
+            translated_idx += num_lines
+
+            # Join with line breaks and strip any remaining tags
+            translation = '\\N'.join(translated_lines)
             translation = strip_html_tags(translation)
             event.text = translation
 

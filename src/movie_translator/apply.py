@@ -18,138 +18,153 @@ from movie_translator.exceptions import MKVProcessingError
 logger = logging.getLogger(__name__)
 
 
-def merge_subtitle(mkv_path: Path, srt_path: Path, output_path: Path) -> None:
-    """Merge Polish subtitle into MKV file."""
+def merge_subtitle(
+    mkv_path: Path, english_srt: Path, polish_srt: Path, output_path: Path
+) -> None:
+    """Merge English and Polish subtitles into MKV file, removing all other subtitle tracks.
+
+    Args:
+        mkv_path: Original MKV file
+        english_srt: Extracted English subtitle file
+        polish_srt: Translated Polish subtitle file
+        output_path: Output MKV file path
+    """
     logger.info(f"Merging subtitles into {mkv_path.name}...")
+    logger.info(f"  → Keeping only English and Polish subtitle tracks")
+
+    # Build mkvmerge command to:
+    # 1. Copy video and audio from original MKV
+    # 2. Remove ALL existing subtitle tracks (-S flag)
+    # 3. Add English subtitle with proper metadata
+    # 4. Add Polish subtitle with proper metadata
     cmd = [
         "mkvmerge",
         "-o",
         str(output_path),
+        # Copy video and audio, but NO subtitles from original
+        "-S",  # Don't copy subtitle tracks
         str(mkv_path),
+        # Add English subtitle track
         "--language",
-        "0:pl",
+        "0:eng",
+        "--track-name",
+        "0:English",
+        "--default-track",
+        "0:yes",
+        str(english_srt),
+        # Add Polish subtitle track
+        "--language",
+        "0:pol",
         "--track-name",
         f"0:{POLISH_TRACK_NAME}",
-        str(srt_path),
+        "--default-track",
+        "0:no",
+        str(polish_srt),
     ]
     try:
         subprocess.run(cmd, check=True, capture_output=True)
         logger.info(f"  → Created {output_path.name}")
     except subprocess.CalledProcessError as e:
         raise MKVProcessingError(
-            f"Failed to merge subtitle into {mkv_path.name}. Is mkvmerge installed?"
+            f"Failed to merge subtitles into {mkv_path.name}. Is mkvmerge installed?"
         ) from e
 
 
-def apply_subtitles_to_directory(directory: Path, backup: bool = False) -> None:
-    """Apply Polish subtitles to all MKV files in directory.
+def apply_subtitles_to_file(mkv_path: Path, backup: bool = False) -> None:
+    """Apply English and Polish subtitles to a single MKV file.
 
     Args:
-        directory: Directory containing MKV and *_pl.srt files
-        backup: If True, create .bak backup of original MKV files
+        mkv_path: Path to MKV file
+        backup: If True, create .bak backup of original MKV file
+
+    Raises:
+        FileNotFoundError: If MKV or subtitle files not found
+        MKVProcessingError: If merging fails
     """
-    if not directory.exists():
-        raise FileNotFoundError(f"Directory not found: {directory}")
+    if not mkv_path.exists():
+        raise FileNotFoundError(f"MKV file not found: {mkv_path}")
 
-    mkv_files = list(directory.glob(f"*{EXTENSION_MKV}"))
-    if not mkv_files:
-        logger.warning(f"No MKV files found in {directory}")
-        return
+    # Find matching subtitle files: movie.mkv -> movie_en.srt, movie_pl.srt
+    english_srt = mkv_path.with_suffix("").with_name(f"{mkv_path.stem}_en.srt")
+    polish_srt = mkv_path.with_suffix("").with_name(f"{mkv_path.stem}_pl.srt")
 
-    logger.info(f"Found {len(mkv_files)} MKV file(s)")
-    applied_count = 0
-    skipped_count = 0
-    failed_count = 0
+    if not english_srt.exists():
+        raise FileNotFoundError(
+            f"English subtitle not found: {english_srt.name}"
+        )
 
-    for mkv_file in mkv_files:
-        try:
-            # Find matching Polish subtitle: movie.mkv -> movie_pl.srt
-            polish_srt = mkv_file.with_suffix("").with_name(f"{mkv_file.stem}_pl.srt")
+    if not polish_srt.exists():
+        raise FileNotFoundError(
+            f"Polish subtitle not found: {polish_srt.name}"
+        )
 
-            if not polish_srt.exists():
-                logger.warning(
-                    f"Skipping {mkv_file.name}: No Polish subtitle found ({polish_srt.name})"
-                )
-                skipped_count += 1
-                continue
+    # Use temporary directory for processing
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_output = Path(temp_dir) / mkv_path.name
 
-            # Use temporary directory for processing
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_output = Path(temp_dir) / mkv_file.name
+        # Merge both subtitle tracks (removes all others)
+        merge_subtitle(mkv_path, english_srt, polish_srt, temp_output)
 
-                # Merge subtitles
-                merge_subtitle(mkv_file, polish_srt, temp_output)
+        # Create backup if requested
+        if backup:
+            backup_path = mkv_path.with_suffix(".mkv.bak")
+            logger.info(f"Creating backup: {backup_path.name}")
+            shutil.copy2(mkv_path, backup_path)
 
-                # Create backup if requested
-                if backup:
-                    backup_path = mkv_file.with_suffix(".mkv.bak")
-                    logger.info(f"Creating backup: {backup_path.name}")
-                    shutil.copy2(mkv_file, backup_path)
-
-                # Replace original file
-                logger.info(f"Replacing original: {mkv_file.name}")
-                shutil.move(str(temp_output), str(mkv_file))
-                logger.info(f"  ✓ Applied subtitles to {mkv_file.name}")
-                applied_count += 1
-
-        except MKVProcessingError as e:
-            logger.error(f"Failed to process {mkv_file.name}: {e}")
-            failed_count += 1
-        except Exception as e:
-            logger.error(
-                f"Unexpected error processing {mkv_file.name}: {e}", exc_info=True
-            )
-            failed_count += 1
-
-    logger.info(
-        f"✓ Apply complete: {applied_count} applied, "
-        f"{skipped_count} skipped, {failed_count} failed"
-    )
+        # Replace original file
+        logger.info(f"Replacing original: {mkv_path.name}")
+        shutil.move(str(temp_output), str(mkv_path))
+        logger.info(f"  ✓ Applied subtitles to {mkv_path.name}")
+        logger.info(f"  ✓ Final tracks: English (default) + Polish")
 
 
 def main() -> None:
     """Main entry point for applying subtitles."""
     parser = argparse.ArgumentParser(
-        description="Apply translated Polish subtitles to MKV files",
+        description="Apply translated Polish subtitles to a single MKV file",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     parser.add_argument(
-        "directory",
+        "mkv_file",
         type=Path,
-        help="Directory containing MKV files and *_pl.srt subtitles",
+        help="MKV file to apply subtitles to",
     )
 
     parser.add_argument(
         "--backup",
         action="store_true",
-        help="Create .bak backup of original MKV files before modifying",
+        help="Create .bak backup of original MKV file before modifying",
     )
 
     args = parser.parse_args()
     setup_logging()
 
-    if not args.directory.exists():
-        logger.error(f"Directory not found: {args.directory}")
+    if not args.mkv_file.exists():
+        logger.error(f"MKV file not found: {args.mkv_file}")
         sys.exit(1)
 
-    if not args.directory.is_dir():
-        logger.error(f"Not a directory: {args.directory}")
+    if not args.mkv_file.suffix.lower() == ".mkv":
+        logger.error(f"Not an MKV file: {args.mkv_file}")
         sys.exit(1)
 
     try:
-        logger.info(f"Applying subtitles in: {args.directory}")
+        logger.info(f"Applying subtitles to: {args.mkv_file.name}")
         if args.backup:
-            logger.info("Backup mode: ON (will create .bak files)")
+            logger.info("Backup mode: ON (will create .bak file)")
         else:
-            logger.warning("Backup mode: OFF (original files will be overwritten)")
+            logger.warning("Backup mode: OFF (original file will be overwritten)")
 
-        apply_subtitles_to_directory(args.directory, backup=args.backup)
+        apply_subtitles_to_file(args.mkv_file, backup=args.backup)
+        logger.info(f"✓ Apply complete: {args.mkv_file.name}")
+    except (FileNotFoundError, MKVProcessingError) as e:
+        logger.error(f"Apply failed: {e}")
+        sys.exit(1)
     except KeyboardInterrupt:
         logger.warning("Apply interrupted by user")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"Apply failed: {e}")
+        logger.error(f"Unexpected error: {e}")
         sys.exit(1)
 
 

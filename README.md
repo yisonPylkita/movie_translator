@@ -55,23 +55,56 @@ uv sync
 
 ## Usage
 
-### Three-Step MKV Workflow (Recommended)
+### One-Command Solution (Easiest)
 
-Process MKV files in three separate steps for maximum control:
+Run the complete workflow with a single script that processes files **one at a time**:
 
 ```bash
-# Step 1: Extract English subtitles from all MKV files
-uv run srt-extract /path/to/movies
-# Creates: movie_en.srt for each movie.mkv
+# Full automatic workflow
+./translate.bash /path/to/anime
 
-# Step 2: Translate all English subtitles to Polish
-uv run srt-translate-batch /path/to/movies
-# Creates: movie_pl.srt for each movie_en.srt
+# With backup and keep SRT files
+./translate.bash --backup --keep-srt /path/to/movies
 
-# Step 3: Merge Polish subtitles back into MKV files
-uv run srt-apply /path/to/movies
-# Updates: movie.mkv with embedded Polish subtitles
+# Custom translation settings
+./translate.bash --device mps --batch-size 32 /path/to/anime
 ```
+
+**Why file-by-file processing?**
+- 🎬 **Start watching immediately** - Episode 1 is ready while Episode 2 processes
+- 🔄 **Resume-friendly** - Stop and resume anytime
+- 💾 **Memory efficient** - Processes one file completely before moving to next
+
+**What it does for each file:**
+1. Extracts English subtitle → `movie_en.srt`
+2. Translates to Polish → `movie_pl.srt` (strips tags, preserves line breaks)
+3. Merges into MKV with **ONLY** English + Polish tracks
+4. Cleans up SRT files (unless `--keep-srt`)
+5. Moves to next file
+
+**Final result:** Each MKV contains only 2 subtitle tracks:
+- English (original, default)
+- Polish (AI-generated)
+
+### Manual Control (Individual Files)
+
+All commands now work on **single files** for fine-grained control:
+
+```bash
+# Step 1: Extract English subtitles from one MKV
+uv run srt-extract movie.mkv
+# Creates: movie_en.srt
+
+# Step 2: Translate one SRT file to Polish
+uv run srt-translate movie_en.srt movie_pl.srt
+# Creates: movie_pl.srt
+
+# Step 3: Apply subtitles to one MKV
+uv run srt-apply movie.mkv
+# Updates: movie.mkv with English + Polish tracks only
+```
+
+**Use this when:** You want to process specific files manually or customize the workflow.
 
 **Benefits:**
 - 🎯 **Full control** - Review/edit subtitles between steps
