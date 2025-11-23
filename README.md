@@ -4,25 +4,18 @@
 
 Optimized for **M1/M2 MacBook Air** - runs completely offline, no API keys needed.
 
-## Three Tools, One Purpose
+## Tools Overview
 
-### 1. `srt-translate` - Pure SRT Translation
-Translate any SRT file (input → output):
-```bash
-srt-translate input.srt output.srt
-```
+### Single File Translation
+- **`srt-translate`** - Translate a single SRT file
 
-### 2. `movie-translate` - Full MKV Workflow
-Extract → Translate → Merge subtitles in MKV files:
-```bash
-movie-translate /path/to/movies
-```
+### Three-Step MKV Workflow (Recommended)
+- **`srt-extract`** - Extract English subtitles from MKV files
+- **`srt-translate-batch`** - Translate multiple SRT files
+- **`srt-apply`** - Merge Polish subtitles back into MKV files
 
-### 3. `srt-validate` - Subtitle Validation
-Validate that translated subtitles match the source in structure and timing:
-```bash
-srt-validate source.srt translated.srt
-```
+### Utilities
+- **`srt-validate`** - Validate subtitle timing and structure
 
 ## Features
 
@@ -62,9 +55,45 @@ uv sync
 
 ## Usage
 
-### Tool 1: SRT Translation Only
+### Three-Step MKV Workflow (Recommended)
 
-Translate standalone SRT files:
+Process MKV files in three separate steps for maximum control:
+
+```bash
+# Step 1: Extract English subtitles from all MKV files
+uv run srt-extract /path/to/movies
+# Creates: movie_en.srt for each movie.mkv
+
+# Step 2: Translate all English subtitles to Polish
+uv run srt-translate-batch /path/to/movies
+# Creates: movie_pl.srt for each movie_en.srt
+
+# Step 3: Merge Polish subtitles back into MKV files
+uv run srt-apply /path/to/movies
+# Updates: movie.mkv with embedded Polish subtitles
+```
+
+**Benefits:**
+- 🎯 **Full control** - Review/edit subtitles between steps
+- 🔄 **Resume workflow** - Skip completed steps automatically
+- 🛡️ **Safe** - Use `--backup` flag to create .bak files
+- ⚡ **Fast** - Translate multiple files in one model loading session
+
+**Advanced options:**
+```bash
+# Extract with specific pattern
+uv run srt-extract /path/to/movies
+
+# Translate with custom settings
+uv run srt-translate-batch /path/to/movies --device mps --batch-size 32
+
+# Apply with backup
+uv run srt-apply /path/to/movies --backup
+```
+
+### Single File Translation
+
+Translate a single SRT file:
 
 ```bash
 # Basic translation
@@ -74,42 +103,20 @@ uv run srt-translate input.srt output.srt
 uv run srt-translate input.srt output.srt --device cpu --batch-size 32
 ```
 
-**Use when:** You already have extracted SRT files, or want to translate subtitles from any source.
+### Subtitle Validation
 
-### Tool 2: Full MKV Processing
-
-Automatic extraction, translation, and merging:
+Verify translation quality:
 
 ```bash
-# Process all MKV files in a directory
-uv run movie-translate /path/to/movies
-
-# Process single MKV file
-uv run movie-translate movie.mkv
-
-# With options
-uv run movie-translate /path/to/movies --device auto --batch-size 16
+# Validate timing and structure
+uv run srt-validate movie_en.srt movie_pl.srt
 ```
 
-**Use when:** You have MKV files with embedded English subtitles and want automated processing.
-
-### Tool 3: Subtitle Validation
-
-Verify that translated subtitles match the source structure:
-
-```bash
-# Validate English vs Polish subtitles
-uv run srt-validate subtitles/en_full.srt subtitles/pl_full.srt
-```
-
-**What it checks:**
-- ✅ Number of subtitle entries matches
-- ✅ Start/end timestamps match (within 50ms tolerance)
+**Validation checks:**
+- ✅ Entry count matches
+- ✅ Timestamps match (50ms tolerance)
 - ✅ Duration consistency
-- ⚠️ HTML formatting tags preserved (`<i>`, `<b>`, `<u>`)
-- ⚠️ Line breaks maintained
-
-**Use when:** You want to ensure translation didn't break subtitle timing or structure, especially useful for QA or debugging translation issues.
+- ⚠️ Line break preservation (warnings only)
 
 ### Options
 
