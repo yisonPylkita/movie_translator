@@ -181,6 +181,30 @@ def translate_file(
     if not subs:
         raise TranslationError("No subtitles found in file")
 
+    # For ASS files: deduplicate entries that have the same timestamp and text
+    # ASS files often have multiple layers (shadows, outlines) for visual effects
+    # We only need to translate unique dialogue once
+    original_count = len(subs)
+    seen = {}
+    unique_subs = pysubs2.SSAFile()
+    unique_subs.styles = subs.styles.copy()
+
+    for event in subs:
+        # Create key from timestamp and stripped text
+        clean_text = strip_html_tags(event.text)
+        key = (event.start, event.end, clean_text)
+
+        # Only keep first occurrence of each unique subtitle
+        if key not in seen:
+            seen[key] = True
+            unique_subs.append(event)
+
+    deduped_count = len(unique_subs)
+    if deduped_count < original_count:
+        logger.info(f"Deduplicated: {original_count} → {deduped_count} entries (removed {original_count - deduped_count} duplicate effect layers)")
+
+    subs = unique_subs
+
     provider = TranslationProvider(device=device, model_name=model_name)
     provider.load_model()
 
