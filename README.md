@@ -255,3 +255,126 @@ srt-translate downloaded.srt translated.srt
 ## License
 
 MIT
+
+
+
+
+❯ ./translate.sh ~/Downloads/test_movies
+
+==========================================
+  Movie Translator - Sequential Workflow
+==========================================
+
+[INFO] Directory: /Users/arlen/Downloads/test_movies
+[INFO] Device: auto
+[INFO] Batch Size: 16
+[INFO] Backup: disabled
+[INFO] Keep SRT files: false
+
+[INFO] Found 2 MKV file(s)
+
+
+==========================================
+\033[1m[1/2] Processing: SPY x FAMILY - S01E01.mkv\033[0m
+==========================================
+
+[INFO] Step 1/3: Extracting English subtitles...
+Using CPython 3.13.9 interpreter at: /opt/homebrew/opt/python@3.13/bin/python3.13
+Creating virtual environment at: .venv
+      Built movie-translator @ file:///Users/arlen/h_dev/movie_translator
+Installed 30 packages in 413ms
+2025-11-23 21:32:16,796 - INFO - Extracting subtitles from: SPY x FAMILY - S01E01.mkv
+2025-11-23 21:32:16,925 - INFO - Extracting subtitle track 3 from SPY x FAMILY - S01E01.mkv...
+2025-11-23 21:32:17,094 - INFO -   → Saved to SPY x FAMILY - S01E01_en.srt
+2025-11-23 21:32:17,094 - INFO - ✓ Extraction complete: SPY x FAMILY - S01E01_en.srt
+[SUCCESS] Extraction complete
+
+[INFO] Step 2/3: Translating to Polish...
+2025-11-23 21:32:17,530 - INFO - Translating: SPY x FAMILY - S01E01_en.srt → SPY x FAMILY - S01E01_pl.srt
+2025-11-23 21:32:17,530 - INFO - Model: allegro/BiDi-eng-pol
+2025-11-23 21:32:17,530 - INFO - Device: auto
+2025-11-23 21:32:17,530 - INFO - Batch size: 16
+2025-11-23 21:32:17,564 - INFO - Loading subtitles from /Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01_en.srt
+2025-11-23 21:32:24,529 - INFO - Detected M1/M2/M3 Mac - using MPS acceleration
+2025-11-23 21:32:31,347 - INFO - Loading model allegro/BiDi-eng-pol on mps...
+tokenizer_config.json: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 812/812 [00:00<00:00, 1.25MB/s]
+source.spm: 100%|██████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 816k/816k [00:00<00:00, 9.10MB/s]
+vocab.json: 804kB [00:00, 39.9MB/s]
+special_tokens_map.json: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 416/416 [00:00<00:00, 1.45MB/s]
+/Users/arlen/h_dev/movie_translator/.venv/lib/python3.13/site-packages/transformers/models/marian/tokenization_marian.py:175: UserWarning: Recommended: pip install sacremoses.
+  warnings.warn("Recommended: pip install sacremoses.")
+config.json: 1.07kB [00:00, 2.27MB/s]
+model.safetensors: 100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 837M/837M [00:55<00:00, 15.0MB/s]
+generation_config.json: 100%|████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 281/281 [00:00<00:00, 1.50MB/s]
+2025-11-23 21:33:33,618 - INFO - M1 optimization: Using float16 precision for 2x speed
+2025-11-23 21:33:33,618 - INFO - Model loaded successfully on mps
+2025-11-23 21:33:33,618 - INFO - Using precision: float16
+2025-11-23 21:33:33,618 - INFO - Translating 6373 subtitle lines in batches of 16...
+2025-11-23 21:33:33,618 - INFO - Device: mps, Precision: float16
+Translating:   0%|                                                                                                                                                            | 0/6373 [00:00<?, ?lines/s]The following generation flags are not valid and may be ignored: ['early_stopping']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+Translating: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 6373/6373 [03:31<00:00, 30.10lines/s]
+2025-11-23 21:37:05,339 - INFO - Saving translation to /Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01_pl.srt
+2025-11-23 21:37:05,377 - INFO - Translation complete! Saved to /Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01_pl.srt
+2025-11-23 21:37:05,381 - INFO - ✓ Translation complete: /Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01_pl.srt
+[SUCCESS] Translation complete
+
+[INFO] Step 3/3: Applying subtitles to MKV...
+2025-11-23 21:37:06,355 - INFO - Applying subtitles to: SPY x FAMILY - S01E01.mkv
+2025-11-23 21:37:06,355 - WARNING - Backup mode: OFF (original file will be overwritten)
+2025-11-23 21:37:06,356 - INFO - Merging subtitles into SPY x FAMILY - S01E01.mkv...
+2025-11-23 21:37:06,356 - INFO -   → Keeping only English and Polish subtitle tracks
+2025-11-23 21:37:07,304 - ERROR - Apply failed: Failed to merge subtitles into SPY x FAMILY - S01E01.mkv. Is mkvmerge installed?
+[ERROR] Apply failed for SPY x FAMILY - S01E01.mkv
+
+==========================================
+\033[1m[2/2] Processing: SPY x FAMILY - S01E02.mkv\033[0m
+==========================================
+
+[INFO] Step 1/3: Extracting English subtitles...
+2025-11-23 21:37:07,371 - INFO - Extracting subtitles from: SPY x FAMILY - S01E02.mkv
+2025-11-23 21:37:07,435 - INFO - Extracting subtitle track 3 from SPY x FAMILY - S01E02.mkv...
+2025-11-23 21:37:07,586 - INFO -   → Saved to SPY x FAMILY - S01E02_en.srt
+2025-11-23 21:37:07,586 - INFO - ✓ Extraction complete: SPY x FAMILY - S01E02_en.srt
+[SUCCESS] Extraction complete
+
+[INFO] Step 2/3: Translating to Polish...
+2025-11-23 21:37:07,649 - INFO - Translating: SPY x FAMILY - S01E02_en.srt → SPY x FAMILY - S01E02_pl.srt
+2025-11-23 21:37:07,649 - INFO - Model: allegro/BiDi-eng-pol
+2025-11-23 21:37:07,649 - INFO - Device: auto
+2025-11-23 21:37:07,649 - INFO - Batch size: 16
+2025-11-23 21:37:07,664 - INFO - Loading subtitles from /Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E02_en.srt
+2025-11-23 21:37:08,323 - INFO - Detected M1/M2/M3 Mac - using MPS acceleration
+2025-11-23 21:37:09,705 - INFO - Loading model allegro/BiDi-eng-pol on mps...
+/Users/arlen/h_dev/movie_translator/.venv/lib/python3.13/site-packages/transformers/models/marian/tokenization_marian.py:175: UserWarning: Recommended: pip install sacremoses.
+  warnings.warn("Recommended: pip install sacremoses.")
+2025-11-23 21:37:13,641 - INFO - M1 optimization: Using float16 precision for 2x speed
+2025-11-23 21:37:13,641 - INFO - Model loaded successfully on mps
+2025-11-23 21:37:13,642 - INFO - Using precision: float16
+2025-11-23 21:37:13,642 - INFO - Translating 2370 subtitle lines in batches of 16...
+2025-11-23 21:37:13,642 - INFO - Device: mps, Precision: float16
+Translating:   0%|                                                                                                                                                            | 0/2370 [00:00<?, ?lines/s]The following generation flags are not valid and may be ignored: ['early_stopping']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+Translating: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 2370/2370 [02:00<00:00, 19.65lines/s]
+2025-11-23 21:39:14,255 - INFO - Saving translation to /Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E02_pl.srt
+2025-11-23 21:39:14,271 - INFO - Translation complete! Saved to /Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E02_pl.srt
+2025-11-23 21:39:14,274 - INFO - ✓ Translation complete: /Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E02_pl.srt
+[SUCCESS] Translation complete
+
+[INFO] Step 3/3: Applying subtitles to MKV...
+2025-11-23 21:39:14,752 - INFO - Applying subtitles to: SPY x FAMILY - S01E02.mkv
+2025-11-23 21:39:14,752 - WARNING - Backup mode: OFF (original file will be overwritten)
+2025-11-23 21:39:14,752 - INFO - Merging subtitles into SPY x FAMILY - S01E02.mkv...
+2025-11-23 21:39:14,752 - INFO -   → Keeping only English and Polish subtitle tracks
+2025-11-23 21:39:15,470 - ERROR - Apply failed: Failed to merge subtitles into SPY x FAMILY - S01E02.mkv. Is mkvmerge installed?
+[ERROR] Apply failed for SPY x FAMILY - S01E02.mkv
+
+==========================================
+  🎉 Workflow Complete!
+==========================================
+
+[SUCCESS] All files processed!
+
+[INFO] All processed MKV files now have:
+  ✅ English subtitle (original, default)
+  ✅ Polish subtitle (AI-generated)
+
+[SUCCESS] Done! 🎬
