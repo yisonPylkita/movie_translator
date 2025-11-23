@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 srt-translate = "movie_translator.translate:main"
+srt-validate = "movie_translator.validate_subtitles:main"
 
 [tool.uv]
 package = true

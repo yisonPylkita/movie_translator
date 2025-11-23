@@ -4,7 +4,7 @@
 
 Optimized for **M1/M2 MacBook Air** - runs completely offline, no API keys needed.
 
-## Two Tools, One Purpose
+## Three Tools, One Purpose
 
 ### 1. `srt-translate` - Pure SRT Translation
 Translate any SRT file (input → output):
@@ -16,6 +16,12 @@ srt-translate input.srt output.srt
 Extract → Translate → Merge subtitles in MKV files:
 ```bash
 movie-translate /path/to/movies
+```
+
+### 3. `srt-validate` - Subtitle Validation
+Validate that translated subtitles match the source in structure and timing:
+```bash
+srt-validate source.srt translated.srt
 ```
 
 ## Features
@@ -86,6 +92,24 @@ uv run movie-translate /path/to/movies --device auto --batch-size 16
 ```
 
 **Use when:** You have MKV files with embedded English subtitles and want automated processing.
+
+### Tool 3: Subtitle Validation
+
+Verify that translated subtitles match the source structure:
+
+```bash
+# Validate English vs Polish subtitles
+uv run srt-validate subtitles/en_full.srt subtitles/pl_full.srt
+```
+
+**What it checks:**
+- ✅ Number of subtitle entries matches
+- ✅ Start/end timestamps match (within 50ms tolerance)
+- ✅ Duration consistency
+- ⚠️ HTML formatting tags preserved (`<i>`, `<b>`, `<u>`)
+- ⚠️ Line breaks maintained
+
+**Use when:** You want to ensure translation didn't break subtitle timing or structure, especially useful for QA or debugging translation issues.
 
 ### Options
 

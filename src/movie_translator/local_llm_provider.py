@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from typing import List, TYPE_CHECKING, cast
 import gc
@@ -12,6 +13,10 @@ from movie_translator.constants import DEFAULT_MODEL, DEFAULT_BATCH_SIZE
 from movie_translator.exceptions import TranslationError
 
 logger = logging.getLogger(__name__)
+
+# Pattern for stripping ALL formatting tags (HTML and SSA-style)
+# Matches: <tag>, </tag>, {\\tag}, {\\tag1}, etc.
+FORMATTING_TAG_PATTERN = re.compile(r'<[^>]+>|{\\[^}]+}')
 
 
 class TranslationProvider:
@@ -140,6 +145,21 @@ class TranslationProvider:
             raise TranslationError(f"Batch translation failed: {e}") from e
 
 
+def strip_html_tags(text: str) -> str:
+    """Remove all formatting tags from subtitle text.
+
+    Removes both HTML tags (<i>, <b>, etc.) and SSA-style formatting ({\\i1}, {\\b1}, etc.)
+    used internally by pysubs2.
+
+    Args:
+        text: Input text with potential formatting tags
+
+    Returns:
+        Text with all formatting tags removed
+    """
+    return FORMATTING_TAG_PATTERN.sub('', text)
+
+
 def translate_file(
     input_path: str,
     output_path: str,
@@ -176,11 +196,15 @@ def translate_file(
 
     for i in range(0, total_lines, batch_size):
         batch_events = subs[i : i + batch_size]
-        batch_texts = [event.text for event in batch_events]
+
+        # Always strip formatting tags from source text before translation
+        batch_texts = [strip_html_tags(event.text) for event in batch_events]
 
         translated_batch = provider.translate_batch(batch_texts)
 
         for event, translation in zip(batch_events, translated_batch):
+            # Strip formatting tags from output as well (model may preserve them)
+            translation = strip_html_tags(translation)
             event.text = translation
 
         del batch_texts
