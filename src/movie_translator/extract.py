@@ -37,15 +37,52 @@ def get_track_info(mkv_path: Path) -> Dict[str, Any]:
 
 
 def find_english_subtitle_track(track_info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Find English subtitle track in MKV file."""
+    """Find English subtitle track in MKV file.
+
+    Prefers full dialogue tracks over signs-only tracks.
+    For anime, this avoids extracting "Signs & Songs" when "Full Subtitles" exists.
+    """
     tracks = track_info.get("tracks", [])
+    english_tracks = []
+
+    # Collect all English subtitle tracks
     for track in tracks:
         if track.get("type") == TRACK_TYPE_SUBTITLE:
             props = track.get("properties", {})
             lang = props.get("language", "")
             if lang in [LANGUAGE_ENGLISH, LANGUAGE_ENGLISH_SHORT]:
-                return track
-    return None
+                english_tracks.append(track)
+
+    if not english_tracks:
+        return None
+
+    # If only one track, return it
+    if len(english_tracks) == 1:
+        return english_tracks[0]
+
+    # Multiple tracks: prefer full dialogue over signs-only
+    # Signs-only tracks typically have "sign" or "song" in the name
+    full_tracks = []
+    signs_tracks = []
+
+    for track in english_tracks:
+        props = track.get("properties", {})
+        track_name = props.get("track_name", "").lower()
+
+        # Check if this is a signs/songs only track
+        if "sign" in track_name or "song" in track_name:
+            signs_tracks.append(track)
+        else:
+            full_tracks.append(track)
+
+    # Prefer full dialogue tracks
+    if full_tracks:
+        logger.info(f"Found {len(english_tracks)} English tracks, selecting full dialogue track")
+        return full_tracks[0]
+
+    # If all tracks are signs-only, return the first one
+    logger.warning(f"Found {len(english_tracks)} English tracks, all appear to be signs-only")
+    return english_tracks[0]
 
 
 def extract_subtitle(mkv_path: Path, track_id: int, output_path: Path) -> None:
