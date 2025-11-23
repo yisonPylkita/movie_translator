@@ -119,6 +119,20 @@ def apply_subtitles_to_file(mkv_path: Path, backup: bool = False) -> None:
             f"Polish subtitle not found: {polish_srt.name}"
         )
 
+    # Create intermediate copies for comparison
+    intermediate_dir = mkv_path.parent / f"{mkv_path.stem}_subtitles"
+    intermediate_dir.mkdir(exist_ok=True)
+    
+    # Copy English subtitle (preserving original format)
+    english_intermediate = intermediate_dir / f"original_english{english_srt.suffix}"
+    shutil.copy2(english_srt, english_intermediate)
+    logger.info(f"  → Saved original English: {english_intermediate.name}")
+    
+    # Copy Polish subtitle (always .srt)
+    polish_intermediate = intermediate_dir / "translated_polish.srt"
+    shutil.copy2(polish_srt, polish_intermediate)
+    logger.info(f"  → Saved translated Polish: {polish_intermediate.name}")
+
     # Use temporary directory for processing
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_output = Path(temp_dir) / mkv_path.name
@@ -137,6 +151,7 @@ def apply_subtitles_to_file(mkv_path: Path, backup: bool = False) -> None:
         shutil.move(str(temp_output), str(mkv_path))
         logger.info(f"  ✓ Applied subtitles to {mkv_path.name}")
         logger.info(f"  ✓ Final tracks: English (default) + Polish")
+        logger.info(f"  ✓ Intermediate files saved in: {intermediate_dir.name}")
 
 
 def main() -> None:
