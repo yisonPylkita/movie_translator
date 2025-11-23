@@ -234,6 +234,11 @@ def translate_file(
 
     pbar.close()
 
+    # Sort subtitles by timestamp to ensure proper ordering
+    # This prevents warnings from mkvmerge about out-of-order timestamps
+    logger.info("Sorting subtitles by timestamp...")
+    subs.sort()
+
     logger.info(f"Saving translation to {output_path}")
     output_ext = Path(output_path).suffix.lower()
 

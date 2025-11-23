@@ -57,20 +57,26 @@ def merge_subtitle(
         "--default-track", "0:no",
         str(polish_srt),
     ]
-    try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        if result.stdout:
-            logger.info(f"mkvmerge stdout: {result.stdout}")
-        if result.stderr:
-            logger.info(f"mkvmerge stderr: {result.stderr}")
-        logger.info(f"  → Created {output_path.name}")
-    except subprocess.CalledProcessError as e:
+    # Run mkvmerge (don't use check=True because warnings cause non-zero exit codes)
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    # Check if output file was actually created (success indicator)
+    if not output_path.exists() or output_path.stat().st_size == 0:
         error_msg = f"Failed to merge subtitles into {mkv_path.name}."
-        if e.stdout:
-            error_msg += f"\nmkvmerge stdout: {e.stdout}"
-        if e.stderr:
-            error_msg += f"\nmkvmerge stderr: {e.stderr}"
-        raise MKVProcessingError(error_msg) from e
+        if result.stdout:
+            error_msg += f"\nmkvmerge stdout: {result.stdout}"
+        if result.stderr:
+            error_msg += f"\nmkvmerge stderr: {result.stderr}"
+        raise MKVProcessingError(error_msg)
+
+    # Log warnings if present (exit code 1 usually means warnings, not errors)
+    if result.returncode == 1 and result.stdout:
+        logger.warning("mkvmerge reported warnings (non-critical):")
+        for line in result.stdout.split('\n'):
+            if 'Warning' in line or 'warning' in line:
+                logger.warning(f"  {line.strip()}")
+
+    logger.info(f"  → Created {output_path.name}")
 
 
 def apply_subtitles_to_file(mkv_path: Path, backup: bool = False) -> None:
