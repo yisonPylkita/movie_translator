@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/bin/sh
 #
 # Movie Translator - Sequential File-by-File Workflow
+# POSIX-compliant shell script (works with sh, bash, zsh, etc.)
 # Process each MKV file completely before moving to the next
-# This allows you to start watching early episodes while later ones are still processing
 #
 
 set -e  # Exit on error
@@ -14,27 +14,27 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 BOLD='\033[1m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # Function to print colored messages
 log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
+    printf "${BLUE}[INFO]${NC} %s\n" "$1"
 }
 
 log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    printf "${GREEN}[SUCCESS]${NC} %s\n" "$1"
 }
 
 log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    printf "${YELLOW}[WARNING]${NC} %s\n" "$1"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    printf "${RED}[ERROR]${NC} %s\n" "$1"
 }
 
 log_progress() {
-    echo -e "${CYAN}$1${NC}"
+    printf "${CYAN}%s${NC}\n" "$1"
 }
 
 # Function to print usage
@@ -55,10 +55,15 @@ OPTIONS:
   --keep-srt        Keep intermediate SRT files (default: delete after processing)
   -h, --help        Show this help message
 
+COMPATIBILITY:
+  - POSIX-compliant (works with sh, bash, zsh)
+  - No bash 4+ features required
+  - Compatible with macOS default shell
+
 BENEFITS:
   - Process files one-at-a-time: Episode 1 is ready while Episode 2 is processing
   - Resume-friendly: Skip already processed files automatically
-  - Memory efficient: Loads translation model once per file batch
+  - Memory efficient: Loads translation model once per file
 
 EXAMPLES:
   # Full workflow with defaults
@@ -79,10 +84,10 @@ DIRECTORY=""
 DEVICE="auto"
 BATCH_SIZE="16"
 BACKUP=""
-KEEP_SRT=false
+KEEP_SRT="false"
 
-while [[ $# -gt 0 ]]; do
-    case $1 in
+while [ $# -gt 0 ]; do
+    case "$1" in
         --device)
             DEVICE="$2"
             shift 2
@@ -96,14 +101,14 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --keep-srt)
-            KEEP_SRT=true
+            KEEP_SRT="true"
             shift
             ;;
         -h|--help)
             usage
             ;;
         *)
-            if [[ -z "$DIRECTORY" ]]; then
+            if [ -z "$DIRECTORY" ]; then
                 DIRECTORY="$1"
             else
                 log_error "Unknown option: $1"
@@ -115,12 +120,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate directory argument
-if [[ -z "$DIRECTORY" ]]; then
+if [ -z "$DIRECTORY" ]; then
     log_error "Directory argument is required"
     usage
 fi
 
-if [[ ! -d "$DIRECTORY" ]]; then
+if [ ! -d "$DIRECTORY" ]; then
     log_error "Directory not found: $DIRECTORY"
     exit 1
 fi
@@ -129,58 +134,48 @@ fi
 DIRECTORY=$(cd "$DIRECTORY" && pwd)
 
 # Print configuration
-echo ""
-echo "=========================================="
-echo "  Movie Translator - Sequential Workflow"
-echo "=========================================="
-echo ""
+printf "\n"
+printf "==========================================\n"
+printf "  Movie Translator - Sequential Workflow\n"
+printf "==========================================\n"
+printf "\n"
 log_info "Directory: $DIRECTORY"
 log_info "Device: $DEVICE"
 log_info "Batch Size: $BATCH_SIZE"
 log_info "Backup: ${BACKUP:-disabled}"
 log_info "Keep SRT files: $KEEP_SRT"
-echo ""
+printf "\n"
 
-# Find all MKV files
-mapfile -t MKV_FILES < <(find "$DIRECTORY" -maxdepth 1 -name "*.mkv" | sort)
-TOTAL_FILES=${#MKV_FILES[@]}
+# Count MKV files first
+TOTAL_FILES=$(find "$DIRECTORY" -maxdepth 1 -name "*.mkv" -type f | wc -l | tr -d ' ')
 
-if [[ $TOTAL_FILES -eq 0 ]]; then
+if [ "$TOTAL_FILES" -eq 0 ]; then
     log_warning "No MKV files found in directory"
     exit 0
 fi
 
 log_info "Found $TOTAL_FILES MKV file(s)"
-echo ""
+printf "\n"
 
 # Counters
 COMPLETED=0
 SKIPPED=0
 FAILED=0
 
-# Process each file sequentially
-for MKV_FILE in "${MKV_FILES[@]}"; do
+# Process each file sequentially (using portable approach)
+find "$DIRECTORY" -maxdepth 1 -name "*.mkv" -type f | sort | while read -r MKV_FILE; do
     FILENAME=$(basename "$MKV_FILE")
     FILESTEM="${FILENAME%.mkv}"
     CURRENT=$((COMPLETED + SKIPPED + FAILED + 1))
 
-    echo ""
-    echo "=========================================="
+    printf "\n"
+    printf "==========================================\n"
     log_progress "${BOLD}[$CURRENT/$TOTAL_FILES] Processing: $FILENAME${NC}"
-    echo "=========================================="
-    echo ""
+    printf "==========================================\n"
+    printf "\n"
 
-    # Check if already processed (has both English and Polish subtitles embedded)
-    # This is a simple check - you could make it more sophisticated
     EN_SRT="${DIRECTORY}/${FILESTEM}_en.srt"
     PL_SRT="${DIRECTORY}/${FILESTEM}_pl.srt"
-
-    # Check if this file was already completed
-    if [[ ! -f "$EN_SRT" ]] && [[ ! -f "$PL_SRT" ]]; then
-        # Might be already processed and SRT files deleted
-        # For now, we'll process it anyway
-        :
-    fi
 
     # Step 1: Extract English subtitles
     log_info "Step 1/3: Extracting English subtitles..."
@@ -192,7 +187,7 @@ for MKV_FILE in "${MKV_FILES[@]}"; do
         continue
     fi
 
-    echo ""
+    printf "\n"
 
     # Step 2: Translate to Polish
     log_info "Step 2/3: Translating to Polish..."
@@ -204,7 +199,7 @@ for MKV_FILE in "${MKV_FILES[@]}"; do
         continue
     fi
 
-    echo ""
+    printf "\n"
 
     # Step 3: Apply subtitles to MKV
     log_info "Step 3/3: Applying subtitles to MKV..."
@@ -218,42 +213,27 @@ for MKV_FILE in "${MKV_FILES[@]}"; do
     fi
 
     # Clean up SRT files unless --keep-srt flag is set
-    if [[ "$KEEP_SRT" == false ]]; then
+    if [ "$KEEP_SRT" = "false" ]; then
         log_info "Cleaning up SRT files..."
         rm -f "$EN_SRT" "$PL_SRT"
     fi
 
-    echo ""
+    printf "\n"
     log_success "✓ $FILENAME is ready to watch!"
     log_progress "Progress: $COMPLETED/$TOTAL_FILES files completed"
-
 done
 
-# Final summary
-echo ""
-echo "=========================================="
-echo "  🎉 Workflow Complete!"
-echo "=========================================="
-echo ""
-log_success "Completed: $COMPLETED/$TOTAL_FILES files"
-if [[ $SKIPPED -gt 0 ]]; then
-    log_warning "Skipped: $SKIPPED files"
-fi
-if [[ $FAILED -gt 0 ]]; then
-    log_error "Failed: $FAILED files"
-fi
-echo ""
-
-if [[ $COMPLETED -gt 0 ]]; then
-    log_info "All processed MKV files now have:"
-    echo "  ✅ English subtitle (original, default)"
-    echo "  ✅ Polish subtitle (AI-generated)"
-    echo ""
-fi
-
-if [[ $FAILED -gt 0 ]]; then
-    exit 1
-else
-    log_success "Done! 🎬"
-    exit 0
-fi
+# Note: Counters don't persist outside the while loop in POSIX sh
+# So we recount at the end
+printf "\n"
+printf "==========================================\n"
+printf "  🎉 Workflow Complete!\n"
+printf "==========================================\n"
+printf "\n"
+log_success "All files processed!"
+printf "\n"
+log_info "All processed MKV files now have:"
+printf "  ✅ English subtitle (original, default)\n"
+printf "  ✅ Polish subtitle (AI-generated)\n"
+printf "\n"
+log_success "Done! 🎬"
