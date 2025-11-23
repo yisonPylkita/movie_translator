@@ -1,7 +1,7 @@
 [project]
-name = "srt-translator"
+name = "movie-translator"
 version = "0.2.0"
-description = "Simple SRT subtitle translator (EN→PL) optimized for M1 MacBook Air"
+description = "Movie/anime subtitle translator with MKV support (EN→PL) optimized for M1 MacBook Air"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"  # Python 3.14 has sentencepiece compatibility issues
 dependencies = [
@@ -14,7 +14,12 @@ dependencies = [
 ]
 
 [project.scripts]
-srt-translate = "movie_translator.main:main"
+srt-translate = "movie_translator.translate:main"
 
 [tool.uv]
 package = true
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.6",
+]

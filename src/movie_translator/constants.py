@@ -1,17 +1,5 @@
-# Model and device settings
-DEFAULT_MODEL = "gsarti/opus-mt-tc-en-pl"  # Marian EN->PL - stable tokenizer without sentencepiece
-DEFAULT_DEVICE = "auto"  # Auto-detects MPS on M1/M2
-DEFAULT_BATCH_SIZE = 16  # Optimized for M1 MacBook Air
-
-LANGUAGE_POLISH = "Polish"
-LANGUAGE_ENGLISH = "eng"
-LANGUAGE_ENGLISH_SHORT = "en"
-
-EXTENSION_MKV = ".mkv"
-EXTENSION_SRT = ".srt"
-
-TRACK_TYPE_SUBTITLE = "subtitles"
-
-POLISH_TRACK_NAME = "Polish (AI)"
+DEFAULT_MODEL = "allegro/BiDi-eng-pol"
+DEFAULT_DEVICE = "auto"
+DEFAULT_BATCH_SIZE = 16
 
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"

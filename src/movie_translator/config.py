@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from movie_translator.constants import (
     DEFAULT_MODEL,
     DEFAULT_BATCH_SIZE,
-    LANGUAGE_POLISH,
     LOG_FORMAT,
     DEFAULT_DEVICE,
 )
@@ -13,8 +12,7 @@ from movie_translator.constants import (
 
 @dataclass
 class TranslationConfig:
-    """Configuration for subtitle translation."""
-    target_language: str = LANGUAGE_POLISH
+    target_language: str = "Polish"
     model: str = DEFAULT_MODEL
     batch_size: int = DEFAULT_BATCH_SIZE
     device: str = DEFAULT_DEVICE

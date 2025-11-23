@@ -1,22 +1,43 @@
-# SRT Translator 🚀
+# Movie Translator 🎬
 
-**Simple, fast, local SRT subtitle translator** from English to Polish.
+**Translate movie/anime subtitles from English to Polish** using local ML models.
 
-Optimized for **M1/M2 MacBook Air** - runs completely offline using local ML models.
+Optimized for **M1/M2 MacBook Air** - runs completely offline, no API keys needed.
+
+## Two Tools, One Purpose
+
+### 1. `srt-translate` - Pure SRT Translation
+Translate any SRT file (input → output):
+```bash
+srt-translate input.srt output.srt
+```
+
+### 2. `movie-translate` - Full MKV Workflow
+Extract → Translate → Merge subtitles in MKV files:
+```bash
+movie-translate /path/to/movies
+```
 
 ## Features
 
 - ✅ **100% Local** - No API keys, no internet, no cloud
 - ⚡ **M1 Optimized** - Uses MPS acceleration + float16 for 3-5x speed
-- 🎯 **Single Purpose** - Input SRT → Output SRT, nothing else
+- 🎯 **Modular** - Use separately or together
 - 🪶 **Lightweight** - ~222MB model, 2-4GB RAM
 - 🔋 **Fast** - ~50-100 lines/second on M1 with MPS
 
 ## Requirements
 
+**For both tools:**
 - **Python 3.13** (3.10-3.13 supported, NOT 3.14)
 - `uv` package manager
 - M1/M2 Mac (or any system with CPU/CUDA)
+
+**Additional for `movie-translate`:**
+- MKVToolNix (`mkvmerge`, `mkvextract`)
+  ```bash
+  brew install mkvtoolnix
+  ```
 
 ## Installation
 
@@ -35,25 +56,36 @@ uv sync
 
 ## Usage
 
-### Basic Translation
+### Tool 1: SRT Translation Only
+
+Translate standalone SRT files:
 
 ```bash
-# Simple: input.srt → output.srt
+# Basic translation
 uv run srt-translate input.srt output.srt
+
+# With options
+uv run srt-translate input.srt output.srt --device cpu --batch-size 32
 ```
 
-### Advanced Options
+**Use when:** You already have extracted SRT files, or want to translate subtitles from any source.
+
+### Tool 2: Full MKV Processing
+
+Automatic extraction, translation, and merging:
 
 ```bash
-# Force CPU (slower but more compatible)
-uv run srt-translate input.srt output.srt --device cpu
+# Process all MKV files in a directory
+uv run movie-translate /path/to/movies
 
-# Increase batch size for speed (if you have RAM)
-uv run srt-translate input.srt output.srt --batch-size 32
+# Process single MKV file
+uv run movie-translate movie.mkv
 
-# Use different model
-uv run srt-translate input.srt output.srt --model allegro/p5-eng2many
+# With options
+uv run movie-translate /path/to/movies --device auto --batch-size 16
 ```
+
+**Use when:** You have MKV files with embedded English subtitles and want automated processing.
 
 ### Options
 
@@ -65,13 +97,26 @@ uv run srt-translate input.srt output.srt --model allegro/p5-eng2many
 
 ## How It Works
 
-1. **Loads** SRT file and extracts subtitle lines
-2. **Batches** lines for efficient processing
-3. **Translates** using local Marian MT model:
-   - Auto-detects M1/MPS acceleration
-   - Uses float16 precision for 2x speed
-   - Greedy decoding for fastest results
+### `srt-translate` (Simple)
+
+1. **Loads** SRT file
+2. **Batches** subtitle lines
+3. **Translates** using local Marian MT model
 4. **Saves** translated SRT with original timing
+
+### `movie-translate` (Full Pipeline)
+
+1. **Scans** for MKV files
+2. **Identifies** English subtitle tracks using `mkvmerge`
+3. **Extracts** subtitles to SRT using `mkvextract`
+4. **Translates** SRT using `srt-translate` logic
+5. **Merges** Polish subtitles back into MKV using `mkvmerge`
+6. **Replaces** original file with updated version
+
+**Translation engine:**
+- Auto-detects M1/MPS acceleration
+- Uses float16 precision for 2x speed
+- Greedy decoding for fastest results
 
 ## Performance
 
@@ -118,14 +163,30 @@ Currently using **`gsarti/opus-mt-tc-en-pl`**:
 
 ## Design Philosophy
 
-**One tool, one job:** This tool only does SRT translation.
+**Separation of concerns:**
 
-For a complete subtitle workflow:
-1. **Extract** subtitles from MKV: Use `mkvextract`
-2. **Translate** SRT file: Use this tool
-3. **Merge** back into MKV: Use `mkvmerge`
+- **`srt-translate`**: Core translation logic - reusable, testable, simple
+- **`movie-translate`**: MKV orchestration - wraps translation with extraction/merging
 
-Decoupling these steps gives you more control and flexibility.
+**Benefits:**
+- Use `srt-translate` for any SRT source (downloads, OCR, etc.)
+- Use `movie-translate` for convenience with MKV files
+- Both share the same optimized translation engine
+- Can be used independently or together
+
+**Example workflow combinations:**
+```bash
+# Option 1: Full automatic (MKV)
+movie-translate movies/
+
+# Option 2: Manual control (extract + translate + merge yourself)
+mkvextract tracks movie.mkv 2:eng.srt
+srt-translate eng.srt pol.srt
+mkvmerge -o output.mkv movie.mkv --language 0:pl pol.srt
+
+# Option 3: Just translate (from any source)
+srt-translate downloaded.srt translated.srt
+```
 
 ## License
 
