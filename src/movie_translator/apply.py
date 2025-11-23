@@ -37,37 +37,36 @@ def merge_subtitle(
     # 2. Remove ALL existing subtitle tracks (-S flag)
     # 3. Add English subtitle with proper metadata
     # 4. Add Polish subtitle with proper metadata
+    #
+    # Note: Track options must come BEFORE each input file
     cmd = [
         "mkvmerge",
         "-o",
         str(output_path),
-        # Copy video and audio, but NO subtitles from original
+        # Copy video and audio, but NO subtitles from original MKV
         "-S",  # Don't copy subtitle tracks
         str(mkv_path),
-        # Add English subtitle track
-        "--language",
-        "0:eng",
-        "--track-name",
-        "0:English",
-        "--default-track",
-        "0:yes",
+        # Add English subtitle track (options before the file)
+        "--language", "0:eng",
+        "--track-name", "0:English",
+        "--default-track", "0:yes",
         str(english_srt),
-        # Add Polish subtitle track
-        "--language",
-        "0:pol",
-        "--track-name",
-        f"0:{POLISH_TRACK_NAME}",
-        "--default-track",
-        "0:no",
+        # Add Polish subtitle track (options before the file)
+        "--language", "0:pol",
+        "--track-name", f"0:{POLISH_TRACK_NAME}",
+        "--default-track", "0:no",
         str(polish_srt),
     ]
     try:
-        subprocess.run(cmd, check=True, capture_output=True)
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         logger.info(f"  → Created {output_path.name}")
     except subprocess.CalledProcessError as e:
-        raise MKVProcessingError(
-            f"Failed to merge subtitles into {mkv_path.name}. Is mkvmerge installed?"
-        ) from e
+        error_msg = f"Failed to merge subtitles into {mkv_path.name}."
+        if e.stderr:
+            error_msg += f"\nmkvmerge error: {e.stderr}"
+        else:
+            error_msg += " Is mkvmerge installed?"
+        raise MKVProcessingError(error_msg) from e
 
 
 def apply_subtitles_to_file(mkv_path: Path, backup: bool = False) -> None:

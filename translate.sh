@@ -4,6 +4,11 @@
 # POSIX-compliant shell script (works with sh, bash, zsh, etc.)
 # Process each MKV file completely before moving to the next
 #
+# Auto-installs dependencies on macOS:
+#   - Homebrew (if needed)
+#   - uv (Python package manager)
+#   - mkvtoolnix (for mkvmerge/mkvextract)
+#
 
 set -e  # Exit on error
 
@@ -37,6 +42,83 @@ log_progress() {
     printf "${CYAN}%s${NC}\n" "$1"
 }
 
+# Dependency checking and installation functions
+check_python() {
+    if ! command -v python3 >/dev/null 2>&1; then
+        log_error "Python 3 is required but not found"
+        log_error "Please install Python 3 from https://www.python.org/"
+        exit 1
+    fi
+    log_info "Python 3: $(python3 --version)"
+}
+
+check_homebrew() {
+    if ! command -v brew >/dev/null 2>&1; then
+        log_warning "Homebrew not found. Installing Homebrew..."
+        printf "\n"
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+        # Add Homebrew to PATH for Apple Silicon Macs
+        if [ -f /opt/homebrew/bin/brew ]; then
+            eval "$(/opt/homebrew/bin/brew shellenv)"
+        fi
+
+        log_success "Homebrew installed successfully"
+    else
+        log_info "Homebrew: $(brew --version | head -n 1)"
+    fi
+}
+
+check_uv() {
+    if ! command -v uv >/dev/null 2>&1; then
+        log_warning "uv not found. Installing uv..."
+        printf "\n"
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+
+        # Source the shell config to get uv in PATH
+        if [ -f "$HOME/.cargo/env" ]; then
+            . "$HOME/.cargo/env"
+        fi
+
+        log_success "uv installed successfully"
+    else
+        log_info "uv: $(uv --version)"
+    fi
+}
+
+check_mkvtoolnix() {
+    if ! command -v mkvmerge >/dev/null 2>&1 || ! command -v mkvextract >/dev/null 2>&1; then
+        log_warning "mkvtoolnix not found. Installing via Homebrew..."
+        printf "\n"
+
+        # Ensure Homebrew is available first
+        check_homebrew
+
+        brew install mkvtoolnix
+        log_success "mkvtoolnix installed successfully"
+    else
+        log_info "mkvmerge: $(mkvmerge --version | head -n 1)"
+    fi
+}
+
+check_dependencies() {
+    log_info "Checking dependencies..."
+    printf "\n"
+
+    # Check Python (required, must be pre-installed)
+    check_python
+
+    # Check and install uv if needed
+    check_uv
+
+    # Check and install mkvtoolnix if needed
+    check_mkvtoolnix
+
+    printf "\n"
+    log_success "All dependencies satisfied"
+    printf "\n"
+}
+
 # Function to print usage
 usage() {
     cat << EOF
@@ -57,10 +139,18 @@ OPTIONS:
 
 COMPATIBILITY:
   - POSIX-compliant (works with sh, bash, zsh)
-  - No bash 4+ features required
-  - Compatible with macOS default shell
+  - macOS support (auto-installs dependencies)
+  - Requires: Python 3 (pre-installed on macOS)
+
+AUTO-INSTALLATION (macOS):
+  - Homebrew (if needed)
+  - uv (Python package manager)
+  - mkvtoolnix (for MKV manipulation)
+
+  Everything is installed automatically on first run!
 
 BENEFITS:
+  - Zero manual setup - just run the script
   - Process files one-at-a-time: Episode 1 is ready while Episode 2 is processing
   - Resume-friendly: Skip already processed files automatically
   - Memory efficient: Loads translation model once per file
@@ -132,6 +222,14 @@ fi
 
 # Convert to absolute path
 DIRECTORY=$(cd "$DIRECTORY" && pwd)
+
+# Check and install dependencies if needed (macOS only for now)
+printf "\n"
+printf "==========================================\n"
+printf "  Dependency Check\n"
+printf "==========================================\n"
+printf "\n"
+check_dependencies
 
 # Print configuration
 printf "\n"
