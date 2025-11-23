@@ -135,6 +135,7 @@ OPTIONS:
   --batch-size N    Subtitle lines per batch (default: 16)
   --backup          Create .bak backup of original MKV files
   --keep-srt        Keep intermediate SRT files (default: delete after processing)
+  --debug-convert   Debug mode: Extract and convert ASS→SRT only (no translation)
   -h, --help        Show this help message
 
 COMPATIBILITY:
@@ -175,6 +176,7 @@ DEVICE="auto"
 BATCH_SIZE="16"
 BACKUP=""
 KEEP_SRT="false"
+DEBUG_CONVERT="false"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -192,6 +194,11 @@ while [ $# -gt 0 ]; do
             ;;
         --keep-srt)
             KEEP_SRT="true"
+            shift
+            ;;
+        --debug-convert)
+            DEBUG_CONVERT="true"
+            KEEP_SRT="true"  # Always keep SRT in debug mode
             shift
             ;;
         -h|--help)
@@ -242,6 +249,7 @@ log_info "Device: $DEVICE"
 log_info "Batch Size: $BATCH_SIZE"
 log_info "Backup: ${BACKUP:-disabled}"
 log_info "Keep SRT files: $KEEP_SRT"
+log_info "Debug mode: $DEBUG_CONVERT"
 printf "\n"
 
 # Count MKV files first
@@ -275,7 +283,11 @@ find "$DIRECTORY" -maxdepth 1 -name "*.mkv" -type f | sort | while read -r MKV_F
     PL_SRT="${DIRECTORY}/${FILESTEM}_pl.srt"
 
     # Step 1: Extract English subtitles
-    log_info "Step 1/3: Extracting English subtitles..."
+    if [ "$DEBUG_CONVERT" = "true" ]; then
+        log_info "Step 1/2: Extracting English subtitles..."
+    else
+        log_info "Step 1/3: Extracting English subtitles..."
+    fi
     if uv run srt-extract "$MKV_FILE"; then
         log_success "Extraction complete"
     else
@@ -302,6 +314,37 @@ find "$DIRECTORY" -maxdepth 1 -name "*.mkv" -type f | sort | while read -r MKV_F
     fi
 
     printf "\n"
+
+    # Debug mode: Convert ASS to SRT and stop
+    if [ "$DEBUG_CONVERT" = "true" ]; then
+        # If extracted file is ASS/SSA, convert to SRT
+        if [ "${EN_SRT##*.}" = "ass" ] || [ "${EN_SRT##*.}" = "ssa" ]; then
+            CONVERTED_SRT="${DIRECTORY}/${FILESTEM}_en_converted.srt"
+            log_info "Step 2/2: Converting ${EN_SRT##*.} to SRT (with deduplication)..."
+            if uv run python debug_ass_to_srt.py "$EN_SRT" "$CONVERTED_SRT"; then
+                log_success "Conversion complete: $(basename "$CONVERTED_SRT")"
+            else
+                log_error "Conversion failed for $FILENAME"
+                FAILED=$((FAILED + 1))
+                continue
+            fi
+        else
+            log_info "DEBUG: File is already SRT format: $(basename "$EN_SRT")"
+            CONVERTED_SRT="$EN_SRT"
+        fi
+
+        printf "\n"
+        log_success "✓ DEBUG: Extraction and conversion complete for $FILENAME"
+        log_info "Original: $(basename "$EN_SRT")"
+        if [ "$CONVERTED_SRT" != "$EN_SRT" ]; then
+            log_info "Converted: $(basename "$CONVERTED_SRT")"
+        fi
+        log_warning "Skipping translation and apply steps (debug mode)"
+        COMPLETED=$((COMPLETED + 1))
+        printf "\n"
+        log_progress "Progress: $COMPLETED/$TOTAL_FILES files processed (debug mode)"
+        continue
+    fi
 
     # Step 2: Translate to Polish (always output as .srt)
     log_info "Step 2/3: Translating to Polish..."
