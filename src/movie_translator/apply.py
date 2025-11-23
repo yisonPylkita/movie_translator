@@ -93,15 +93,27 @@ def apply_subtitles_to_file(mkv_path: Path, backup: bool = False) -> None:
     if not mkv_path.exists():
         raise FileNotFoundError(f"MKV file not found: {mkv_path}")
 
-    # Find matching subtitle files: movie.mkv -> movie_en.srt, movie_pl.srt
-    english_srt = mkv_path.with_suffix("").with_name(f"{mkv_path.stem}_en.srt")
-    polish_srt = mkv_path.with_suffix("").with_name(f"{mkv_path.stem}_pl.srt")
+    # Find matching subtitle files
+    # English can be .ass, .ssa, or .srt (depends on original format)
+    # Polish is always .srt (our output format)
+    base_name = mkv_path.with_suffix("").with_name(f"{mkv_path.stem}")
 
-    if not english_srt.exists():
+    # Try to find English subtitle in any supported format
+    english_srt = None
+    for ext in [".ass", ".ssa", ".srt"]:
+        candidate = Path(f"{base_name}_en{ext}")
+        if candidate.exists():
+            english_srt = candidate
+            logger.info(f"Found English subtitle: {english_srt.name}")
+            break
+
+    if not english_srt:
         raise FileNotFoundError(
-            f"English subtitle not found: {english_srt.name}"
+            f"English subtitle not found. Tried: {base_name}_en.{{ass,ssa,srt}}"
         )
 
+    # Polish subtitle is always .srt
+    polish_srt = Path(f"{base_name}_pl.srt")
     if not polish_srt.exists():
         raise FileNotFoundError(
             f"Polish subtitle not found: {polish_srt.name}"

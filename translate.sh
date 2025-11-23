@@ -272,7 +272,6 @@ find "$DIRECTORY" -maxdepth 1 -name "*.mkv" -type f | sort | while read -r MKV_F
     printf "==========================================\n"
     printf "\n"
 
-    EN_SRT="${DIRECTORY}/${FILESTEM}_en.srt"
     PL_SRT="${DIRECTORY}/${FILESTEM}_pl.srt"
 
     # Step 1: Extract English subtitles
@@ -285,9 +284,26 @@ find "$DIRECTORY" -maxdepth 1 -name "*.mkv" -type f | sort | while read -r MKV_F
         continue
     fi
 
+    # Find the extracted English subtitle (could be .ass, .ssa, or .srt)
+    EN_SRT=""
+    for ext in .ass .ssa .srt; do
+        candidate="${DIRECTORY}/${FILESTEM}_en${ext}"
+        if [ -f "$candidate" ]; then
+            EN_SRT="$candidate"
+            log_info "Found extracted subtitle: $(basename "$EN_SRT")"
+            break
+        fi
+    done
+
+    if [ -z "$EN_SRT" ]; then
+        log_error "Could not find extracted English subtitle for $FILENAME"
+        FAILED=$((FAILED + 1))
+        continue
+    fi
+
     printf "\n"
 
-    # Step 2: Translate to Polish
+    # Step 2: Translate to Polish (always output as .srt)
     log_info "Step 2/3: Translating to Polish..."
     if uv run srt-translate "$EN_SRT" "$PL_SRT" --device "$DEVICE" --batch-size "$BATCH_SIZE"; then
         log_success "Translation complete"

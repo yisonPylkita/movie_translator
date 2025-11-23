@@ -61,15 +61,37 @@ def extract_subtitle(mkv_path: Path, track_id: int, output_path: Path) -> None:
         ) from e
 
 
+def get_subtitle_extension(track: dict) -> str:
+    """Determine the subtitle file extension based on codec.
+
+    Args:
+        track: Track information dictionary from mkvmerge
+
+    Returns:
+        File extension (.srt, .ass, or .ssa)
+    """
+    props = track.get("properties", {})
+    codec = props.get("codec_id", "").lower()
+
+    # Map MKV codec IDs to file extensions
+    if "ass" in codec or "s_text/ass" in codec:
+        return ".ass"
+    elif "ssa" in codec or "s_text/ssa" in codec:
+        return ".ssa"
+    else:
+        # Default to .srt for SubRip and unknown formats
+        return ".srt"
+
+
 def extract_subtitle_from_file(mkv_path: Path, force: bool = False) -> Path:
     """Extract English subtitle from a single MKV file.
 
     Args:
         mkv_path: Path to MKV file
-        force: If True, overwrite existing _en.srt file
+        force: If True, overwrite existing subtitle file
 
     Returns:
-        Path to extracted SRT file
+        Path to extracted subtitle file (with correct extension)
 
     Raises:
         SubtitleNotFoundError: If no English subtitle track found
@@ -77,14 +99,6 @@ def extract_subtitle_from_file(mkv_path: Path, force: bool = False) -> Path:
     """
     if not mkv_path.exists():
         raise FileNotFoundError(f"MKV file not found: {mkv_path}")
-
-    # Generate output filename: movie.mkv -> movie_en.srt
-    output_srt = mkv_path.with_suffix("").with_name(f"{mkv_path.stem}_en.srt")
-
-    # Skip if already extracted (unless force=True)
-    if output_srt.exists() and not force:
-        logger.info(f"Skipping {mkv_path.name} (already extracted)")
-        return output_srt
 
     track_info = get_track_info(mkv_path)
     eng_sub_track = find_english_subtitle_track(track_info)
@@ -94,10 +108,21 @@ def extract_subtitle_from_file(mkv_path: Path, force: bool = False) -> Path:
             f"No English subtitle track found in {mkv_path.name}"
         )
 
-    track_id = eng_sub_track["id"]
-    extract_subtitle(mkv_path, track_id, output_srt)
+    # Determine correct file extension based on codec
+    ext = get_subtitle_extension(eng_sub_track)
+    output_sub = mkv_path.with_suffix("").with_name(f"{mkv_path.stem}_en{ext}")
 
-    return output_srt
+    logger.info(f"Detected subtitle format: {ext}")
+
+    # Skip if already extracted (unless force=True)
+    if output_sub.exists() and not force:
+        logger.info(f"Skipping {mkv_path.name} (already extracted)")
+        return output_sub
+
+    track_id = eng_sub_track["id"]
+    extract_subtitle(mkv_path, track_id, output_sub)
+
+    return output_sub
 
 
 def main() -> None:
