@@ -53,8 +53,10 @@ def main() -> None:
         logger.error(f"Input file not found: {args.input}")
         sys.exit(1)
 
-    if not args.input.suffix.lower() == ".srt":
-        logger.error(f"Input file must be .srt format: {args.input}")
+    # Accept all subtitle formats that pysubs2 can read
+    supported_formats = {".srt", ".ass", ".ssa", ".vtt", ".sub"}
+    if args.input.suffix.lower() not in supported_formats:
+        logger.error(f"Input file must be a subtitle format (.srt, .ass, .ssa, .vtt, .sub): {args.input}")
         sys.exit(1)
 
     if args.output.exists():
