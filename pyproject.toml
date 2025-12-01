@@ -2,15 +2,16 @@
 name = "movie-translator-dependencies"
 version = "0.2.0"
 description = "Dependencies for Movie Translator (MacBook optimized)"
-requires-python = ">=3.10,<3.14"  # Python 3.14 has sentencepiece compatibility issues
+requires-python = ">=3.10,<3.14"
 dependencies = [
-    "pysubs2>=1.8.0",      # SRT subtitle parsing
-    "transformers>=4.30.0", # ML models
-    "torch>=2.0.0",         # PyTorch for model inference
-    "sentencepiece>=0.1.99", # Tokenizer for T5 models
-    "protobuf>=3.20.0",     # Required by transformers
-    "rich>=14.2.0",         # Fancy terminal output
-    "psutil>=7.1.3",
+    "pysubs2>=1.8.0",
+    "transformers>=4.30.0",
+    "torch>=2.0.0",
+    "sentencepiece>=0.1.99",
+    "rich>=14.2.0",
+    "opencv-python>=4.12.0.88",
+    "paddleocr>=3.3.2",
+    "paddlepaddle>=3.2.2",
 ]
 
 [dependency-groups]
@@ -19,7 +20,6 @@ dev = [
 ]
 
 [tool.ruff]
-# Line length (matching our code style)
 line-length = 100
 
 [tool.ruff.lint]
@@ -36,10 +36,8 @@ select = [
 
 # Ignore specific rules that are too strict for this project
 ignore = [
-    "E501",   # Line too long (we have some long lines for readability)
-    "B008",   # Do not perform function calls in argument defaults (we do this for logging)
-    "B007",   # Loop control variable not used (minor issue)
-    "B905",   # zip() without strict parameter (minor issue)
+    'E501',   # Line too long (we have some long lines for readability)
+    'B008',   # Do not perform function calls in argument defaults (we do this for logging)
 ]
 
 [tool.ruff.lint.isort]
@@ -47,5 +45,5 @@ ignore = [
 known-first-party = ["movie_translator"]
 
 [tool.ruff.format]
-# Use double quotes for consistency
-quote-style = "double"
+indent-style = "space"
+quote-style = "single"

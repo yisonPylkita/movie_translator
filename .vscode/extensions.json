@@ -1,0 +1,11 @@
+{
+    "recommendations": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+    ],
+    "unwantedRecommendations": [
+        "ms-python.pylint",
+        "ms-python.flake8",
+        "wholroyd.jinja"
+    ]
+}

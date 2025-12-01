@@ -6,16 +6,14 @@ Memory-optimized version
 """
 
 import gc
-import os
 import time
 
 import torch
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-DEFAULT_MODEL = "allegro/BiDi-eng-pol"
-DEFAULT_DEVICE = "mps"  # Apple Silicon GPU
+DEFAULT_MODEL = 'allegro/BiDi-eng-pol'
+DEFAULT_DEVICE = 'mps'  # Apple Silicon GPU
 DEFAULT_BATCH_SIZE = 16  # Optimized for MacBook memory
-
 
 
 class SubtitleTranslator:
@@ -34,15 +32,17 @@ class SubtitleTranslator:
         self.tokenizer = None
         self.model = None
 
-        print(f"🤖 Initializing AI Translator: {model_name} on {self.device} with batch size {batch_size}")
+        print(
+            f'🤖 Initializing AI Translator: {model_name} on {self.device} with batch size {batch_size}'
+        )
 
     def _determine_device(self, device: str) -> str:
         """Determine the best device for MacBook (MPS optimized)."""
-        if device == "mps":
-            return "mps"
+        if device == 'mps':
+            return 'mps'
         else:
             # Any other value defaults to CPU fallback
-            return "cpu"
+            return 'cpu'
 
     def _clear_memory(self):
         """Clear memory caches for MacBook (MPS optimized)."""
@@ -50,10 +50,9 @@ class SubtitleTranslator:
             torch.mps.empty_cache()
         gc.collect()
 
-    
     def load_model(self):
         """Load the translation model with memory optimization."""
-        print("📥 Loading translation model...")
+        print('📥 Loading translation model...')
 
         try:
             self._clear_memory()
@@ -62,24 +61,24 @@ class SubtitleTranslator:
 
             self.model = AutoModelForSeq2SeqLM.from_pretrained(
                 self.model_name,
-                torch_dtype=torch.float16 if self.device != "cpu" else torch.float32,
-                low_cpu_mem_usage=True
+                torch_dtype=torch.float16 if self.device != 'cpu' else torch.float32,
+                low_cpu_mem_usage=True,
             )
 
             self.model.to(self.device)
 
             self.translation_pipeline = None
 
-            print(f"   ✅ Model loaded successfully on {self.device}")
+            print(f'   ✅ Model loaded successfully on {self.device}')
             return True
 
         except Exception as e:
-            print(f"   ❌ Failed to load model: {e}")
+            print(f'   ❌ Failed to load model: {e}')
             return False
 
     def translate_texts(self, texts: list[str], progress_callback=None) -> list[str]:
         """Translate a list of texts using direct model calls with optional progress callback."""
-        print(f"🔄 Translating {len(texts)} texts...")
+        print(f'🔄 Translating {len(texts)} texts...')
 
         if not texts:
             return []
@@ -87,32 +86,32 @@ class SubtitleTranslator:
         translations = []
         total_batches = (len(texts) + self.batch_size - 1) // self.batch_size
         start_time = time.time()
-        
+
         # Process batches with optional progress callback
         for i in range(0, len(texts), self.batch_size):
-            batch_texts = texts[i:i + self.batch_size]
+            batch_texts = texts[i : i + self.batch_size]
             batch_num = i // self.batch_size + 1
-            
+
             try:
                 batch_translations = self._translate_batch_direct(batch_texts)
                 translations.extend(batch_translations)
-                
+
                 if progress_callback:
                     elapsed = time.time() - start_time
                     lines_processed = min(batch_num * self.batch_size, len(texts))
                     rate = lines_processed / elapsed if elapsed > 0 else 0
                     progress_callback(batch_num, total_batches, rate)
-                
+
                 if i > 0 and i % (self.batch_size * 50) == 0:
                     self._clear_memory()
-                    
+
             except Exception as e:
                 if progress_callback:
                     progress_callback(batch_num, total_batches, 0, error=str(e)[:50])
                 translations.extend(batch_texts)
 
         self._clear_memory()
-        print(f"   ✅ Translation complete: {len(translations)} texts processed")
+        print(f'   ✅ Translation complete: {len(translations)} texts processed')
 
         return translations
 
@@ -120,22 +119,22 @@ class SubtitleTranslator:
         """Direct batch translation using model.generate() (proven working approach)."""
         try:
             import torch
-        except ImportError:
-            raise Exception("torch not installed")
+        except ImportError as err:
+            raise Exception('torch not installed') from err
 
-        if "bidi" in self.model_name.lower():
-            target = "pol"
-            texts = [f">>{target}<< {text}" for text in texts]
+        if 'bidi' in self.model_name.lower():
+            target = 'pol'
+            texts = [f'>>{target}<< {text}' for text in texts]
 
         encoded = self.tokenizer.batch_encode_plus(
             texts,
-            return_tensors="pt",
+            return_tensors='pt',
             padding=True,
             truncation=True,
             max_length=512,
         )
 
-        if self.device != "cpu":
+        if self.device != 'cpu':
             encoded = {k: v.to(self.device) for k, v in encoded.items()}
 
         with torch.inference_mode():
@@ -155,12 +154,12 @@ class SubtitleTranslator:
 
         del encoded
         del translations
-        
+
         return decoded
 
     def cleanup(self):
         """Clean up model and free memory."""
-        print("🧹 Cleaning up AI Translator...")
+        print('🧹 Cleaning up AI Translator...')
 
         self.translation_pipeline = None
 
@@ -187,7 +186,7 @@ class SubtitleTranslator:
         translated_texts = self.translate_texts(texts)
 
         translated_lines = []
-        for (start, end, _), translated_text in zip(dialogue_lines, translated_texts):
+        for (start, end, _), translated_text in zip(dialogue_lines, translated_texts, strict=True):
             translated_lines.append((start, end, translated_text))
 
         return translated_lines
@@ -195,29 +194,29 @@ class SubtitleTranslator:
 
 def test_translation():
     """Test the translation system with sample texts."""
-    print("🧪 Testing AI Translation System")
-    print("=" * 50)
+    print('🧪 Testing AI Translation System')
+    print('=' * 50)
 
     translator = SubtitleTranslator()
     if translator.load_model():
         test_texts = [
-            "Hello, how are you?",
-            "This is a test sentence.",
-            "The weather is nice today.",
+            'Hello, how are you?',
+            'This is a test sentence.',
+            'The weather is nice today.',
         ]
 
         results = translator.translate_texts(test_texts)
 
-        print("\nTranslation Results:")
-        for original, translated in zip(test_texts, results):
-            print(f"  EN: {original}")
-            print(f"  PL: {translated}")
+        print('\nTranslation Results:')
+        for original, translated in zip(test_texts, results, strict=True):
+            print(f'  EN: {original}')
+            print(f'  PL: {translated}')
             print()
 
         translator.cleanup()
     else:
-        print("Failed to load model for testing")
+        print('Failed to load model for testing')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     test_translation()
