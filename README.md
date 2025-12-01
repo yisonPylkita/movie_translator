@@ -1,212 +1,103 @@
 # Movie Translator 🎬
 
-Complete pipeline for extracting English dialogue from MKV files and translating to Polish using AI.
+**MacBook-only AI subtitle translator** for English→Polish translation using Apple Silicon acceleration.
+
+> ⚠️ **Important**: This project is designed and optimized for MacBook only. For other systems, please create a separate setup.
 
 ## Features 🚀
 
-- **Smart Extraction**: Automatically finds English dialogue subtitle tracks (skips signs/songs)
-- **AI Translation**: Uses `allegro/BiDi-eng-pol` model for high-quality English→Polish translation
-- **Clean Output**: Creates MKV files with only 2 subtitle tracks (English dialogue + Polish translation)
-- **MacBook Optimized**: MPS acceleration for Apple Silicon, optimized batch processing
-- **Quality Code**: Linted with Ruff for clean, maintainable code
-- **🎨 Fancy Terminal Output**: Beautiful Rich progress bars, spinners, and live updates
+- **🍎 MacBook Optimized**: MPS acceleration for Apple Silicon (M1/M2/M3)
+- **🤖 AI Translation**: High-quality `allegro/BiDi-eng-pol` model
+- **🎯 Smart Filtering**: Extracts dialogue only (skips signs/songs)
+- **🎨 Rich Progress**: Beautiful terminal output with live speed metrics
+- **🧠 Memory Efficient**: Proven leak-free implementation
+
+## System Requirements 🍎
+
+- **macOS** with Apple Silicon (M1/M2/M3) recommended
+- **Python 3.10+** (managed by uv)
+- **Homebrew** (for mkvtoolnix)
+- **uv** (Python package manager)
+
+> **Intel Macs**: May work but without MPS acceleration (slower performance)
+> **Non-Mac systems**: Not supported - please create separate setup
 
 ## Quick Start 🎯
 
 ### Setup (One-time)
 ```bash
 cd /Users/arlen/h_dev/movie_translator
-make setup  # Installs dependencies and runs linter
+./setup.sh  # Install dependencies and check requirements
 ```
 
-### Basic Usage
+### Usage
 ```bash
-# Process single MKV file
-uv run python3 translate.py ~/Downloads/test_movies/SPY\ x\ FAMILY\ -\ S01E01.mkv
+# Process directory (uses MPS by default)
+uv run python translate.py ~/Downloads/test_movies
 
-# Process directory of MKV files
-uv run python3 translate.py ~/Downloads/test_movies
+# Process single file
+uv run python translate.py ~/Downloads/test_movies/SPY\ x\ FAMILY\ -\ S01E01.mkv
 
-# Custom output directory
-uv run python3 translate.py ~/Downloads/test_movies --output ~/Downloads/translated_movies
+# Custom output
+uv run python translate.py ~/Downloads/test_movies --output ~/Downloads/translated
 ```
 
 ### Advanced Options
 ```bash
-# MacBook optimized (MPS + batch size)
-uv run python3 translate.py ~/Downloads/test_movies --device mps --batch-size 16
+# Different batch sizes
+uv run python translate.py ~/Downloads/test_movies --batch-size 32  # Faster
+uv run python translate.py ~/Downloads/test_movies --batch-size 8   # Less memory
 
-# CPU processing (if MPS issues)
-uv run python3 translate.py ~/Downloads/test_movies --device cpu --batch-size 8
-
-# Larger batch size (faster but more memory)
-uv run python3 translate.py ~/Downloads/test_movies --device mps --batch-size 32
+# CPU fallback (if MPS issues)
+uv run python translate.py ~/Downloads/test_movies --device cpu
 ```
 
-## Development 🛠️
+## Project Structure 📁
 
-### Code Quality
-```bash
-# Lint code
-make lint
-
-# Format code
-make format
-
-# Run both lint and format
-make check
-
-# Clean temporary files
-make clean
+```
+movie_translator/
+├── translate.py          # Main pipeline (MacBook optimized)
+├── ai_translator.py      # AI engine (MPS acceleration)
+├── run.sh               # Quick test script
+├── setup.sh             # Setup script (dependencies + requirements)
+├── pyproject.toml       # uv dependencies
+└── README.md            # This file
 ```
 
-### Testing
-```bash
-# Quick test
-make test
+## MacBook Optimization 🍎
 
-# Full pipeline test
-make run-example
-```
+This project is **exclusively optimized for MacBook**:
 
-## 🎨 Terminal Output
+- **Default Device**: MPS (Apple Silicon GPU) - fastest performance
+- **Batch Size**: 16 (optimized for MacBook memory)
+- **Memory Management**: Leak-free with periodic cleanup
+- **Dependencies**: uv-managed for consistency
+- **Setup Detection**: Automatically verifies MacBook compatibility
 
-The translator now features **beautiful Rich terminal output** with:
+### Platform Support
+- ✅ **Apple Silicon Macs** (M1/M2/M3) - Full support
+- ⚠️ **Intel Macs** - Works but slower (no MPS)
+- ❌ **Windows/Linux** - Not supported (create separate setup)
 
-- **📊 Configuration Panels**: Clean tables showing your settings
-- **⚡ Live Progress Bars**: Real-time progress for file processing and translation
-- **🔄 Spinners**: Animated status indicators for model loading
-- **📈 Batch Progress**: Step-by-step translation progress with time tracking
-- **🎯 Summary Tables**: Clean results display with success/failure counts
-- **🎨 Color Coding**: Beautiful colored output for different message types
+## Dependencies 📦
 
-### Example Output
-```
-┌─────────────────────────────────────────────────────────────┐
-│               Movie Translator - Final Pipeline            │
-├─────────────────────────────────────────────────────────────┤
-│ Setting        │ Value                                      │
-│ Input          │ /path/to/movies                           │
-│ Output         │ /path/to/movies/translated                 │
-│ Device         │ mps                                        │
-│ Batch Size     │ 16                                         │
-└─────────────────────────────────────────────────────────────┘
+MacBook-optimized dependencies managed by `uv`:
+- `torch` (MPS acceleration for Apple Silicon)
+- `transformers` (AI models)
+- `rich` (terminal UI)
+- `pysubs2` (subtitle handling)
 
-📥 Loading AI translation model...
-🔤 Loading tokenizer...
-🧠 Loading model...
-📍 Moving model to mps...
-🔧 Creating pipeline...
-✅ Model loaded successfully
+**System Requirements:**
+- macOS with Apple Silicon (M1/M2/M3)
+- `mkvtoolnix` (`brew install mkvtoolnix`)
 
-🔄 Translating 245 texts... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 00:32
-127/245 lines • 3.9 lines/sec • 00:30 remaining • 00:32 elapsed
+## How It Works 🔄
 
-Processing 3 MKV files... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 02:15
-├── Processing movie1.mkv... ✅
-├── Processing movie2.mkv... ✅  
-└── Processing movie3.mkv... ✅
-
-┌─────────────────────────────────────────────────────────────┐
-│                 Translation Complete                         │
-├─────────────────────────────────────────────────────────────┤
-│ ✅ Successful    │ 3                                          │
-│ ❌ Failed        │ 0                                          │
-│ 📁 Total         │ 3                                          │
-└─────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────┐
-│ 🎉 All files processed successfully!                        │
-│ 🎬 Clean MKVs with English dialogue + Polish translation   │
-│ 📁 Output directory: /path/to/movies/translated           │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 🚀 Enhanced Progress Features
-
-The translation progress bar now shows **live real-time statistics**:
-
-- **📊 Line Count**: `127/245 lines` - Current progress vs total
-- **⚡ Processing Speed**: `3.9 lines/sec` - Live translation speed
-- **⏰ Time Remaining**: `00:30 remaining` - Dynamic ETA calculation
-- **⏱️ Elapsed Time**: `00:32 elapsed` - Time spent so far
-- **🎯 Progress Bar**: Visual progress percentage
-
-### 📈 Smart Time Estimation
-
-- **Dynamic Calculation**: ETA updates based on current processing speed
-- **Adaptive**: Adjusts to faster/slower batches automatically
-- **Accurate**: Uses actual performance data, not estimates
-- **Real-time**: Updates every batch for precision timing
-
-## Pipeline Steps 📋
-
-1. **📖 Extract**: Finds and extracts English dialogue subtitles (skips signs/songs)
-2. **🔍 Filter**: Extracts only real dialogue lines from ASS files
-3. **🤖 Translate**: AI translates dialogue to Polish using BiDi-eng-pol model
-4. **🔨 Rebuild**: Creates clean English and Polish subtitle files
-5. **🎬 Merge**: Builds clean MKV with only 2 subtitle tracks
-6. **🔍 Verify**: Confirms perfect result
-7. **🧹 Cleanup**: Removes temporary files
-
-## Output 📁
-
-- **Input**: MKV file(s) with multiple subtitle tracks
-- **Output**: Clean MKV with exactly 2 tracks:
-  - English Dialogue (original)
-  - Polish (AI) (translated)
-- **🚫 Removed**: All signs/songs tracks
-
-## Requirements 📦
-
-- **Python**: 3.10+ (3.14 has compatibility issues)
-- **System Tools**: mkvmerge, mkvextract (from mkvtoolnix)
-- **Python Packages**: pysubs2, torch, transformers, ruff
-
-## Example Result 🎬
-
-```bash
-📁 Input:  /Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01.mkv
-📁 Output: /Users/arlen/Downloads/test_movies/translated/SPY x FAMILY - S01E01_clean.mkv
-🎬 Contains: English dialogue + Polish AI translation
-🚫 Removed: All signs/songs tracks
-```
-
-## Translation Quality 🌐
-
-The BiDi-eng-pol model provides high-quality translations:
-
-- "How much longer to the embassy?" → "Ile jeszcze do ambasady?"
-- "The brakes aren't working." → "Hamulce nie działają."
-- "We must uncover their plot, no matter the cost." → "Musimy odkryć ich spisek, bez względu na koszty."
-
-## Troubleshooting 🔧
-
-### Common Issues
-- **mkvmerge not found**: Install mkvtoolnix (`brew install mkvtoolnix` on macOS)
-- **Memory errors**: Reduce batch size (`--batch-size 8`)
-- **MPS errors**: Use CPU device (`--device cpu`)
-
-### Dependencies
-```bash
-# Install all dependencies
-make install
-
-# Check if everything is working
-uv run python3 translate.py --help
-```
-
-## Legacy Tools (Previous Version)
-
-The project also includes legacy tools for SRT-based workflows:
-- **`srt-translate`** - Translate a single SRT file
-- **`srt-extract`** - Extract English subtitles from MKV files
-- **`srt-translate-batch`** - Translate multiple SRT files
-- **`srt-apply`** - Merge Polish subtitles back into MKV files
-- **`srt-validate`** - Validate subtitle timing and structure
-
-These are still available but the new `translate.py` pipeline is recommended for better quality and cleaner output.
+1. **Extract** English subtitles from MKV
+2. **Filter** dialogue only (no signs/songs)
+3. **Translate** with AI + Rich progress bar
+4. **Create** clean MKV with English + Polish tracks
 
 ## License 📄
 
-MIT License - feel free to use and modify for your projects!
+MIT License - see LICENSE file for details.

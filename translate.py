@@ -27,10 +27,8 @@ from rich.progress import (
 )
 from rich.table import Table
 
-# Import AI translator
 from ai_translator import SubtitleTranslator as AITranslator
 
-# Rich console for fancy output
 console = Console()
 
 def get_memory_info() -> str:
@@ -73,40 +71,32 @@ def log_warning(message: str):
 def log_error(message: str):
     console.print(f"[red][ERROR][/red] {message}")
 
-
 def check_dependencies():
-    """Check required dependencies."""
     console.print(Panel.fit("[bold blue]Dependency Check[/bold blue]", border_style="blue"))
 
-    # Create a table for dependency status
     table = Table(show_header=False, box=None)
     table.add_column("Component", style="cyan")
     table.add_column("Status", style="green")
 
-    # Check Python
     version = sys.version_info
     if version.major < 3 or (version.major == 3 and version.minor < 8):
         log_error(f"Python 3.8+ required, found {version.major}.{version.minor}")
         sys.exit(1)
     log_info(f"Python: {version.major}.{version.minor}.{version.micro}")
 
-    # Check mkvmerge
     if not shutil.which("mkvmerge"):
         log_error("mkvmerge not found. Please install mkvtoolnix")
         sys.exit(1)
     result = subprocess.run(["mkvmerge", "--version"], capture_output=True, text=True)
     log_info(f"mkvmerge: {result.stdout.split()[0]}")
 
-    # Check mkvextract
     if not shutil.which("mkvextract"):
         log_error("mkvextract not found. Please install mkvtoolnix")
         sys.exit(1)
 
-    # Check Python packages
     try:
         import importlib.util
 
-        # Check if required packages are available
         required_packages = ["pysubs2", "torch", "transformers"]
         missing_packages = []
 
@@ -127,9 +117,7 @@ def check_dependencies():
 
     console.print(Panel("[bold green]✅ All dependencies satisfied[/bold green]", border_style="green"))
 
-
 def get_track_info(mkv_path: Path) -> dict[str, Any]:
-    """Get track information from MKV file."""
     try:
         result = subprocess.run(
             ["mkvmerge", "-J", str(mkv_path)],
@@ -142,13 +130,10 @@ def get_track_info(mkv_path: Path) -> dict[str, Any]:
         log_error(f"Failed to get track info from {mkv_path.name}: {e}")
         return {}
 
-
 def find_english_subtitle_track(track_info: dict[str, Any]) -> dict[str, Any] | None:
-    """Find English subtitle track, preferring dialogue over signs/songs."""
     tracks = track_info.get("tracks", [])
     english_tracks = []
 
-    # Collect all English subtitle tracks
     for track in tracks:
         if track.get("type") == "subtitles":
             props = track.get("properties", {})
@@ -159,11 +144,9 @@ def find_english_subtitle_track(track_info: dict[str, Any]) -> dict[str, Any] | 
     if not english_tracks:
         return None
 
-    # If only one track, return it
     if len(english_tracks) == 1:
         return english_tracks[0]
 
-    # Multiple tracks: prefer dialogue over signs/songs
     dialogue_tracks = []
     signs_tracks = []
 
@@ -171,20 +154,15 @@ def find_english_subtitle_track(track_info: dict[str, Any]) -> dict[str, Any] | 
         props = track.get("properties", {})
         track_name = props.get("track_name", "").lower()
 
-        # Check if it's a signs/songs track
-        if any(
-            keyword in track_name for keyword in ["sign", "song", "title", "op", "ed"]
-        ):
+        if any(keyword in track_name for keyword in ["sign", "song", "title", "op", "ed"]):
             signs_tracks.append(track)
         else:
             dialogue_tracks.append(track)
 
-    # Prefer dialogue tracks
     if dialogue_tracks:
         log_info(f"Found {len(english_tracks)} English tracks, selected dialogue track")
         return dialogue_tracks[0]
 
-    # If no dialogue tracks, prefer non-forced tracks
     non_forced_tracks = []
     for track in english_tracks:
         props = track.get("properties", {})
@@ -192,20 +170,13 @@ def find_english_subtitle_track(track_info: dict[str, Any]) -> dict[str, Any] | 
             non_forced_tracks.append(track)
 
     if non_forced_tracks:
-        log_info(
-            f"Found {len(english_tracks)} English tracks, selected non-forced track"
-        )
+        log_info(f"Found {len(english_tracks)} English tracks, selected non-forced track")
         return non_forced_tracks[0]
 
-    # Last resort: return the first English track
-    log_warning(
-        f"Found {len(english_tracks)} English tracks, all appear to be signs/songs"
-    )
+    log_warning(f"Found {len(english_tracks)} English tracks, all appear to be signs/songs")
     return english_tracks[0]
 
-
 def get_subtitle_extension(track: dict[str, Any]) -> str:
-    """Get subtitle file extension based on codec."""
     props = track.get("properties", {})
     codec = props.get("codec_id", "").lower()
 
@@ -216,9 +187,7 @@ def get_subtitle_extension(track: dict[str, Any]) -> str:
     else:
         return ".srt"
 
-
 def extract_subtitle(mkv_path: Path, track_id: int, output_path: Path) -> bool:
-    """Extract subtitle track from MKV file."""
     log_info(f"Extracting subtitle track {track_id}...")
 
     cmd = ["mkvextract", "tracks", str(mkv_path), f"{track_id}:{output_path}"]
@@ -233,9 +202,7 @@ def extract_subtitle(mkv_path: Path, track_id: int, output_path: Path) -> bool:
             log_error(f"stderr: {e.stderr}")
         return False
 
-
 def extract_dialogue_lines(ass_file: Path) -> list[tuple[int, int, str]]:
-    """Extract clean dialogue lines from ASS file."""
     log_info(f"📖 Reading {ass_file.name}...")
 
     try:
@@ -250,19 +217,14 @@ def extract_dialogue_lines(ass_file: Path) -> list[tuple[int, int, str]]:
     dialogue_lines = []
     skipped_count = 0
     
-    # CRITICAL FIX: Add deduplication like the old implementation
-    # ASS files often have multiple layers (shadows, outlines) for visual effects
-    # We only need to translate unique dialogue once
     original_count = len(subs)
     seen = {}
     unique_subs = []
     
     for event in subs:
-        # Create key from timestamp and clean text
         clean_text = event.plaintext.strip()
         key = (event.start, event.end, clean_text)
         
-        # Only keep first occurrence of each unique subtitle
         if key not in seen and clean_text and len(clean_text) >= 2:
             seen[key] = True
             unique_subs.append(event)
@@ -272,54 +234,43 @@ def extract_dialogue_lines(ass_file: Path) -> list[tuple[int, int, str]]:
         log_info(f"   - Deduplicated: {original_count} → {deduped_count} entries (removed {original_count - deduped_count} duplicate effect layers)")
 
     for event in unique_subs:
-        # Skip empty events
         if not event.text or event.text.strip() == "":
             skipped_count += 1
             continue
 
-        # Skip signs/songs based on style name
         style = getattr(event, "style", "Default")
         style_lower = style.lower()
 
-        if any(
-            keyword in style_lower for keyword in ["sign", "song", "title", "op", "ed"]
-        ):
+        if any(keyword in style_lower for keyword in ["sign", "song", "title", "op", "ed"]):
             skipped_count += 1
             continue
 
-        # Get clean text (remove ASS formatting)
         clean_text = event.plaintext.strip()
 
-        # Skip empty text after cleaning
         if not clean_text:
             skipped_count += 1
             continue
 
-        # Skip very short text (likely sound effects)
         if len(clean_text) < 2:
             skipped_count += 1
             continue
 
-        # Add to dialogue list
         dialogue_lines.append((event.start, event.end, clean_text))
 
     log_info(f"   - Extracted {len(dialogue_lines)} dialogue lines")
     log_info(f"   - Skipped {skipped_count} non-dialogue events")
 
-    # Clear memory
     del subs
     clear_memory()
     log_info(f"   - After cleanup")
 
     return dialogue_lines
 
-
 def create_clean_english_ass(
     original_ass: Path,
     dialogue_lines: list[tuple[int, int, str]],
     output_english_ass: Path,
 ):
-    """Create clean English ASS with only dialogue (no signs/songs)."""
     log_info(f"🔨 Creating clean English ASS: {output_english_ass.name}")
 
     try:
@@ -328,35 +279,26 @@ def create_clean_english_ass(
         original_subs = pysubs2.load(str(original_ass))
         log_info(f"   - Loaded original with {len(original_subs)} events")
 
-        # Create new subtitle file with only dialogue
         clean_english_subs = pysubs2.SSAFile()
         clean_english_subs.info = original_subs.info.copy()
         clean_english_subs.styles = original_subs.styles.copy()
 
-        # Add only dialogue events
         dialogue_index = 0
 
         for event in original_subs:
-            # Check if this is a dialogue event
             style = getattr(event, "style", "Default")
             style_lower = style.lower()
 
-            # Skip signs/songs
-            if any(
-                keyword in style_lower
-                for keyword in ["sign", "song", "title", "op", "ed"]
-            ):
+            if any(keyword in style_lower for keyword in ["sign", "song", "title", "op", "ed"]):
                 continue
 
-            # Check if this is dialogue with text
             if event.text and event.text.strip():
                 clean_text = event.plaintext.strip()
+
                 if clean_text and len(clean_text) >= 2:
-                    # This is dialogue - use original text
                     if dialogue_index < len(dialogue_lines):
                         start, end, original_text = dialogue_lines[dialogue_index]
 
-                        # Create new event with original text
                         new_event = pysubs2.SSAEvent(
                             start=event.start,
                             end=event.end,
@@ -366,7 +308,6 @@ def create_clean_english_ass(
                         clean_english_subs.append(new_event)
                         dialogue_index += 1
 
-        # Save the clean English ASS file
         clean_english_subs.save(str(output_english_ass))
         log_success(f"   - Saved {len(clean_english_subs)} dialogue events")
         log_info("   - Removed all non-dialogue events")
@@ -387,37 +328,29 @@ def create_polish_ass(
     try:
         import pysubs2
 
-        # Load original ASS to preserve styles and formatting
         original_subs = pysubs2.load(str(original_ass))
         log_info(f"   - Loaded {len(original_subs)} original events")
 
-        # Create new subtitle file with proper SSAFile structure
         polish_subs = pysubs2.SSAFile()
         polish_subs.info = original_subs.info.copy()
         polish_subs.styles = original_subs.styles.copy()
         dialogue_index = 0
 
         for event in original_subs:
-            # Skip non-dialogue events (same filtering as extract_dialogue_lines)
             style_lower = getattr(event, "style", "Default").lower()
             if any(keyword in style_lower for keyword in ["sign", "song", "title", "op", "ed"]):
                 continue
 
-            # Skip empty events
             if event.text and event.text.strip():
                 clean_text = event.plaintext.strip()
 
-                # Skip empty text after cleaning (consistent with extract_dialogue_lines)
                 if clean_text and len(clean_text) >= 2:
                     if dialogue_index < len(translated_dialogue):
-                        # Get translated text
                         _, _, translated_text = translated_dialogue[dialogue_index]
 
-                        # Apply font mode if needed
                         if font_mode == "replace":
                             translated_text = replace_polish_chars(translated_text)
 
-                        # Create new event with translated text
                         new_event = pysubs2.SSAEvent(
                             start=event.start,
                             end=event.end,
@@ -427,11 +360,9 @@ def create_polish_ass(
                         polish_subs.append(new_event)
                         dialogue_index += 1
 
-        # Save the Polish ASS file
         polish_subs.save(str(output_polish_ass))
         log_success(f"   - Saved {len(polish_subs)} translated events")
 
-        # Clear memory
         del original_subs
         del polish_subs
         clear_memory()
@@ -448,21 +379,17 @@ def create_clean_mkv(
     log_info(f"🎬 Creating clean MKV: {output_mkv.name}")
     log_info("   - Adding: English dialogue + Polish dialogue only")
 
-    # Build mkvmerge command
     cmd = [
         "mkvmerge",
         "-o",
         str(output_mkv),
-        # Add video and audio tracks from original (skip all subtitles)
         "--no-subtitles",
         str(original_mkv),
-        # Add clean English dialogue
         "--language",
         "0:eng",
         "--track-name",
         "0:English Dialogue",
         str(english_ass),
-        # Add Polish translation
         "--language",
         "0:pol",
         "--track-name",
@@ -474,8 +401,7 @@ def create_clean_mkv(
         subprocess.run(cmd, check=True, capture_output=True, text=True)
         log_success("   - Clean MKV merge successful")
 
-        # Check file size
-        if output_mkv.exists():
+        if output_mkv.stat().st_size == 0:
             size_mb = output_mkv.stat().st_size / 1024 / 1024
             log_info(f"   - Output size: {size_mb:.1f} MB")
 
@@ -520,7 +446,6 @@ def verify_result(output_mkv: Path):
                 f"     * Track {track['id']}: {track['name']} ({track['language']})"
             )
 
-        # Check for exactly 2 subtitle tracks: English and Polish
         if len(subtitle_tracks) == 2:
             english_found = any(t["language"] == "eng" for t in subtitle_tracks)
             polish_found = any(t["language"] == "pol" for t in subtitle_tracks)
@@ -548,18 +473,15 @@ def translate_dialogue_lines(
     """Translate dialogue lines using AI with Rich progress bar."""
     log_info(f"🤖 Step 3: AI translating to Polish...")
 
-    # Initialize AI translator
     translator = AITranslator(device=device, batch_size=batch_size)
     log_info(f"   - AI Translator initialized")
 
-    # Load model
     if not translator.load_model():
         log_error("❌ Failed to load translation model")
         return []
 
     log_info(f"   - Model loaded")
 
-    # Create Rich progress bar for translation
     texts = [text for _, _, text in dialogue_lines]
     total_batches = (len(texts) + batch_size - 1) // batch_size
     
@@ -715,15 +637,15 @@ EXAMPLES:
 
     parser.add_argument(
         "--device",
-        choices=["auto", "cpu", "cuda", "mps"],
-        default="auto",
-        help="Translation device (default: auto)",
+        choices=["mps", "cpu"],
+        default="mps",  # MacBook optimized
+        help="Translation device (default: mps)",
     )
 
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=16,  # Restored from working old implementation
+        default=16,
         help="Translation batch size (default: 16)",
     )
 
@@ -746,13 +668,10 @@ EXAMPLES:
         else:
             output_dir = input_path / "translated"
 
-    # Create output directory
     output_dir.mkdir(exist_ok=True)
 
-    # Check dependencies
     check_dependencies()
 
-    # Print configuration with fancy panel
     config_table = Table(title="[bold blue]Movie Translator - Final Pipeline[/bold blue]", show_header=False, box=None)
     config_table.add_column("Setting", style="cyan")
     config_table.add_column("Value", style="white")

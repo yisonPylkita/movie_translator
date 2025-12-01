@@ -263,9 +263,9 @@ wheels = [
 ]
 
 [[package]]
-name = "movie-translator"
+name = "movie-translator-dependencies"
 version = "0.2.0"
-source = { editable = "." }
+source = { virtual = "." }
 dependencies = [
     { name = "protobuf" },
     { name = "psutil" },
@@ -273,7 +273,6 @@ dependencies = [
     { name = "rich" },
     { name = "sentencepiece" },
     { name = "torch" },
-    { name = "tqdm" },
     { name = "transformers" },
 ]
 
@@ -290,7 +289,6 @@ requires-dist = [
     { name = "rich", specifier = ">=14.2.0" },
     { name = "sentencepiece", specifier = ">=0.1.99" },
     { name = "torch", specifier = ">=2.0.0" },
-    { name = "tqdm", specifier = ">=4.67.1" },
     { name = "transformers", specifier = ">=4.30.0" },
 ]
 

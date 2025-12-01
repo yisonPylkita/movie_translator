@@ -1,12 +1,10 @@
 [project]
-name = "movie-translator"
+name = "movie-translator-dependencies"
 version = "0.2.0"
-description = "Movie/anime subtitle translator with MKV support (EN→PL) optimized for M1 MacBook Air"
-readme = "README.md"
+description = "Dependencies for Movie Translator (MacBook optimized)"
 requires-python = ">=3.10,<3.14"  # Python 3.14 has sentencepiece compatibility issues
 dependencies = [
     "pysubs2>=1.8.0",      # SRT subtitle parsing
-    "tqdm>=4.67.1",         # Progress bars
     "transformers>=4.30.0", # ML models
     "torch>=2.0.0",         # PyTorch for model inference
     "sentencepiece>=0.1.99", # Tokenizer for T5 models
@@ -14,16 +12,6 @@ dependencies = [
     "rich>=14.2.0",         # Fancy terminal output
     "psutil>=7.1.3",
 ]
-
-[project.scripts]
-srt-translate = "movie_translator.translate:main"
-srt-validate = "movie_translator.validate_subtitles:main"
-srt-extract = "movie_translator.extract:main"
-srt-translate-batch = "movie_translator.translate_batch:main"
-srt-apply = "movie_translator.apply:main"
-
-[tool.uv]
-package = true
 
 [dependency-groups]
 dev = [
