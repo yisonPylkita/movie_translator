@@ -481,16 +481,51 @@ def extract_dialogue_lines(subtitle_file: Path) -> list[tuple[int, int, str]]:
     skipped_count = 0
 
     original_count = len(subs)
-    seen = {}
+    # Group consecutive events with the same text (animated subtitles)
     unique_subs = []
+    last_text = None
+    current_group_start = None
+    current_group_end = None
 
     for event in subs:
         clean_text = event.plaintext.strip()
-        key = (event.start, event.end, clean_text)
 
-        if key not in seen and clean_text and len(clean_text) >= 2:
-            seen[key] = True
+        # Skip empty or too short text
+        if not clean_text or len(clean_text) < 2:
+            continue
+
+        # If this is the same text as the previous event (consecutive duplicate)
+        if last_text == clean_text:
+            # Extend the time span to include this duplicate
+            current_group_end = max(current_group_end, event.end)
+            continue
+        else:
+            # Save the previous group if it exists
+            if last_text is not None:
+                # Create a new event with the consolidated timing
+                consolidated_event = pysubs2.SSAEvent(
+                    start=current_group_start,
+                    end=current_group_end,
+                    style=unique_subs[-1].style if unique_subs else 'Default',
+                    text=last_text,
+                )
+                unique_subs[-1] = consolidated_event
+
+            # Start a new group
+            last_text = clean_text
+            current_group_start = event.start
+            current_group_end = event.end
             unique_subs.append(event)
+
+    # Handle the last group
+    if last_text is not None and unique_subs:
+        consolidated_event = pysubs2.SSAEvent(
+            start=current_group_start,
+            end=current_group_end,
+            style=unique_subs[-1].style,
+            text=last_text,
+        )
+        unique_subs[-1] = consolidated_event
 
     deduped_count = len(unique_subs)
     if deduped_count < original_count:
@@ -549,30 +584,17 @@ def create_clean_english_ass(
         clean_english_subs.info = original_subs.info.copy()
         clean_english_subs.styles = original_subs.styles.copy()
 
-        dialogue_index = 0
-
-        for event in original_subs:
-            style = getattr(event, 'style', 'Default')
-            style_lower = style.lower()
-
-            if any(keyword in style_lower for keyword in ['sign', 'song', 'title', 'op', 'ed']):
-                continue
-
-            if event.text and event.text.strip():
-                clean_text = event.plaintext.strip()
-
-                if clean_text and len(clean_text) >= 2:
-                    if dialogue_index < len(dialogue_lines):
-                        start, end, original_text = dialogue_lines[dialogue_index]
-
-                        new_event = pysubs2.SSAEvent(
-                            start=event.start,
-                            end=event.end,
-                            style=event.style,
-                            text=original_text,
-                        )
-                        clean_english_subs.append(new_event)
-                        dialogue_index += 1
+        # Create dialogue events directly from the extracted dialogue lines
+        for start, end, text in dialogue_lines:
+            # Replace newlines with \N (ASS line break) to prevent line wrapping
+            clean_text = text.replace('\n', '\\N')
+            new_event = pysubs2.SSAEvent(
+                start=start,
+                end=end,
+                style='Default',
+                text=clean_text,
+            )
+            clean_english_subs.append(new_event)
 
         clean_english_subs.save(str(output_english_ass))
         log_success(f'   - Saved {len(clean_english_subs)} dialogue events')
@@ -580,6 +602,86 @@ def create_clean_english_ass(
 
     except Exception as e:
         log_error(f'Failed to create clean English ASS: {e}')
+
+
+def validate_cleaned_subtitles(
+    original_ass: Path,
+    cleaned_ass: Path,
+) -> bool:
+    """Validate that cleaned subtitles are a proper subset of original with matching timestamps."""
+    log_info('🔍 Validating cleaned subtitles...')
+
+    try:
+        import pysubs2
+
+        # Load both files
+        original_subs = pysubs2.load(str(original_ass))
+        cleaned_subs = pysubs2.load(str(cleaned_ass))
+
+        # Create dictionary of cleaned subs by text for easy lookup
+        cleaned_dict = {}
+        for event in cleaned_subs:
+            clean_text = event.text.replace('\\N', ' ').strip()
+            if clean_text:
+                if clean_text not in cleaned_dict:
+                    cleaned_dict[clean_text] = []
+                cleaned_dict[clean_text].append((event.start, event.end))
+
+        # Check each original dialogue line
+        mismatches = 0
+        matches = 0
+        original_dialogue_count = 0
+        found_in_cleaned = 0
+
+        for event in original_subs:
+            style = getattr(event, 'style', 'Default')
+            style_lower = style.lower()
+
+            # Skip non-dialogue styles
+            if any(keyword in style_lower for keyword in ['sign', 'song', 'title', 'op', 'ed']):
+                continue
+
+            clean_text = event.plaintext.strip()
+            if not clean_text or len(clean_text) < 2:
+                continue
+
+            original_dialogue_count += 1
+
+            # Check if this dialogue line exists in cleaned version
+            if clean_text in cleaned_dict:
+                found_in_cleaned += 1
+
+                # Check if this original event is covered by any cleaned event with the same text
+                is_covered = False
+                for clean_start, clean_end in cleaned_dict[clean_text]:
+                    if clean_start <= event.start and clean_end >= event.end:
+                        matches += 1
+                        is_covered = True
+                        break
+
+                if not is_covered:
+                    mismatches += 1
+                    log_warning(f'   - Timing gap for "{clean_text[:30]}..."')
+                    log_warning(f'     Original: {event.start} → {event.end}')
+                    for clean_start, clean_end in cleaned_dict[clean_text]:
+                        log_warning(f'     Cleaned:  {clean_start} → {clean_end}')
+
+        log_info(f'   - Original dialogue lines: {original_dialogue_count}')
+        log_info(f'   - Cleaned dialogue lines:  {len(cleaned_subs)}')
+        log_info(f'   - Lines covered:          {matches}')
+        log_info(f'   - Timing gaps:            {mismatches}')
+        log_info(f'   - Lines correctly removed: {original_dialogue_count - found_in_cleaned}')
+
+        if mismatches == 0:
+            log_success('   ✅ All original events are properly covered!')
+            return True
+        else:
+            log_error(f'   ❌ Found {mismatches} timing gaps!')
+            return False
+
+    except Exception as e:
+        log_error(f'Failed to validate cleaned subtitles: {e}')
+        return False
 
 
 def create_polish_ass(
@@ -600,31 +702,22 @@ def create_polish_ass(
         polish_subs = pysubs2.SSAFile()
         polish_subs.info = original_subs.info.copy()
         polish_subs.styles = original_subs.styles.copy()
-        dialogue_index = 0
 
-        for event in original_subs:
-            style_lower = getattr(event, 'style', 'Default').lower()
-            if any(keyword in style_lower for keyword in ['sign', 'song', 'title', 'op', 'ed']):
-                continue
+        # Create Polish events directly from the translated dialogue lines
+        for start, end, translated_text in translated_dialogue:
+            if font_mode == 'replace':
+                translated_text = replace_polish_chars(translated_text)
 
-            if event.text and event.text.strip():
-                clean_text = event.plaintext.strip()
+            # Replace newlines with \N (ASS line break) to prevent line wrapping
+            clean_text = translated_text.replace('\n', '\\N')
 
-                if clean_text and len(clean_text) >= 2:
-                    if dialogue_index < len(translated_dialogue):
-                        _, _, translated_text = translated_dialogue[dialogue_index]
-
-                        if font_mode == 'replace':
-                            translated_text = replace_polish_chars(translated_text)
-
-                        new_event = pysubs2.SSAEvent(
-                            start=event.start,
-                            end=event.end,
-                            style=event.style,
-                            text=translated_text,
-                        )
-                        polish_subs.append(new_event)
-                        dialogue_index += 1
+            new_event = pysubs2.SSAEvent(
+                start=start,
+                end=end,
+                style='Default',
+                text=clean_text,
+            )
+            polish_subs.append(new_event)
 
         polish_subs.save(str(output_polish_ass))
         log_success(f'   - Saved {len(polish_subs)} translated events')
@@ -879,6 +972,13 @@ def process_mkv_file(
     polish_ass = output_dir / f'{mkv_path.stem}_polish.ass'
 
     create_clean_english_ass(extracted_ass, dialogue_lines, clean_english_ass)
+
+    # Validate that cleaned subtitles have correct timestamps
+    extracted_ass_path = output_dir / f'{mkv_path.stem}_extracted.ass'
+    if not validate_cleaned_subtitles(extracted_ass_path, clean_english_ass):
+        log_error('❌ Validation failed! Cleaned subtitles have timestamp mismatches.')
+        return False
+
     create_polish_ass(extracted_ass, translated_dialogue, polish_ass)
 
     # Step 5: Create clean MKV (replace original)
