@@ -1,285 +1,212 @@
 # Movie Translator 🎬
 
-**Translate movie/anime subtitles from English to Polish** using local ML models.
+Complete pipeline for extracting English dialogue from MKV files and translating to Polish using AI.
 
-Optimized for **M1/M2 MacBook Air** - runs completely offline, no API keys needed.
+## Features 🚀
 
-## Tools Overview
+- **Smart Extraction**: Automatically finds English dialogue subtitle tracks (skips signs/songs)
+- **AI Translation**: Uses `allegro/BiDi-eng-pol` model for high-quality English→Polish translation
+- **Clean Output**: Creates MKV files with only 2 subtitle tracks (English dialogue + Polish translation)
+- **MacBook Optimized**: MPS acceleration for Apple Silicon, optimized batch processing
+- **Quality Code**: Linted with Ruff for clean, maintainable code
+- **🎨 Fancy Terminal Output**: Beautiful Rich progress bars, spinners, and live updates
 
-### Single File Translation
+## Quick Start 🎯
+
+### Setup (One-time)
+```bash
+cd /Users/arlen/h_dev/movie_translator
+make setup  # Installs dependencies and runs linter
+```
+
+### Basic Usage
+```bash
+# Process single MKV file
+uv run python3 translate.py ~/Downloads/test_movies/SPY\ x\ FAMILY\ -\ S01E01.mkv
+
+# Process directory of MKV files
+uv run python3 translate.py ~/Downloads/test_movies
+
+# Custom output directory
+uv run python3 translate.py ~/Downloads/test_movies --output ~/Downloads/translated_movies
+```
+
+### Advanced Options
+```bash
+# MacBook optimized (MPS + batch size)
+uv run python3 translate.py ~/Downloads/test_movies --device mps --batch-size 16
+
+# CPU processing (if MPS issues)
+uv run python3 translate.py ~/Downloads/test_movies --device cpu --batch-size 8
+
+# Larger batch size (faster but more memory)
+uv run python3 translate.py ~/Downloads/test_movies --device mps --batch-size 32
+```
+
+## Development 🛠️
+
+### Code Quality
+```bash
+# Lint code
+make lint
+
+# Format code
+make format
+
+# Run both lint and format
+make check
+
+# Clean temporary files
+make clean
+```
+
+### Testing
+```bash
+# Quick test
+make test
+
+# Full pipeline test
+make run-example
+```
+
+## 🎨 Terminal Output
+
+The translator now features **beautiful Rich terminal output** with:
+
+- **📊 Configuration Panels**: Clean tables showing your settings
+- **⚡ Live Progress Bars**: Real-time progress for file processing and translation
+- **🔄 Spinners**: Animated status indicators for model loading
+- **📈 Batch Progress**: Step-by-step translation progress with time tracking
+- **🎯 Summary Tables**: Clean results display with success/failure counts
+- **🎨 Color Coding**: Beautiful colored output for different message types
+
+### Example Output
+```
+┌─────────────────────────────────────────────────────────────┐
+│               Movie Translator - Final Pipeline            │
+├─────────────────────────────────────────────────────────────┤
+│ Setting        │ Value                                      │
+│ Input          │ /path/to/movies                           │
+│ Output         │ /path/to/movies/translated                 │
+│ Device         │ mps                                        │
+│ Batch Size     │ 16                                         │
+└─────────────────────────────────────────────────────────────┘
+
+📥 Loading AI translation model...
+🔤 Loading tokenizer...
+🧠 Loading model...
+📍 Moving model to mps...
+🔧 Creating pipeline...
+✅ Model loaded successfully
+
+🔄 Translating 245 texts... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 00:32
+127/245 lines • 3.9 lines/sec • 00:30 remaining • 00:32 elapsed
+
+Processing 3 MKV files... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 02:15
+├── Processing movie1.mkv... ✅
+├── Processing movie2.mkv... ✅  
+└── Processing movie3.mkv... ✅
+
+┌─────────────────────────────────────────────────────────────┐
+│                 Translation Complete                         │
+├─────────────────────────────────────────────────────────────┤
+│ ✅ Successful    │ 3                                          │
+│ ❌ Failed        │ 0                                          │
+│ 📁 Total         │ 3                                          │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│ 🎉 All files processed successfully!                        │
+│ 🎬 Clean MKVs with English dialogue + Polish translation   │
+│ 📁 Output directory: /path/to/movies/translated           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 🚀 Enhanced Progress Features
+
+The translation progress bar now shows **live real-time statistics**:
+
+- **📊 Line Count**: `127/245 lines` - Current progress vs total
+- **⚡ Processing Speed**: `3.9 lines/sec` - Live translation speed
+- **⏰ Time Remaining**: `00:30 remaining` - Dynamic ETA calculation
+- **⏱️ Elapsed Time**: `00:32 elapsed` - Time spent so far
+- **🎯 Progress Bar**: Visual progress percentage
+
+### 📈 Smart Time Estimation
+
+- **Dynamic Calculation**: ETA updates based on current processing speed
+- **Adaptive**: Adjusts to faster/slower batches automatically
+- **Accurate**: Uses actual performance data, not estimates
+- **Real-time**: Updates every batch for precision timing
+
+## Pipeline Steps 📋
+
+1. **📖 Extract**: Finds and extracts English dialogue subtitles (skips signs/songs)
+2. **🔍 Filter**: Extracts only real dialogue lines from ASS files
+3. **🤖 Translate**: AI translates dialogue to Polish using BiDi-eng-pol model
+4. **🔨 Rebuild**: Creates clean English and Polish subtitle files
+5. **🎬 Merge**: Builds clean MKV with only 2 subtitle tracks
+6. **🔍 Verify**: Confirms perfect result
+7. **🧹 Cleanup**: Removes temporary files
+
+## Output 📁
+
+- **Input**: MKV file(s) with multiple subtitle tracks
+- **Output**: Clean MKV with exactly 2 tracks:
+  - English Dialogue (original)
+  - Polish (AI) (translated)
+- **🚫 Removed**: All signs/songs tracks
+
+## Requirements 📦
+
+- **Python**: 3.10+ (3.14 has compatibility issues)
+- **System Tools**: mkvmerge, mkvextract (from mkvtoolnix)
+- **Python Packages**: pysubs2, torch, transformers, ruff
+
+## Example Result 🎬
+
+```bash
+📁 Input:  /Users/arlen/Downloads/test_movies/SPY x FAMILY - S01E01.mkv
+📁 Output: /Users/arlen/Downloads/test_movies/translated/SPY x FAMILY - S01E01_clean.mkv
+🎬 Contains: English dialogue + Polish AI translation
+🚫 Removed: All signs/songs tracks
+```
+
+## Translation Quality 🌐
+
+The BiDi-eng-pol model provides high-quality translations:
+
+- "How much longer to the embassy?" → "Ile jeszcze do ambasady?"
+- "The brakes aren't working." → "Hamulce nie działają."
+- "We must uncover their plot, no matter the cost." → "Musimy odkryć ich spisek, bez względu na koszty."
+
+## Troubleshooting 🔧
+
+### Common Issues
+- **mkvmerge not found**: Install mkvtoolnix (`brew install mkvtoolnix` on macOS)
+- **Memory errors**: Reduce batch size (`--batch-size 8`)
+- **MPS errors**: Use CPU device (`--device cpu`)
+
+### Dependencies
+```bash
+# Install all dependencies
+make install
+
+# Check if everything is working
+uv run python3 translate.py --help
+```
+
+## Legacy Tools (Previous Version)
+
+The project also includes legacy tools for SRT-based workflows:
 - **`srt-translate`** - Translate a single SRT file
-
-### Three-Step MKV Workflow (Recommended)
 - **`srt-extract`** - Extract English subtitles from MKV files
 - **`srt-translate-batch`** - Translate multiple SRT files
 - **`srt-apply`** - Merge Polish subtitles back into MKV files
-
-### Utilities
 - **`srt-validate`** - Validate subtitle timing and structure
 
-## Features
+These are still available but the new `translate.py` pipeline is recommended for better quality and cleaner output.
 
-- ✅ **100% Local** - No API keys, no internet, no cloud
-- ⚡ **M1 Optimized** - Uses MPS acceleration + float16 for 3-5x speed
-- 🎯 **Modular** - Use separately or together
-- 🪶 **Lightweight** - ~222MB model, 2-4GB RAM
-- 🔋 **Fast** - ~50-100 lines/second on M1 with MPS
+## License 📄
 
-## Requirements
-
-**For both tools:**
-- **Python 3.13** (3.10-3.13 supported, NOT 3.14)
-- `uv` package manager
-- M1/M2 Mac (or any system with CPU/CUDA)
-
-**Additional for `movie-translate`:**
-- MKVToolNix (`mkvmerge`, `mkvextract`)
-  ```bash
-  brew install mkvtoolnix
-  ```
-
-## Installation
-
-### Option 1: Automatic (Recommended - macOS)
-
-The `translate.sh` script automatically installs everything you need!
-
-```bash
-# 1. Clone the repository
-git clone git@github.com:yisonPylkita/movie_translator.git
-cd movie_translator
-
-# 2. Run the script - it handles all dependencies automatically
-./translate.sh /path/to/your/movies
-```
-
-**What it installs automatically:**
-- ✅ Homebrew (if not present)
-- ✅ uv (Python package manager)
-- ✅ mkvtoolnix (for MKV file manipulation)
-
-**Requirements:**
-- Python 3 (pre-installed on macOS)
-- Terminal
-
-That's it! No manual setup required.
-
-### Option 2: Manual Installation
-
-If you prefer to install dependencies manually:
-
-```bash
-# 1. Install mkvtoolnix
-brew install mkvtoolnix
-
-# 2. Install uv (Python package manager)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# 3. Clone and sync
-git clone git@github.com:yisonPylkita/movie_translator.git
-cd movie_translator
-uv sync
-```
-
-## Usage
-
-### One-Command Solution (Easiest)
-
-Run the complete workflow with a single script that processes files **one at a time**:
-
-```bash
-# Full automatic workflow
-./translate.bash /path/to/anime
-
-# With backup and keep SRT files
-./translate.bash --backup --keep-srt /path/to/movies
-
-# Custom translation settings
-./translate.bash --device mps --batch-size 32 /path/to/anime
-```
-
-**Why file-by-file processing?**
-- 🎬 **Start watching immediately** - Episode 1 is ready while Episode 2 processes
-- 🔄 **Resume-friendly** - Stop and resume anytime
-- 💾 **Memory efficient** - Processes one file completely before moving to next
-
-**What it does for each file:**
-1. Extracts English subtitle → `movie_en.srt`
-2. Translates to Polish → `movie_pl.srt` (strips tags, preserves line breaks)
-3. Merges into MKV with **ONLY** English + Polish tracks
-4. Cleans up SRT files (unless `--keep-srt`)
-5. Moves to next file
-
-**Final result:** Each MKV contains only 2 subtitle tracks:
-- English (original, default)
-- Polish (AI-generated)
-
-### Manual Control (Individual Files)
-
-All commands now work on **single files** for fine-grained control:
-
-```bash
-# Step 1: Extract English subtitles from one MKV
-uv run srt-extract movie.mkv
-# Creates: movie_en.srt
-
-# Step 2: Translate one SRT file to Polish
-uv run srt-translate movie_en.srt movie_pl.srt
-# Creates: movie_pl.srt
-
-# Step 3: Apply subtitles to one MKV
-uv run srt-apply movie.mkv
-# Updates: movie.mkv with English + Polish tracks only
-```
-
-**Use this when:** You want to process specific files manually or customize the workflow.
-
-**Benefits:**
-- 🎯 **Full control** - Review/edit subtitles between steps
-- 🔄 **Resume workflow** - Skip completed steps automatically
-- 🛡️ **Safe** - Use `--backup` flag to create .bak files
-- ⚡ **Fast** - Translate multiple files in one model loading session
-
-**Advanced options:**
-```bash
-# Extract with specific pattern
-uv run srt-extract /path/to/movies
-
-# Translate with custom settings
-uv run srt-translate-batch /path/to/movies --device mps --batch-size 32
-
-# Apply with backup
-uv run srt-apply /path/to/movies --backup
-```
-
-### Single File Translation
-
-Translate a single SRT file:
-
-```bash
-# Basic translation
-uv run srt-translate input.srt output.srt
-
-# With options
-uv run srt-translate input.srt output.srt --device cpu --batch-size 32
-```
-
-### Subtitle Validation
-
-Verify translation quality:
-
-```bash
-# Validate timing and structure
-uv run srt-validate movie_en.srt movie_pl.srt
-```
-
-**Validation checks:**
-- ✅ Entry count matches
-- ✅ Timestamps match (50ms tolerance)
-- ✅ Duration consistency
-- ⚠️ Line break preservation (warnings only)
-
-### Options
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--model` | Translation model | `gsarti/opus-mt-tc-en-pl` |
-| `--device` | `auto`, `cpu`, `cuda`, or `mps` | `auto` (detects M1) |
-| `--batch-size` | Lines per batch (higher = faster + more RAM) | `16` |
-
-## How It Works
-
-### `srt-translate` (Simple)
-
-1. **Loads** SRT file
-2. **Batches** subtitle lines
-3. **Translates** using local Marian MT model
-4. **Saves** translated SRT with original timing
-
-### `movie-translate` (Full Pipeline)
-
-1. **Scans** for MKV files
-2. **Identifies** English subtitle tracks using `mkvmerge`
-3. **Extracts** subtitles to SRT using `mkvextract`
-4. **Translates** SRT using `srt-translate` logic
-5. **Merges** Polish subtitles back into MKV using `mkvmerge`
-6. **Replaces** original file with updated version
-
-**Translation engine:**
-- Auto-detects M1/MPS acceleration
-- Uses float16 precision for 2x speed
-- Greedy decoding for fastest results
-
-## Performance
-
-**M1 MacBook Air (MPS + float16):**
-- First run: ~10-15s (model loading)
-- Translation: ~50-100 lines/second
-- Memory: 2-4GB RAM
-
-**CPU mode:**
-- Translation: ~10-20 lines/second
-- Slower but more compatible
-
-## Troubleshooting
-
-### "Failed to load model: not a string"
-
-**Cause:** Python 3.14 incompatibility with sentencepiece
-
-**Fix:**
-```bash
-brew install python@3.13
-rm -rf .venv
-uv sync
-```
-
-### Model loads but translation is slow
-
-- Check MPS is detected: Look for "Detected M1/M2 Mac - using MPS acceleration" in logs
-- Close other apps to free GPU
-- CPU fallback is slower but always works
-
-### Out of memory
-
-- Reduce batch size: `--batch-size 8` or `--batch-size 4`
-- Use CPU mode: `--device cpu` (uses less memory)
-
-## Model
-
-Currently using **`gsarti/opus-mt-tc-en-pl`**:
-- Marian MT architecture (no sentencepiece issues)
-- 222MB model size
-- Trained on EN→PL translation
-- Good quality for general subtitles
-
-## Design Philosophy
-
-**Separation of concerns:**
-
-- **`srt-translate`**: Core translation logic - reusable, testable, simple
-- **`movie-translate`**: MKV orchestration - wraps translation with extraction/merging
-
-**Benefits:**
-- Use `srt-translate` for any SRT source (downloads, OCR, etc.)
-- Use `movie-translate` for convenience with MKV files
-- Both share the same optimized translation engine
-- Can be used independently or together
-
-**Example workflow combinations:**
-```bash
-# Option 1: Full automatic (MKV)
-movie-translate movies/
-
-# Option 2: Manual control (extract + translate + merge yourself)
-mkvextract tracks movie.mkv 2:eng.srt
-srt-translate eng.srt pol.srt
-mkvmerge -o output.mkv movie.mkv --language 0:pl pol.srt
-
-# Option 3: Just translate (from any source)
-srt-translate downloaded.srt translated.srt
-```
-
-## License
-
-MIT
+MIT License - feel free to use and modify for your projects!
