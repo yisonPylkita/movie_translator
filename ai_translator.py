@@ -7,15 +7,16 @@ Memory-optimized version
 
 import gc
 import os
+import time
 
-import psutil
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
 
 # Model configuration (from previous working setup)
 DEFAULT_MODEL = "allegro/BiDi-eng-pol"
 DEFAULT_DEVICE = "auto"  # Will use MPS for Apple Silicon
-DEFAULT_BATCH_SIZE = 8  # Reduced from 16 for memory efficiency
+DEFAULT_BATCH_SIZE = 16  # Restored from working old implementation
+
 
 
 class SubtitleTranslator:
@@ -51,35 +52,22 @@ class SubtitleTranslator:
         return device
 
     def _clear_memory(self):
-        """Clear memory caches and force garbage collection."""
+        """Clear memory caches and force garbage collection (proven approach)."""
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+        # Add MPS support like the working old implementation
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            torch.mps.empty_cache()
         gc.collect()
 
-    def _get_memory_info(self) -> str:
-        """Get current memory usage information."""
-        try:
-            process = psutil.Process(os.getpid())
-            memory_info = process.memory_info()
-            memory_mb = memory_info.rss / 1024 / 1024
-
-            if torch.cuda.is_available():
-                allocated = torch.cuda.memory_allocated() / 1024**3
-                cached = torch.cuda.memory_reserved() / 1024**3
-                return f"Process: {memory_mb:.1f}MB, GPU: {allocated:.1f}GB allocated, {cached:.1f}GB cached"
-            else:
-                return f"Process: {memory_mb:.1f}MB"
-        except Exception:
-            return "Memory info unavailable"
-
+    
     def load_model(self):
         """Load the translation model with memory optimization."""
-        print("📥 Loading translation model (Memory Optimized)...")
+        print("📥 Loading translation model...")
 
         try:
             # Clear memory before loading
             self._clear_memory()
-            print(f"   - Memory before loading: {self._get_memory_info()}")
 
             # Load tokenizer and model with memory optimization
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
@@ -98,7 +86,6 @@ class SubtitleTranslator:
             # We'll create fresh pipelines for each text
             self.translation_pipeline = None
 
-            print(f"   - Memory after loading: {self._get_memory_info()}")
             print(f"   ✅ Model loaded successfully on {self.device}")
             return True
 
@@ -106,74 +93,105 @@ class SubtitleTranslator:
             print(f"   ❌ Failed to load model: {e}")
             return False
 
-    def translate_texts(self, texts: list[str]) -> list[str]:
-        """Translate a list of texts with aggressive memory management."""
-        print(f"🔄 Translating {len(texts)} texts (Aggressive Memory Management)...")
-        print(f"   - Memory before translation: {self._get_memory_info()}")
+    def translate_texts(self, texts: list[str], progress_callback=None) -> list[str]:
+        """Translate a list of texts using direct model calls with optional progress callback."""
+        print(f"🔄 Translating {len(texts)} texts...")
+
+        if not texts:
+            return []
 
         translations = []
-
-        # VERY AGGRESSIVE: Process 1 text at a time but with shared model
-        # This is slower but should prevent any memory accumulation
-
-        for i, text in enumerate(texts):
-            batch_num = i + 1
-
-            # Memory check every 10 texts
-            if i % 10 == 0:
-                print(f"   📦 Text {batch_num}/{len(texts)} (Memory: {self._get_memory_info()})")
-
+        total_batches = (len(texts) + self.batch_size - 1) // self.batch_size
+        start_time = time.time()
+        
+        # Process batches with optional progress callback
+        for i in range(0, len(texts), self.batch_size):
+            batch_texts = texts[i:i + self.batch_size]
+            batch_num = i // self.batch_size + 1
+            
             try:
-                # Create fresh pipeline for EACH text (but reuse model/tokenizer)
-                temp_pipeline = pipeline(
-                    "translation",
-                    model=self.model,
-                    tokenizer=self.tokenizer,
-                    device=self.device,
-                    clean_up_tokenization_spaces=True,
-                )
-
-                # Translate single text
-                result = temp_pipeline(text)
-                translated_text = result[0]["translation_text"]
-                translations.append(translated_text)
-
-                # AGGRESSIVE cleanup
-                del temp_pipeline
-
-                # Clear any model state that might be accumulating
-                if hasattr(self.model, 'cache'):
-                    self.model.cache = None
-                if hasattr(self.model, 'past_key_values'):
-                    self.model.past_key_values = None
-
-                # Force garbage collection
-                self._clear_memory()
-                gc.collect()
-
-                # Memory check every 10 texts
-                if i % 10 == 0:
-                    print(f"      🧹 Text {batch_num} cleaned (Memory: {self._get_memory_info()})")
-
+                # Direct model translation (proven approach from old implementation)
+                batch_translations = self._translate_batch_direct(batch_texts)
+                translations.extend(batch_translations)
+                
+                # Update progress if callback provided
+                if progress_callback:
+                    elapsed = time.time() - start_time
+                    lines_processed = min(batch_num * self.batch_size, len(texts))
+                    rate = lines_processed / elapsed if elapsed > 0 else 0
+                    progress_callback(batch_num, total_batches, rate)
+                
+                # Periodic cleanup like old implementation (every 50 batches worth of text)
+                if i > 0 and i % (self.batch_size * 50) == 0:
+                    self._clear_memory()
+                    
             except Exception as e:
-                print(f"      ❌ Text {batch_num} failed: {e}")
-                # Fallback: return original text
-                translations.append(text)
+                # Show error on progress if callback provided
+                if progress_callback:
+                    progress_callback(batch_num, total_batches, 0, error=str(e)[:50])
+                # Fallback: return original texts for this batch
+                translations.extend(batch_texts)
 
-        # Final memory cleanup
+        # Final cleanup
         self._clear_memory()
-        print(f"   - Memory after translation: {self._get_memory_info()}")
         print(f"   ✅ Translation complete: {len(translations)} texts processed")
 
         return translations
+
+    def _translate_batch_direct(self, texts: list[str]) -> list[str]:
+        """Direct batch translation using model.generate() (proven working approach)."""
+        try:
+            import torch
+        except ImportError:
+            raise Exception("torch not installed")
+
+        # Handle BiDi model prefix like old implementation
+        if "bidi" in self.model_name.lower():
+            target = "pol"
+            texts = [f">>{target}<< {text}" for text in texts]
+
+        # Tokenize batch
+        encoded = self.tokenizer.batch_encode_plus(
+            texts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=512,
+        )
+
+        # Move to device if not CPU
+        if self.device != "cpu":
+            encoded = {k: v.to(self.device) for k, v in encoded.items()}
+
+        # Generate translations
+        with torch.inference_mode():
+            translations = self.model.generate(
+                **encoded,
+                max_new_tokens=128,
+                num_beams=1,
+                early_stopping=True,
+                do_sample=False,
+            )
+
+        # Decode results
+        decoded = self.tokenizer.batch_decode(
+            translations,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=True,
+        )
+
+        # Clean up tensors
+        del encoded
+        del translations
+        
+        return decoded
 
     def cleanup(self):
         """Clean up model and free memory."""
         print("🧹 Cleaning up AI Translator...")
 
-        # Clear pipeline if it exists
-        if self.translation_pipeline:
-            del self.translation_pipeline
+        # Clear pipeline reference if it exists
+        self.translation_pipeline = None
 
         # Clear model and tokenizer
         if self.model:
@@ -188,7 +206,6 @@ class SubtitleTranslator:
 
         # Final memory cleanup
         self._clear_memory()
-        print(f"   - Memory after cleanup: {self._get_memory_info()}")
 
     def translate_dialogue_lines(
         self, dialogue_lines: list[tuple[int, int, str]]

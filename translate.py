@@ -236,21 +236,42 @@ def extract_subtitle(mkv_path: Path, track_id: int, output_path: Path) -> bool:
 
 def extract_dialogue_lines(ass_file: Path) -> list[tuple[int, int, str]]:
     """Extract clean dialogue lines from ASS file."""
-    log_info(f"📖 Reading {ass_file.name}... (Memory: {get_memory_info()})")
+    log_info(f"📖 Reading {ass_file.name}...")
 
     try:
         import pysubs2
 
         subs = pysubs2.load(str(ass_file))
-        log_info(f"   - Loaded {len(subs)} total events (Memory: {get_memory_info()})")
+        log_info(f"   - Loaded {len(subs)} total events")
     except Exception as e:
         log_error(f"Failed to load: {e}")
         return []
 
     dialogue_lines = []
     skipped_count = 0
-
+    
+    # CRITICAL FIX: Add deduplication like the old implementation
+    # ASS files often have multiple layers (shadows, outlines) for visual effects
+    # We only need to translate unique dialogue once
+    original_count = len(subs)
+    seen = {}
+    unique_subs = []
+    
     for event in subs:
+        # Create key from timestamp and clean text
+        clean_text = event.plaintext.strip()
+        key = (event.start, event.end, clean_text)
+        
+        # Only keep first occurrence of each unique subtitle
+        if key not in seen and clean_text and len(clean_text) >= 2:
+            seen[key] = True
+            unique_subs.append(event)
+
+    deduped_count = len(unique_subs)
+    if deduped_count < original_count:
+        log_info(f"   - Deduplicated: {original_count} → {deduped_count} entries (removed {original_count - deduped_count} duplicate effect layers)")
+
+    for event in unique_subs:
         # Skip empty events
         if not event.text or event.text.strip() == "":
             skipped_count += 1
@@ -282,13 +303,13 @@ def extract_dialogue_lines(ass_file: Path) -> list[tuple[int, int, str]]:
         # Add to dialogue list
         dialogue_lines.append((event.start, event.end, clean_text))
 
-    log_info(f"   - Extracted {len(dialogue_lines)} dialogue lines (Memory: {get_memory_info()})")
+    log_info(f"   - Extracted {len(dialogue_lines)} dialogue lines")
     log_info(f"   - Skipped {skipped_count} non-dialogue events")
 
     # Clear memory
     del subs
     clear_memory()
-    log_info(f"   - After cleanup: {get_memory_info()}")
+    log_info(f"   - After cleanup")
 
     return dialogue_lines
 
@@ -361,17 +382,19 @@ def create_polish_ass(
     font_mode: str = "replace",
 ):
     """Create Polish ASS file with translated dialogue."""
-    log_info(f"🔤 Creating Polish subtitles (Memory: {get_memory_info()})")
+    log_info(f"🔤 Creating Polish subtitles")
 
     try:
         import pysubs2
 
         # Load original ASS to preserve styles and formatting
         original_subs = pysubs2.load(str(original_ass))
-        log_info(f"   - Loaded {len(original_subs)} original events (Memory: {get_memory_info()})")
+        log_info(f"   - Loaded {len(original_subs)} original events")
 
-        # Create new subtitle list
-        polish_subs = []
+        # Create new subtitle file with proper SSAFile structure
+        polish_subs = pysubs2.SSAFile()
+        polish_subs.info = original_subs.info.copy()
+        polish_subs.styles = original_subs.styles.copy()
         dialogue_index = 0
 
         for event in original_subs:
@@ -406,13 +429,13 @@ def create_polish_ass(
 
         # Save the Polish ASS file
         polish_subs.save(str(output_polish_ass))
-        log_success(f"   - Saved {len(polish_subs)} translated events (Memory: {get_memory_info()})")
+        log_success(f"   - Saved {len(polish_subs)} translated events")
 
         # Clear memory
         del original_subs
         del polish_subs
         clear_memory()
-        log_info(f"   - After cleanup: {get_memory_info()}")
+        log_info(f"   - After cleanup")
 
     except Exception as e:
         log_error(f"Failed to create Polish ASS: {e}")
@@ -522,31 +545,65 @@ def verify_result(output_mkv: Path):
 def translate_dialogue_lines(
     dialogue_lines: list[tuple[int, int, str]], device: str, batch_size: int
 ) -> list[tuple[int, int, str]]:
-    """Translate dialogue lines using AI with memory tracking."""
-    log_info(f"🤖 Step 3: AI translating to Polish... (Memory: {get_memory_info()})")
+    """Translate dialogue lines using AI with Rich progress bar."""
+    log_info(f"🤖 Step 3: AI translating to Polish...")
 
     # Initialize AI translator
     translator = AITranslator(device=device, batch_size=batch_size)
-    log_info(f"   - AI Translator initialized (Memory: {get_memory_info()})")
+    log_info(f"   - AI Translator initialized")
 
     # Load model
     if not translator.load_model():
         log_error("❌ Failed to load translation model")
         return []
 
-    log_info(f"   - Model loaded (Memory: {get_memory_info()})")
+    log_info(f"   - Model loaded")
 
-    # Translate dialogue lines
-    translated_lines = translator.translate_dialogue_lines(dialogue_lines)
-    log_info(f"   - Translation complete (Memory: {get_memory_info()})")
+    # Create Rich progress bar for translation
+    texts = [text for _, _, text in dialogue_lines]
+    total_batches = (len(texts) + batch_size - 1) // batch_size
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TextColumn("•"),
+        TimeElapsedColumn(),
+        TextColumn("•"),
+        TextColumn("{task.fields[rate]}"),
+        console=console,
+    ) as progress:
+        
+        task = progress.add_task(
+            f"[cyan]Translating {len(texts)} texts...[/cyan]",
+            total=total_batches,
+            rate="0.0 lines/s"
+        )
+        
+        def progress_callback(batch_num, total_batches, rate, error=None):
+            if error:
+                progress.update(task, advance=1, rate=f"❌ {error}")
+            else:
+                progress.update(task, advance=1, rate=f"{rate:.1f} lines/s")
+        
+        # Translate with progress callback
+        translated_texts = translator.translate_texts(texts, progress_callback=progress_callback)
+    
+    log_info(f"   - Translation complete")
 
     # Cleanup
     translator.cleanup()
-    log_info(f"   - Translator cleaned up (Memory: {get_memory_info()})")
+    log_info(f"   - Translator cleaned up")
 
     # Force garbage collection
     clear_memory()
-    log_info(f"   - Final cleanup (Memory: {get_memory_info()})")
+    log_info(f"   - Final cleanup")
+
+    # Reconstruct with timing
+    translated_lines = []
+    for (start, end, _), translated_text in zip(dialogue_lines, translated_texts):
+        translated_lines.append((start, end, translated_text))
 
     return translated_lines
 
@@ -666,8 +723,8 @@ EXAMPLES:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=8,  # Memory-optimized default
-        help="Translation batch size (default: 8, memory optimized)",
+        default=16,  # Restored from working old implementation
+        help="Translation batch size (default: 16)",
     )
 
     args = parser.parse_args()
