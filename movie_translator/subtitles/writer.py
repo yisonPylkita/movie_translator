@@ -1,6 +1,16 @@
+import gc
 from pathlib import Path
 
-from ..utils import clear_memory, log_error, log_info, log_success, replace_polish_chars
+from ..logging import logger
+
+POLISH_CHAR_MAP = str.maketrans(
+    'ąćęłńóśźżĄĆĘŁŃÓŚŹŻ',
+    'acelnoszzACELNOSZZ',
+)
+
+
+def _replace_polish_chars(text: str) -> str:
+    return text.translate(POLISH_CHAR_MAP)
 
 
 class SubtitleWriter:
@@ -10,27 +20,27 @@ class SubtitleWriter:
         dialogue_lines: list[tuple[int, int, str]],
         output_path: Path,
     ):
-        log_info(f'🔨 Creating clean English ASS: {output_path.name}')
+        logger.info(f'🔨 Creating clean English ASS: {output_path.name}')
 
         try:
             import pysubs2
         except ImportError:
-            log_error('pysubs2 package not found. Install with: uv add pysubs2')
+            logger.error('pysubs2 package not found. Install with: uv add pysubs2')
             return
 
         try:
             original_subs = pysubs2.load(str(original_ass))
-            log_info(f'   - Loaded original with {len(original_subs)} events')
+            logger.info(f'   - Loaded original with {len(original_subs)} events')
 
             clean_subs = self._create_subtitle_file(original_subs)
             self._add_dialogue_events(clean_subs, dialogue_lines)
 
             clean_subs.save(str(output_path))
-            log_success(f'   - Saved {len(clean_subs)} dialogue events')
-            log_info('   - Removed all non-dialogue events')
+            logger.info(f'   - Saved {len(clean_subs)} dialogue events')
+            logger.info('   - Removed all non-dialogue events')
 
         except Exception as e:
-            log_error(f'Failed to create clean English ASS: {e}')
+            logger.error(f'Failed to create clean English ASS: {e}')
 
     def create_polish_ass(
         self,
@@ -39,30 +49,30 @@ class SubtitleWriter:
         output_path: Path,
         replace_chars: bool = True,
     ):
-        log_info('🔤 Creating Polish subtitles')
+        logger.info('🔤 Creating Polish subtitles')
 
         try:
             import pysubs2
         except ImportError:
-            log_error('pysubs2 package not found. Install with: uv add pysubs2')
+            logger.error('pysubs2 package not found. Install with: uv add pysubs2')
             return
 
         try:
             original_subs = pysubs2.load(str(original_ass))
-            log_info(f'   - Loaded {len(original_subs)} original events')
+            logger.info(f'   - Loaded {len(original_subs)} original events')
 
             polish_subs = self._create_subtitle_file(original_subs)
             self._add_translated_events(polish_subs, translated_dialogue, replace_chars)
 
             polish_subs.save(str(output_path))
-            log_success(f'   - Saved {len(polish_subs)} translated events')
+            logger.info(f'   - Saved {len(polish_subs)} translated events')
 
             del original_subs
             del polish_subs
-            clear_memory()
+            gc.collect()
 
         except Exception as e:
-            log_error(f'Failed to create Polish ASS: {e}')
+            logger.error(f'Failed to create Polish ASS: {e}')
 
     def _create_subtitle_file(self, original_subs):
         import pysubs2
@@ -95,7 +105,7 @@ class SubtitleWriter:
 
         for start, end, translated_text in translated_dialogue:
             if replace_chars:
-                translated_text = replace_polish_chars(translated_text)
+                translated_text = _replace_polish_chars(translated_text)
 
             clean_text = translated_text.replace('\n', '\\N')
             event = pysubs2.SSAEvent(

@@ -2,15 +2,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
 from .ffmpeg import SUPPORTED_VIDEO_EXTENSIONS, get_ffmpeg_version
+from .logging import console, logger
 from .pipeline import TranslationPipeline
-from .utils import log_error, log_info
-
-console = Console()
 
 
 def check_dependencies():
@@ -18,16 +15,16 @@ def check_dependencies():
 
     version = sys.version_info
     if version.major < 3 or (version.major == 3 and version.minor < 10):
-        log_error(f'Python 3.10+ required, found {version.major}.{version.minor}')
+        logger.error(f'Python 3.10+ required, found {version.major}.{version.minor}')
         sys.exit(1)
-    log_info(f'Python: {version.major}.{version.minor}.{version.micro}')
+    logger.info(f'Python: {version.major}.{version.minor}.{version.micro}')
 
     try:
         ffmpeg_version = get_ffmpeg_version()
-        log_info(f'FFmpeg: {ffmpeg_version}')
+        logger.info(f'FFmpeg: {ffmpeg_version}')
     except Exception as e:
-        log_error(f'FFmpeg not available: {e}')
-        log_info('FFmpeg should be installed automatically via static-ffmpeg package')
+        logger.error(f'FFmpeg not available: {e}')
+        logger.info('FFmpeg should be installed automatically via static-ffmpeg package')
         sys.exit(1)
 
     _check_python_packages()
@@ -48,12 +45,12 @@ def _check_python_packages():
             missing_packages.append(package)
 
     if missing_packages:
-        log_error(f'Missing Python packages: {", ".join(missing_packages)}')
-        log_info('Install with: uv add pysubs2 torch transformers')
+        logger.error(f'Missing Python packages: {", ".join(missing_packages)}')
+        logger.info('Install with: uv add pysubs2 torch transformers')
         sys.exit(1)
 
-    log_info('Python packages: pysubs2, torch, transformers')
-    log_info('OCR support: Will be checked when --enable-ocr is used')
+    logger.info('Python packages: pysubs2, torch, transformers')
+    logger.info('OCR support: Will be checked when --enable-ocr is used')
 
 
 def parse_args() -> argparse.Namespace:
@@ -75,7 +72,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         '--model',
-        choices=['allegro', 'mbart'],
+        choices=['allegro', 'facebook'],
         default='allegro',
         help='Translation model to use (default: allegro)',
     )
@@ -123,7 +120,7 @@ def show_results(successful: int, failed: int, total: int):
         console.print(
             Panel(
                 '[bold green]🎉 All files processed successfully![/bold green]\n'
-                '🎬 Clean MKVs with English dialogue + Polish translation created',
+                '🎬 Clean videos with English dialogue + Polish translation created',
                 border_style='green',
             )
         )
@@ -140,7 +137,7 @@ def main():
 
     input_dir = Path(args.input_dir)
     if not input_dir.exists():
-        log_error(f'Input directory does not exist: {input_dir}')
+        logger.error(f'Input directory does not exist: {input_dir}')
         sys.exit(1)
 
     check_dependencies()
@@ -151,15 +148,15 @@ def main():
 
     if not video_files:
         supported = ', '.join(SUPPORTED_VIDEO_EXTENSIONS)
-        log_error(f'No video files found in {input_dir}')
-        log_info(f'Supported formats: {supported}')
+        logger.error(f'No video files found in {input_dir}')
+        logger.info(f'Supported formats: {supported}')
         sys.exit(1)
 
     output_dir = input_dir / 'translated'
     output_dir.mkdir(exist_ok=True)
 
     show_config(args, input_dir, output_dir)
-    log_info(f'Found {len(video_files)} video file(s)')
+    logger.info(f'Found {len(video_files)} video file(s)')
 
     pipeline = TranslationPipeline(
         device=args.device,

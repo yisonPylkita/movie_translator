@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from ..ffmpeg import get_video_info, mux_video_with_subtitles
-from ..utils import log_error, log_info, log_success
+from ..logging import logger
 
 
 class VideoOperations:
@@ -12,8 +12,8 @@ class VideoOperations:
         polish_ass: Path,
         output_video: Path,
     ) -> bool:
-        log_info(f'🎬 Creating clean video: {output_video.name}')
-        log_info('   - Adding: Polish (AI) + English dialogue (Polish as default)')
+        logger.info(f'🎬 Creating clean video: {output_video.name}')
+        logger.info('   - Adding: Polish (AI) + English dialogue (Polish as default)')
 
         # Subtitle files: (path, language, title, is_default)
         subtitle_files = [
@@ -29,36 +29,38 @@ class VideoOperations:
             )
 
             if success:
-                log_success('   - Clean video merge successful')
+                logger.info('   - Clean video merge successful')
 
                 if output_video.exists() and output_video.stat().st_size > 0:
                     size_mb = output_video.stat().st_size / 1024 / 1024
-                    log_info(f'   - Output size: {size_mb:.1f} MB')
+                    logger.info(f'   - Output size: {size_mb:.1f} MB')
 
                 return True
             else:
-                log_error('Failed to merge video')
+                logger.error('Failed to merge video')
                 return False
 
         except Exception as e:
-            log_error(f'Failed to merge: {e}')
+            logger.error(f'Failed to merge: {e}')
             return False
 
     def verify_result(self, output_video: Path) -> bool:
-        log_info(f'🔍 Verifying result: {output_video.name}')
+        logger.info(f'🔍 Verifying result: {output_video.name}')
 
         try:
             info = get_video_info(output_video)
             subtitle_tracks = self._get_subtitle_tracks(info)
 
-            log_info(f'   - Found {len(subtitle_tracks)} subtitle tracks:')
+            logger.info(f'   - Found {len(subtitle_tracks)} subtitle tracks:')
             for track in subtitle_tracks:
-                log_info(f'     * Track {track["index"]}: {track["title"]} ({track["language"]})')
+                logger.info(
+                    f'     * Track {track["index"]}: {track["title"]} ({track["language"]})'
+                )
 
             return self._validate_track_order(subtitle_tracks)
 
         except Exception as e:
-            log_error(f'Failed to verify: {e}')
+            logger.error(f'Failed to verify: {e}')
             return False
 
     def _get_subtitle_tracks(self, video_info: dict) -> list[dict]:
@@ -80,18 +82,18 @@ class VideoOperations:
 
     def _validate_track_order(self, subtitle_tracks: list[dict]) -> bool:
         if len(subtitle_tracks) != 2:
-            log_error(f'   ❌ Expected 2 subtitle tracks, found {len(subtitle_tracks)}')
+            logger.error(f'   ❌ Expected 2 subtitle tracks, found {len(subtitle_tracks)}')
             return False
 
         polish_first = subtitle_tracks[0]['language'] == 'pol'
         english_second = subtitle_tracks[1]['language'] == 'eng'
 
         if polish_first and english_second:
-            log_success('   ✅ Perfect! Polish (AI) as default track + English dialogue')
+            logger.info('   ✅ Perfect! Polish (AI) as default track + English dialogue')
             return True
 
-        log_error('   ❌ Incorrect track order. Expected: Polish first, English second')
-        log_error(
+        logger.error('   ❌ Incorrect track order. Expected: Polish first, English second')
+        logger.error(
             f'   ❌ Found: Track 1={subtitle_tracks[0]["language"]}, '
             f'Track 2={subtitle_tracks[1]["language"]}'
         )

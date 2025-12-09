@@ -56,6 +56,7 @@ def create_ass_file(tmp_path, sample_ass_content):
         ass_file = tmp_path / filename
         ass_file.write_text(content or sample_ass_content)
         return ass_file
+
     return _create
 
 
@@ -65,6 +66,7 @@ def create_srt_file(tmp_path, sample_srt_content):
         srt_file = tmp_path / filename
         srt_file.write_text(content or sample_srt_content)
         return srt_file
+
     return _create
 
 
@@ -108,17 +110,28 @@ Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Hello world
         cmd = [
             ffmpeg,
             '-y',
-            '-f', 'lavfi',
-            '-i', f'color=black:s=320x240:d={duration_seconds}',
-            '-f', 'lavfi',
-            '-i', f'anullsrc=r=44100:cl=mono:d={duration_seconds}',
-            '-i', str(sub_file),
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-c:a', 'aac',
-            '-c:s', 'srt' if subtitle_format == 'srt' else 'ass',
-            '-metadata:s:s:0', f'language={language}',
-            '-metadata:s:s:0', f'title={track_name}',
+            '-f',
+            'lavfi',
+            '-i',
+            f'color=black:s=320x240:d={duration_seconds}',
+            '-f',
+            'lavfi',
+            '-i',
+            f'anullsrc=r=44100:cl=mono:d={duration_seconds}',
+            '-i',
+            str(sub_file),
+            '-c:v',
+            'libx264',
+            '-preset',
+            'ultrafast',
+            '-c:a',
+            'aac',
+            '-c:s',
+            'srt' if subtitle_format == 'srt' else 'ass',
+            '-metadata:s:s:0',
+            f'language={language}',
+            '-metadata:s:s:0',
+            f'title={track_name}',
             str(mkv_file),
         ]
 

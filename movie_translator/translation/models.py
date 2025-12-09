@@ -1,12 +1,12 @@
 TRANSLATION_MODELS = {
     'allegro': {
         'name': 'allegro/BiDi-eng-pol',
-        'description': 'Allegro BiDi English-Polish (default)',
+        'description': 'Allegro BiDi English-Polish',
         'max_length': 512,
     },
-    'mbart': {
+    'facebook': {
         'name': 'facebook/mbart-large-50-many-to-many-mmt',
-        'description': 'mBART Many-to-Many Multilingual',
+        'description': 'Facebook mBART Multilingual',
         'max_length': 512,
     },
 }

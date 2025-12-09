@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from ..ffmpeg import get_ffmpeg, get_video_info
-from ..utils import log_error, log_info, log_success, log_warning
+from ..logging import logger
 
 
 class SubtitleExtractor:
@@ -19,7 +19,7 @@ class SubtitleExtractor:
             info = get_video_info(video_path)
             return self._convert_ffprobe_info(info)
         except Exception as e:
-            log_error(f'Failed to get track info from {video_path.name}: {e}')
+            logger.error(f'Failed to get track info from {video_path.name}: {e}')
             return {}
 
     def _convert_ffprobe_info(self, ffprobe_info: dict[str, Any]) -> dict[str, Any]:
@@ -101,14 +101,14 @@ class SubtitleExtractor:
         text_tracks, image_tracks = self._separate_by_codec(dialogue_tracks)
 
         if text_tracks:
-            log_info(f'Found {total_count} English tracks, selected text-based dialogue track')
+            logger.info(f'Found {total_count} English tracks, selected text-based dialogue track')
             return text_tracks[0]
 
         if image_tracks:
             return self._handle_image_tracks(image_tracks, total_count)
 
         if dialogue_tracks:
-            log_info(f'Found {total_count} English tracks, selected dialogue track')
+            logger.info(f'Found {total_count} English tracks, selected dialogue track')
             return dialogue_tracks[0]
 
         return None
@@ -119,14 +119,14 @@ class SubtitleExtractor:
         text_signs, image_signs = self._separate_by_codec(signs_tracks)
 
         if text_signs:
-            log_info(
+            logger.info(
                 f'Found {len(english_tracks)} English tracks, '
                 'using text-based signs/songs as fallback (no dialogue tracks)'
             )
             return text_signs[0]
 
         if image_signs:
-            log_warning(
+            logger.warning(
                 f'Found {len(english_tracks)} English tracks, '
                 'but only image-based signs/songs available (no text extraction possible)'
             )
@@ -136,10 +136,10 @@ class SubtitleExtractor:
             t for t in english_tracks if not t.get('properties', {}).get('forced_track', False)
         ]
         if non_forced:
-            log_info(f'Found {len(english_tracks)} English tracks, selected non-forced track')
+            logger.info(f'Found {len(english_tracks)} English tracks, selected non-forced track')
             return non_forced[0]
 
-        log_warning(f'Found {len(english_tracks)} English tracks, all appear to be signs/songs')
+        logger.warning(f'Found {len(english_tracks)} English tracks, all appear to be signs/songs')
         return english_tracks[0]
 
     def _separate_by_codec(self, tracks: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -159,10 +159,10 @@ class SubtitleExtractor:
 
     def _handle_image_tracks(self, image_tracks: list[dict], total_count: int) -> dict | None:
         if not self.enable_ocr:
-            log_warning(
+            logger.warning(
                 f'Found {total_count} English tracks, but only image-based dialogue tracks available'
             )
-            log_info('Enable OCR with --enable-ocr flag')
+            logger.info('Enable OCR with --enable-ocr flag')
             return None
 
         from ..ocr import SubtitleOCR
@@ -170,17 +170,17 @@ class SubtitleExtractor:
         ocr_check = SubtitleOCR()
 
         if ocr_check.check_availability():
-            log_info(
+            logger.info(
                 f'Found {total_count} English tracks, will process image-based dialogue with OCR'
             )
             image_tracks[0]['requires_ocr'] = True
             ocr_check.cleanup()
             return image_tracks[0]
 
-        log_warning(
+        logger.warning(
             f'Found {total_count} English tracks, but only image-based dialogue tracks available'
         )
-        log_info('Install OCR support with: uv add opencv-python paddleocr')
+        logger.info('Install OCR support with: uv add opencv-python paddleocr')
         ocr_check.cleanup()
         return None
 
@@ -200,7 +200,7 @@ class SubtitleExtractor:
     def extract_subtitle(
         self, video_path: Path, track_id: int, output_path: Path, subtitle_index: int | None = None
     ) -> bool:
-        log_info(f'Extracting subtitle track {track_id}...')
+        logger.info(f'Extracting subtitle track {track_id}...')
 
         ffmpeg = get_ffmpeg()
 
@@ -221,15 +221,15 @@ class SubtitleExtractor:
         try:
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode == 0:
-                log_success(f'Extraction successful: {output_path.name}')
+                logger.info(f'Extraction successful: {output_path.name}')
                 return True
             else:
-                log_error(f'Failed to extract subtitle track {track_id}')
+                logger.error(f'Failed to extract subtitle track {track_id}')
                 if result.stderr:
                     for line in result.stderr.split('\n'):
                         if 'error' in line.lower() or 'invalid' in line.lower():
-                            log_error(f'   {line}')
+                            logger.error(f'   {line}')
                 return False
         except Exception as e:
-            log_error(f'Failed to extract subtitle track {track_id}: {e}')
+            logger.error(f'Failed to extract subtitle track {track_id}: {e}')
             return False

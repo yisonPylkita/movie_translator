@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 
 from .ffmpeg import get_ffmpeg, get_ffprobe
-from .utils import log_info, log_warning
+from .logging import logger
 
 POLISH_CHARS = 'ąćęłńóśźżĄĆĘŁŃÓŚŹŻ'
 
@@ -88,15 +88,15 @@ def get_ass_font_names(ass_path: Path) -> set[str]:
 def check_embedded_fonts_support_polish(video_path: Path, ass_path: Path) -> bool:
     embedded_fonts = get_embedded_fonts(video_path)
     if not embedded_fonts:
-        log_info('   - No embedded fonts found, will replace Polish characters')
+        logger.info('   - No embedded fonts found, will replace Polish characters')
         return False
 
     ass_font_names = get_ass_font_names(ass_path)
     if not ass_font_names:
-        log_info('   - No font names in ASS styles, will replace Polish characters')
+        logger.info('   - No font names in ASS styles, will replace Polish characters')
         return False
 
-    log_info(
+    logger.info(
         f'   - Found {len(embedded_fonts)} embedded font(s), checking Polish character support...'
     )
 
@@ -118,13 +118,13 @@ def check_embedded_fonts_support_polish(video_path: Path, ass_path: Path) -> boo
                     font_name_lower in ass_font or ass_font in font_name_lower
                     for ass_font in ass_font_names
                 ):
-                    log_info(f'   - Font "{font_filename}" supports Polish characters')
+                    logger.info(f'   - Font "{font_filename}" supports Polish characters')
 
         if fonts_supporting_polish > 0:
-            log_info(
+            logger.info(
                 f'   - {fonts_supporting_polish}/{len(embedded_fonts)} embedded font(s) support Polish characters'
             )
             return True
 
-    log_warning('   - Embedded fonts do not support Polish characters, will replace them')
+    logger.warning('   - Embedded fonts do not support Polish characters, will replace them')
     return False

@@ -1,4 +1,3 @@
-
 from movie_translator.subtitles import (
     SubtitleExtractor,
     SubtitleParser,
@@ -76,24 +75,32 @@ class TestSubtitleWriter:
         content = output_path.read_text()
         assert 'Hello, how are you?' in content
 
-    def test_create_polish_ass_with_replacement(self, create_ass_file, tmp_path, sample_translated_lines):
+    def test_create_polish_ass_with_replacement(
+        self, create_ass_file, tmp_path, sample_translated_lines
+    ):
         original_ass = create_ass_file()
         output_path = tmp_path / 'polish.ass'
         writer = SubtitleWriter()
 
-        writer.create_polish_ass(original_ass, sample_translated_lines, output_path, replace_chars=True)
+        writer.create_polish_ass(
+            original_ass, sample_translated_lines, output_path, replace_chars=True
+        )
 
         assert output_path.exists()
         content = output_path.read_text()
         assert 'Czesc' in content
         assert 'ę' not in content
 
-    def test_create_polish_ass_without_replacement(self, create_ass_file, tmp_path, sample_translated_lines):
+    def test_create_polish_ass_without_replacement(
+        self, create_ass_file, tmp_path, sample_translated_lines
+    ):
         original_ass = create_ass_file()
         output_path = tmp_path / 'polish.ass'
         writer = SubtitleWriter()
 
-        writer.create_polish_ass(original_ass, sample_translated_lines, output_path, replace_chars=False)
+        writer.create_polish_ass(
+            original_ass, sample_translated_lines, output_path, replace_chars=False
+        )
 
         assert output_path.exists()
         content = output_path.read_text()

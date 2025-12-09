@@ -1,4 +1,3 @@
-
 from movie_translator.video import VideoOperations
 
 

@@ -2,11 +2,10 @@ import gc
 import time
 
 import torch
-from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeElapsedColumn
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-from ..utils import clear_memory, log_error, log_info
+from ..logging import console, logger
 from .models import DEFAULT_BATCH_SIZE, DEFAULT_DEVICE, DEFAULT_MODEL, TRANSLATION_MODELS
 
 
@@ -24,7 +23,7 @@ class SubtitleTranslator:
         self.tokenizer = None
         self.model = None
 
-        print(
+        logger.info(
             f'🤖 Initializing AI Translator: {self.model_config["description"]} '
             f'on {self.device} with batch size {batch_size}'
         )
@@ -44,26 +43,23 @@ class SubtitleTranslator:
         gc.collect()
 
     def load_model(self) -> bool:
-        print('📥 Loading translation model...')
+        logger.info('📥 Loading translation model...')
 
         try:
             self._clear_memory()
             self._load_tokenizer()
             self._load_model()
-            print(f'   ✅ Model loaded successfully on {self.device}')
+            logger.info(f'   ✅ Model loaded successfully on {self.device}')
             return True
         except Exception as e:
-            print(f'   ❌ Failed to load model: {e}')
-            import traceback
-
-            traceback.print_exc()
+            logger.error(f'   ❌ Failed to load model: {e}')
             return False
 
     def _load_tokenizer(self):
         if self.model_config.get('use_slow_tokenizer') and self.model_config.get('base_tokenizer'):
             base_tokenizer = self.model_config['base_tokenizer']
             self.tokenizer = AutoTokenizer.from_pretrained(base_tokenizer, use_fast=False)
-            print(f'   - Using base tokenizer: {base_tokenizer}')
+            logger.info(f'   - Using base tokenizer: {base_tokenizer}')
         else:
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
@@ -76,7 +72,7 @@ class SubtitleTranslator:
         self.model.to(self.device)
 
     def translate_texts(self, texts: list[str], progress_callback=None) -> list[str]:
-        print(f'🔄 Translating {len(texts)} texts...')
+        logger.info(f'🔄 Translating {len(texts)} texts...')
 
         if not texts:
             return []
@@ -102,7 +98,7 @@ class SubtitleTranslator:
                 )
 
         self._clear_memory()
-        print(f'   ✅ Translation complete: {len(translations)} texts processed')
+        logger.info(f'   ✅ Translation complete: {len(translations)} texts processed')
         return translations
 
     def _report_progress(
@@ -193,7 +189,7 @@ class SubtitleTranslator:
         )
 
     def cleanup(self):
-        print('🧹 Cleaning up AI Translator...')
+        logger.info('🧹 Cleaning up AI Translator...')
         if self.model:
             del self.model
         if self.tokenizer:
@@ -209,17 +205,16 @@ def translate_dialogue_lines(
     batch_size: int,
     model: str = 'allegro',
 ) -> list[tuple[int, int, str]]:
-    console = Console()
-    log_info('🤖 Translating to Polish...')
+    logger.info('🤖 Translating to Polish...')
 
     translator = SubtitleTranslator(device=device, batch_size=batch_size, model_name=model)
-    log_info('   - AI Translator initialized')
+    logger.info('   - AI Translator initialized')
 
     if not translator.load_model():
-        log_error('❌ Failed to load translation model')
+        logger.error('❌ Failed to load translation model')
         return []
 
-    log_info('   - Model loaded')
+    logger.info('   - Model loaded')
 
     texts = [text for _, _, text in dialogue_lines]
     total_batches = (len(texts) + batch_size - 1) // batch_size
@@ -248,13 +243,13 @@ def translate_dialogue_lines(
 
         translated_texts = translator.translate_texts(texts, progress_callback=progress_callback)
 
-    log_info('   - Translation complete')
+    logger.info('   - Translation complete')
 
     translator.cleanup()
-    log_info('   - Translator cleaned up')
+    logger.info('   - Translator cleaned up')
 
-    clear_memory()
-    log_info('   - Final cleanup')
+    gc.collect()
+    logger.info('   - Final cleanup')
 
     return [
         (start, end, text)

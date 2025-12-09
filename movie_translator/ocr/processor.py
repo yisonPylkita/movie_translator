@@ -2,7 +2,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from ..utils import log_error, log_info, log_success, log_warning
+from ..logging import logger
 
 
 class SubtitleOCR:
@@ -39,10 +39,10 @@ class SubtitleOCR:
                 show_log=False,
             )
             self.initialized = True
-            log_info('   - OCR initialized successfully')
+            logger.info('   - OCR initialized successfully')
             return True
         except Exception as e:
-            log_warning(f'Failed to initialize OCR: {e}')
+            logger.warning(f'Failed to initialize OCR: {e}')
             return False
 
     def extract_text_from_image(self, image_path: Path) -> str:
@@ -54,7 +54,7 @@ class SubtitleOCR:
             if result and result[0]:
                 return ' '.join([line[1][0] for line in result[0] if line[1][0].strip()])
         except Exception as e:
-            log_warning(f'OCR failed for {image_path.name}: {e}')
+            logger.warning(f'OCR failed for {image_path.name}: {e}')
         return ''
 
     def cleanup(self):
@@ -68,12 +68,12 @@ class SubtitleOCR:
         output_dir: Path,
     ) -> Path | None:
         if not self.check_availability():
-            log_warning('OCR not available - skipping image-based subtitles')
+            logger.warning('OCR not available - skipping image-based subtitles')
             return None
 
-        log_info('🤖 Processing image-based subtitles with OCR...')
-        log_warning('   - Full OCR implementation requires PGS extraction tools')
-        log_warning('   - Using placeholder implementation')
+        logger.info('🤖 Processing image-based subtitles with OCR...')
+        logger.warning('   - Full OCR implementation requires PGS extraction tools')
+        logger.warning('   - Using placeholder implementation')
 
         output_srt = output_dir / f'{mkv_path.stem}_ocr_extracted.srt'
 
@@ -87,10 +87,10 @@ class SubtitleOCR:
 [This is a placeholder - implement PGS extraction first]
 """
             output_srt.write_text(placeholder_content)
-            log_success(f'   - Created placeholder SRT: {output_srt.name}')
+            logger.info(f'   - Created placeholder SRT: {output_srt.name}')
             return output_srt
         except Exception as e:
-            log_error(f'Failed to create placeholder SRT: {e}')
+            logger.error(f'Failed to create placeholder SRT: {e}')
             return None
         finally:
             self.cleanup()
@@ -101,7 +101,7 @@ class SubtitleOCR:
         track_id: int,
         output_dir: Path,
     ) -> list[Path]:
-        log_info('🖼️  Extracting PGS subtitles to images...')
+        logger.info('🖼️  Extracting PGS subtitles to images...')
 
         pgs_dir = output_dir / 'pgs_temp'
         pgs_dir.mkdir(exist_ok=True)
@@ -111,13 +111,13 @@ class SubtitleOCR:
 
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)
-            log_success(f'   - PGS track extracted: {pgs_file.name}')
+            logger.info(f'   - PGS track extracted: {pgs_file.name}')
         except subprocess.CalledProcessError as e:
-            log_error(f'Failed to extract PGS track {track_id}: {e}')
+            logger.error(f'Failed to extract PGS track {track_id}: {e}')
             return []
 
-        log_warning('   - PGS to image conversion requires BDSup2Sub (not implemented)')
-        log_warning('   - Skipping PGS track processing')
+        logger.warning('   - PGS to image conversion requires BDSup2Sub (not implemented)')
+        logger.warning('   - Skipping PGS track processing')
 
         shutil.rmtree(pgs_dir)
         return []

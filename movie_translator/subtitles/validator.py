@@ -1,16 +1,18 @@
 from pathlib import Path
 
-from ..utils import log_error, log_info, log_success, log_warning
+from ..logging import logger
+
+TIMING_TOLERANCE_MS = 50
 
 
 class SubtitleValidator:
     def validate_cleaned_subtitles(self, original_ass: Path, cleaned_ass: Path) -> bool:
-        log_info('🔍 Validating cleaned subtitles...')
+        logger.info('🔍 Validating cleaned subtitles...')
 
         try:
             import pysubs2
         except ImportError:
-            log_error('pysubs2 package not found. Install with: uv add pysubs2')
+            logger.error('pysubs2 package not found. Install with: uv add pysubs2')
             return False
 
         try:
@@ -23,14 +25,14 @@ class SubtitleValidator:
             self._log_validation_stats(stats, len(cleaned_subs))
 
             if stats['mismatches'] == 0:
-                log_success('   ✅ All original events are properly covered!')
+                logger.info('   ✅ All original events are properly covered!')
                 return True
             else:
-                log_error(f'   ❌ Found {stats["mismatches"]} timing gaps!')
+                logger.error(f'   ❌ Found {stats["mismatches"]} timing gaps!')
                 return False
 
         except Exception as e:
-            log_error(f'Failed to validate cleaned subtitles: {e}')
+            logger.error(f'Failed to validate cleaned subtitles: {e}')
             return False
 
     def _build_cleaned_dict(self, cleaned_subs) -> dict[str, list[tuple[int, int]]]:
@@ -76,24 +78,24 @@ class SubtitleValidator:
 
         return stats
 
-    def _check_timing_coverage(self, event, cleaned_timings: list[tuple[int, int]], tolerance_ms: int = 50) -> bool:
+    def _check_timing_coverage(self, event, cleaned_timings: list[tuple[int, int]]) -> bool:
         for clean_start, clean_end in cleaned_timings:
-            start_ok = clean_start <= event.start + tolerance_ms
-            end_ok = clean_end >= event.end - tolerance_ms
+            start_ok = clean_start <= event.start + TIMING_TOLERANCE_MS
+            end_ok = clean_end >= event.end - TIMING_TOLERANCE_MS
             if start_ok and end_ok:
                 return True
         return False
 
     def _log_timing_gap(self, text: str, event, cleaned_timings: list[tuple[int, int]]):
-        log_warning(f'   - Timing gap for "{text[:30]}..."')
-        log_warning(f'     Original: {event.start} → {event.end}')
+        logger.warning(f'   - Timing gap for "{text[:30]}..."')
+        logger.warning(f'     Original: {event.start} → {event.end}')
         for clean_start, clean_end in cleaned_timings:
-            log_warning(f'     Cleaned:  {clean_start} → {clean_end}')
+            logger.warning(f'     Cleaned:  {clean_start} → {clean_end}')
 
     def _log_validation_stats(self, stats: dict, cleaned_count: int):
-        log_info(f'   - Original dialogue lines: {stats["original_dialogue_count"]}')
-        log_info(f'   - Cleaned dialogue lines:  {cleaned_count}')
-        log_info(f'   - Lines covered:          {stats["matches"]}')
-        log_info(f'   - Timing gaps:            {stats["mismatches"]}')
+        logger.info(f'   - Original dialogue lines: {stats["original_dialogue_count"]}')
+        logger.info(f'   - Cleaned dialogue lines:  {cleaned_count}')
+        logger.info(f'   - Lines covered:          {stats["matches"]}')
+        logger.info(f'   - Timing gaps:            {stats["mismatches"]}')
         removed = stats['original_dialogue_count'] - stats['found_in_cleaned']
-        log_info(f'   - Lines correctly removed: {removed}')
+        logger.info(f'   - Lines correctly removed: {removed}')

@@ -1,17 +1,14 @@
 import shutil
 from pathlib import Path
 
-from rich.console import Console
 from rich.panel import Panel
 
 from .fonts import check_embedded_fonts_support_polish
+from .logging import console, logger
 from .ocr import SubtitleOCR
 from .subtitles import SubtitleExtractor, SubtitleParser, SubtitleValidator, SubtitleWriter
 from .translation import translate_dialogue_lines
-from .utils import log_error, log_info, log_success, log_warning
 from .video import VideoOperations
-
-console = Console()
 
 
 class TranslationPipeline:
@@ -80,33 +77,33 @@ class TranslationPipeline:
                 return False
 
             shutil.rmtree(temp_dir)
-            log_info('🧹 Cleaned up temporary files')
+            logger.info('🧹 Cleaned up temporary files')
 
-            log_success(
+            logger.info(
                 f'🎉 SUCCESS! Original video replaced with clean version: {video_path.name}'
             )
             return True
 
         except Exception as e:
-            log_error(f'Pipeline failed: {e}')
+            logger.error(f'Pipeline failed: {e}')
             return False
 
     def _extract_subtitles(self, video_path: Path, output_dir: Path) -> Path | None:
-        log_info('📖 Step 1: Extracting English subtitles...')
+        logger.info('📖 Step 1: Extracting English subtitles...')
 
         track_info = self.extractor.get_track_info(video_path)
         if not track_info:
-            log_error('Could not read track information')
+            logger.error('Could not read track information')
             return None
 
         eng_track = self.extractor.find_english_track(track_info)
         if not eng_track:
-            log_warning('No suitable English subtitle track found')
+            logger.warning('No suitable English subtitle track found')
             return None
 
         track_id = eng_track['id']
         track_name = eng_track.get('properties', {}).get('track_name', 'Unknown')
-        log_info(f"Found English track: ID {track_id}, Name: '{track_name}'")
+        logger.info(f"Found English track: ID {track_id}, Name: '{track_name}'")
 
         if eng_track.get('requires_ocr', False):
             return self._process_ocr_subtitles(video_path, track_id, output_dir)
@@ -124,24 +121,24 @@ class TranslationPipeline:
     def _process_ocr_subtitles(
         self, video_path: Path, track_id: int, output_dir: Path
     ) -> Path | None:
-        log_info('🤖 Processing image-based subtitles with OCR...')
+        logger.info('🤖 Processing image-based subtitles with OCR...')
 
         if not self.ocr:
             self.ocr = SubtitleOCR(use_gpu=self.ocr_gpu)
 
         extracted_srt = self.ocr.process_image_based_subtitles(video_path, track_id, output_dir)
         if not extracted_srt:
-            log_error('OCR processing failed')
+            logger.error('OCR processing failed')
             return None
 
         return extracted_srt
 
     def _parse_dialogue(self, subtitle_file: Path) -> list[tuple[int, int, str]] | None:
-        log_info('🔍 Step 2: Extracting dialogue lines...')
+        logger.info('🔍 Step 2: Extracting dialogue lines...')
 
         dialogue_lines = self.parser.extract_dialogue_lines(subtitle_file)
         if not dialogue_lines:
-            log_error('No dialogue lines found')
+            logger.error('No dialogue lines found')
             return None
 
         return dialogue_lines
@@ -149,19 +146,19 @@ class TranslationPipeline:
     def _translate(
         self, dialogue_lines: list[tuple[int, int, str]]
     ) -> list[tuple[int, int, str]] | None:
-        log_info('🤖 Step 3: AI translating to Polish...')
+        logger.info('🤖 Step 3: AI translating to Polish...')
 
         try:
             translated = translate_dialogue_lines(
                 dialogue_lines, self.device, self.batch_size, self.model
             )
             if not translated:
-                log_error('AI translation failed')
+                logger.error('AI translation failed')
                 return None
-            log_success('   ✅ AI translation complete!')
+            logger.info('✅ AI translation complete!')
             return translated
         except Exception as e:
-            log_error(f'AI translation failed: {e}')
+            logger.error(f'AI translation failed: {e}')
             return None
 
     def _create_subtitle_files(
@@ -173,7 +170,7 @@ class TranslationPipeline:
         translated_dialogue: list[tuple[int, int, str]],
         fonts_support_polish: bool = False,
     ) -> tuple[Path | None, Path | None]:
-        log_info('🔨 Step 4: Creating clean subtitle files...')
+        logger.info('🔨 Step 4: Creating clean subtitle files...')
 
         clean_english_ass = output_dir / f'{video_path.stem}_english_clean.ass'
         polish_ass = output_dir / f'{video_path.stem}_polish.ass'
@@ -181,7 +178,7 @@ class TranslationPipeline:
         self.writer.create_english_ass(extracted_ass, dialogue_lines, clean_english_ass)
 
         if not self.validator.validate_cleaned_subtitles(extracted_ass, clean_english_ass):
-            log_error('❌ Validation failed! Cleaned subtitles have timestamp mismatches.')
+            logger.error('❌ Validation failed! Cleaned subtitles have timestamp mismatches.')
             return None, None
 
         replace_chars = not fonts_support_polish
@@ -196,7 +193,7 @@ class TranslationPipeline:
         polish_ass: Path,
         temp_video: Path,
     ) -> bool:
-        log_info('🎬 Step 5: Creating clean video...')
+        logger.info('🎬 Step 5: Creating clean video...')
 
         if not self.video_ops.create_clean_video(
             original_video, english_ass, polish_ass, temp_video
@@ -209,26 +206,26 @@ class TranslationPipeline:
         return True
 
     def _replace_original(self, video_path: Path, temp_video: Path) -> bool:
-        log_info('🔄 Step 6: Replacing original video...')
+        logger.info('🔄 Step 6: Replacing original video...')
 
         backup_path = video_path.with_suffix(video_path.suffix + '.backup')
 
         try:
             shutil.copy2(video_path, backup_path)
-            log_info(f'   - Created backup: {backup_path.name}')
+            logger.info(f'   - Created backup: {backup_path.name}')
 
             shutil.move(str(temp_video), str(video_path))
-            log_success(f'   - Replaced original: {video_path.name}')
+            logger.info(f'   - Replaced original: {video_path.name}')
 
             if not self.video_ops.verify_result(video_path):
-                log_error('   - Verification failed after replacement, restoring backup')
+                logger.error('   - Verification failed after replacement, restoring backup')
                 shutil.move(str(backup_path), str(video_path))
                 return False
 
             backup_path.unlink()
-            log_info('   - Removed backup (verification successful)')
+            logger.info('   - Removed backup (verification successful)')
             return True
 
         except Exception as e:
-            log_error(f'   - Failed to replace original: {e}')
+            logger.error(f'   - Failed to replace original: {e}')
             return False
