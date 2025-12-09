@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Utility functions for the Movie Translator pipeline.
-"""
-
 import gc
 
 from rich.console import Console
@@ -11,12 +6,10 @@ console = Console()
 
 
 def clear_memory():
-    """Clear memory caches and force garbage collection."""
     gc.collect()
 
 
 def replace_polish_chars(text: str) -> str:
-    """Replace Polish characters with English equivalents."""
     polish_to_english = {
         'ą': 'a',
         'ć': 'c',
@@ -45,20 +38,16 @@ def replace_polish_chars(text: str) -> str:
 
 
 def log_info(message: str):
-    """Log info message."""
     console.print(f'[INFO] {message}')
 
 
 def log_success(message: str):
-    """Log success message."""
     console.print(f'[SUCCESS] {message}')
 
 
 def log_warning(message: str):
-    """Log warning message."""
     console.print(f'[WARNING] {message}')
 
 
 def log_error(message: str):
-    """Log error message."""
     console.print(f'[ERROR] {message}')

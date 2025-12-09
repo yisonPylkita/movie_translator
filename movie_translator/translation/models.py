@@ -1,5 +1,3 @@
-"""Translation model configurations."""
-
 TRANSLATION_MODELS = {
     'allegro': {
         'name': 'allegro/BiDi-eng-pol',
@@ -14,5 +12,5 @@ TRANSLATION_MODELS = {
 }
 
 DEFAULT_MODEL = 'allegro'
-DEFAULT_DEVICE = 'mps'  # Apple Silicon GPU
+DEFAULT_DEVICE = 'mps'
 DEFAULT_BATCH_SIZE = 16

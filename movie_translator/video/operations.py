@@ -1,5 +1,3 @@
-"""Video file operations using ffmpeg."""
-
 from pathlib import Path
 
 from ..ffmpeg import get_video_info, mux_video_with_subtitles
@@ -7,8 +5,6 @@ from ..utils import log_error, log_info, log_success
 
 
 class VideoOperations:
-    """Handles video file creation, merging, and verification."""
-
     def create_clean_video(
         self,
         original_video: Path,
@@ -16,10 +12,6 @@ class VideoOperations:
         polish_ass: Path,
         output_video: Path,
     ) -> bool:
-        """Create clean video with only video/audio + Polish (AI) + English dialogue.
-
-        Works with any ffmpeg-supported video format (MKV, MP4, etc.)
-        """
         log_info(f'🎬 Creating clean video: {output_video.name}')
         log_info('   - Adding: Polish (AI) + English dialogue (Polish as default)')
 
@@ -53,7 +45,6 @@ class VideoOperations:
             return False
 
     def verify_result(self, output_video: Path) -> bool:
-        """Verify the clean video has only the desired tracks."""
         log_info(f'🔍 Verifying result: {output_video.name}')
 
         try:
@@ -71,7 +62,6 @@ class VideoOperations:
             return False
 
     def _get_subtitle_tracks(self, video_info: dict) -> list[dict]:
-        """Extract subtitle track information from ffprobe output."""
         streams = video_info.get('streams', [])
         subtitle_tracks = []
 
@@ -89,7 +79,6 @@ class VideoOperations:
         return subtitle_tracks
 
     def _validate_track_order(self, subtitle_tracks: list[dict]) -> bool:
-        """Validate that tracks are in correct order: Polish first, English second."""
         if len(subtitle_tracks) != 2:
             log_error(f'   ❌ Expected 2 subtitle tracks, found {len(subtitle_tracks)}')
             return False

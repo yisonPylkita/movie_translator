@@ -1,5 +1,3 @@
-"""OCR processing for image-based subtitles."""
-
 import shutil
 import subprocess
 from pathlib import Path
@@ -8,15 +6,12 @@ from ..utils import log_error, log_info, log_success, log_warning
 
 
 class SubtitleOCR:
-    """OCR support for image-based subtitles (lazy loading)."""
-
     def __init__(self, use_gpu: bool = False):
         self.use_gpu = use_gpu
         self.ocr = None
         self.initialized = False
 
     def check_availability(self) -> bool:
-        """Check if OCR dependencies are available."""
         try:
             import importlib.util
 
@@ -28,7 +23,6 @@ class SubtitleOCR:
             return False
 
     def initialize(self) -> bool:
-        """Initialize OCR engine."""
         if self.initialized:
             return True
 
@@ -52,7 +46,6 @@ class SubtitleOCR:
             return False
 
     def extract_text_from_image(self, image_path: Path) -> str:
-        """Extract text from subtitle image."""
         if not self.initialize():
             return ''
 
@@ -65,7 +58,6 @@ class SubtitleOCR:
         return ''
 
     def cleanup(self):
-        """Clean up OCR resources."""
         self.ocr = None
         self.initialized = False
 
@@ -75,7 +67,6 @@ class SubtitleOCR:
         track_id: int,
         output_dir: Path,
     ) -> Path | None:
-        """Process image-based subtitles and return path to generated SRT file."""
         if not self.check_availability():
             log_warning('OCR not available - skipping image-based subtitles')
             return None
@@ -110,7 +101,6 @@ class SubtitleOCR:
         track_id: int,
         output_dir: Path,
     ) -> list[Path]:
-        """Extract PGS subtitles to individual image files."""
         log_info('🖼️  Extracting PGS subtitles to images...')
 
         pgs_dir = output_dir / 'pgs_temp'
@@ -126,7 +116,6 @@ class SubtitleOCR:
             log_error(f'Failed to extract PGS track {track_id}: {e}')
             return []
 
-        # PGS to image conversion requires additional tools
         log_warning('   - PGS to image conversion requires BDSup2Sub (not implemented)')
         log_warning('   - Skipping PGS track processing')
 

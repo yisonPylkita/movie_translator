@@ -1,5 +1,3 @@
-"""Subtitle extraction from video files."""
-
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -9,34 +7,24 @@ from ..utils import log_error, log_info, log_success, log_warning
 
 
 class SubtitleExtractor:
-    """Handles extraction of subtitle tracks from video files."""
-
-    # Keywords indicating non-dialogue tracks
     SIGNS_KEYWORDS = ('sign', 'song', 'title', 'op', 'ed')
-    # FFmpeg codec names for text-based subtitles
     TEXT_CODECS = ('ass', 'ssa', 'subrip', 'srt', 'webvtt', 'mov_text')
-    # FFmpeg codec names for image-based subtitles
     IMAGE_CODECS = ('hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle')
 
     def __init__(self, enable_ocr: bool = False):
         self.enable_ocr = enable_ocr
 
     def get_track_info(self, video_path: Path) -> dict[str, Any]:
-        """Get track information from video file using ffprobe."""
         try:
             info = get_video_info(video_path)
-            # Convert ffprobe format to our internal format
             return self._convert_ffprobe_info(info)
         except Exception as e:
             log_error(f'Failed to get track info from {video_path.name}: {e}')
             return {}
 
     def _convert_ffprobe_info(self, ffprobe_info: dict[str, Any]) -> dict[str, Any]:
-        """Convert ffprobe output to internal track format."""
         streams = ffprobe_info.get('streams', [])
         tracks = []
-
-        # Track subtitle stream index separately (for extraction)
         subtitle_index = 0
 
         for stream in streams:
@@ -52,7 +40,6 @@ class SubtitleExtractor:
                         'codec_id': stream.get('codec_name', ''),
                         'forced_track': stream.get('disposition', {}).get('forced', 0) == 1,
                     },
-                    # Store subtitle stream index for ffmpeg extraction
                     'subtitle_index': subtitle_index,
                 }
                 tracks.append(track)
@@ -61,7 +48,6 @@ class SubtitleExtractor:
         return {'tracks': tracks}
 
     def find_english_track(self, track_info: dict[str, Any]) -> dict[str, Any] | None:
-        """Find the best English subtitle track from available tracks."""
         english_tracks = self._get_english_tracks(track_info)
 
         if not english_tracks:
@@ -72,7 +58,6 @@ class SubtitleExtractor:
         return self._select_best_track(english_tracks)
 
     def _get_english_tracks(self, track_info: dict[str, Any]) -> list[dict]:
-        """Filter tracks to only English subtitle tracks."""
         tracks = track_info.get('tracks', [])
         english_tracks = []
 
@@ -86,20 +71,16 @@ class SubtitleExtractor:
         return english_tracks
 
     def _select_best_track(self, english_tracks: list[dict]) -> dict | None:
-        """Select the best track from multiple English tracks."""
         dialogue_tracks, signs_tracks = self._categorize_tracks(english_tracks)
 
-        # Try dialogue tracks first
         if dialogue_tracks:
             result = self._select_from_dialogue_tracks(dialogue_tracks, len(english_tracks))
             if result:
                 return result
 
-        # Fall back to signs/songs tracks
         return self._select_from_signs_tracks(signs_tracks, english_tracks)
 
     def _categorize_tracks(self, tracks: list[dict]) -> tuple[list[dict], list[dict]]:
-        """Categorize tracks into dialogue and signs/songs."""
         dialogue_tracks = []
         signs_tracks = []
 
@@ -117,7 +98,6 @@ class SubtitleExtractor:
     def _select_from_dialogue_tracks(
         self, dialogue_tracks: list[dict], total_count: int
     ) -> dict | None:
-        """Select best track from dialogue tracks."""
         text_tracks, image_tracks = self._separate_by_codec(dialogue_tracks)
 
         if text_tracks:
@@ -136,7 +116,6 @@ class SubtitleExtractor:
     def _select_from_signs_tracks(
         self, signs_tracks: list[dict], english_tracks: list[dict]
     ) -> dict | None:
-        """Select from signs/songs tracks as fallback."""
         text_signs, image_signs = self._separate_by_codec(signs_tracks)
 
         if text_signs:
@@ -153,7 +132,6 @@ class SubtitleExtractor:
             )
             return None
 
-        # Try non-forced tracks
         non_forced = [
             t for t in english_tracks if not t.get('properties', {}).get('forced_track', False)
         ]
@@ -165,7 +143,6 @@ class SubtitleExtractor:
         return english_tracks[0]
 
     def _separate_by_codec(self, tracks: list[dict]) -> tuple[list[dict], list[dict]]:
-        """Separate tracks into text-based and image-based."""
         text_tracks = []
         image_tracks = []
 
@@ -176,13 +153,11 @@ class SubtitleExtractor:
             elif any(codec == c or codec.startswith(c) for c in self.IMAGE_CODECS):
                 image_tracks.append(track)
             else:
-                # Unknown codec - assume text-based as fallback
                 text_tracks.append(track)
 
         return text_tracks, image_tracks
 
     def _handle_image_tracks(self, image_tracks: list[dict], total_count: int) -> dict | None:
-        """Handle image-based tracks, potentially with OCR."""
         if not self.enable_ocr:
             log_warning(
                 f'Found {total_count} English tracks, but only image-based dialogue tracks available'
@@ -190,7 +165,6 @@ class SubtitleExtractor:
             log_info('Enable OCR with --enable-ocr flag')
             return None
 
-        # Check OCR availability (lazy import to avoid dependency issues)
         from ..ocr import SubtitleOCR
 
         ocr_check = SubtitleOCR()
@@ -211,7 +185,6 @@ class SubtitleExtractor:
         return None
 
     def get_subtitle_extension(self, track: dict[str, Any]) -> str:
-        """Get the appropriate subtitle file extension for a track."""
         codec = track.get('codec', '').lower()
 
         if codec in ('ass', 'ssa'):
@@ -221,30 +194,21 @@ class SubtitleExtractor:
         elif codec == 'webvtt':
             return '.vtt'
         elif codec == 'mov_text':
-            return '.srt'  # mov_text extracts to srt
-        return '.srt'  # Default to srt
+            return '.srt'
+        return '.srt'
 
     def extract_subtitle(
         self, video_path: Path, track_id: int, output_path: Path, subtitle_index: int | None = None
     ) -> bool:
-        """Extract subtitle track from video file using ffmpeg.
-
-        Args:
-            video_path: Path to the video file
-            track_id: The absolute stream index (for logging)
-            output_path: Path for the extracted subtitle file
-            subtitle_index: The subtitle stream index (0-based among subtitle streams only)
-        """
         log_info(f'Extracting subtitle track {track_id}...')
 
         ffmpeg = get_ffmpeg()
 
-        # Use subtitle_index if provided, otherwise use track_id as subtitle index
         sub_idx = subtitle_index if subtitle_index is not None else 0
 
         cmd = [
             ffmpeg,
-            '-y',  # Overwrite output
+            '-y',
             '-i',
             str(video_path),
             '-map',
@@ -262,7 +226,6 @@ class SubtitleExtractor:
             else:
                 log_error(f'Failed to extract subtitle track {track_id}')
                 if result.stderr:
-                    # Only show relevant error lines
                     for line in result.stderr.split('\n'):
                         if 'error' in line.lower() or 'invalid' in line.lower():
                             log_error(f'   {line}')

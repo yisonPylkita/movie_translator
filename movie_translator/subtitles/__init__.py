@@ -1,5 +1,3 @@
-"""Subtitle processing module."""
-
 from .extractor import SubtitleExtractor
 from .parser import SubtitleParser
 from .validator import SubtitleValidator

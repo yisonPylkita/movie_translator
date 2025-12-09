@@ -1,15 +1,10 @@
-"""Subtitle validation."""
-
 from pathlib import Path
 
 from ..utils import log_error, log_info, log_success, log_warning
 
 
 class SubtitleValidator:
-    """Validates subtitle files for timing and content integrity."""
-
     def validate_cleaned_subtitles(self, original_ass: Path, cleaned_ass: Path) -> bool:
-        """Validate that cleaned subtitles are a proper subset of original with matching timestamps."""
         log_info('🔍 Validating cleaned subtitles...')
 
         try:
@@ -39,7 +34,6 @@ class SubtitleValidator:
             return False
 
     def _build_cleaned_dict(self, cleaned_subs) -> dict[str, list[tuple[int, int]]]:
-        """Build dictionary of cleaned subs by text for lookup."""
         cleaned_dict = {}
         for event in cleaned_subs:
             clean_text = event.text.replace('\\N', ' ').strip()
@@ -50,7 +44,6 @@ class SubtitleValidator:
         return cleaned_dict
 
     def _validate_coverage(self, original_subs, cleaned_dict: dict) -> dict:
-        """Check each original dialogue line for coverage in cleaned version."""
         stats = {
             'mismatches': 0,
             'matches': 0,
@@ -84,21 +77,18 @@ class SubtitleValidator:
         return stats
 
     def _check_timing_coverage(self, event, cleaned_timings: list[tuple[int, int]]) -> bool:
-        """Check if original event is covered by any cleaned event."""
         for clean_start, clean_end in cleaned_timings:
             if clean_start <= event.start and clean_end >= event.end:
                 return True
         return False
 
     def _log_timing_gap(self, text: str, event, cleaned_timings: list[tuple[int, int]]):
-        """Log details about a timing gap."""
         log_warning(f'   - Timing gap for "{text[:30]}..."')
         log_warning(f'     Original: {event.start} → {event.end}')
         for clean_start, clean_end in cleaned_timings:
             log_warning(f'     Cleaned:  {clean_start} → {clean_end}')
 
     def _log_validation_stats(self, stats: dict, cleaned_count: int):
-        """Log validation statistics."""
         log_info(f'   - Original dialogue lines: {stats["original_dialogue_count"]}')
         log_info(f'   - Cleaned dialogue lines:  {cleaned_count}')
         log_info(f'   - Lines covered:          {stats["matches"]}')

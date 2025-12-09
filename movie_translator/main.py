@@ -1,5 +1,3 @@
-"""Main entry point for the Movie Translator CLI."""
-
 import argparse
 import sys
 from pathlib import Path
@@ -16,17 +14,14 @@ console = Console()
 
 
 def check_dependencies():
-    """Check if all required dependencies are available."""
     console.print(Panel.fit('[bold blue]Dependency Check[/bold blue]', border_style='blue'))
 
-    # Check Python version
     version = sys.version_info
     if version.major < 3 or (version.major == 3 and version.minor < 10):
         log_error(f'Python 3.10+ required, found {version.major}.{version.minor}')
         sys.exit(1)
     log_info(f'Python: {version.major}.{version.minor}.{version.micro}')
 
-    # Check ffmpeg (via static-ffmpeg)
     try:
         ffmpeg_version = get_ffmpeg_version()
         log_info(f'FFmpeg: {ffmpeg_version}')
@@ -35,7 +30,6 @@ def check_dependencies():
         log_info('FFmpeg should be installed automatically via static-ffmpeg package')
         sys.exit(1)
 
-    # Check Python packages
     _check_python_packages()
 
     console.print(
@@ -44,7 +38,6 @@ def check_dependencies():
 
 
 def _check_python_packages():
-    """Check required Python packages are installed."""
     import importlib.util
 
     required_packages = ['pysubs2', 'torch', 'transformers']
@@ -64,7 +57,6 @@ def _check_python_packages():
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description='Movie Translator - Extract English dialogue → AI translate to Polish → Replace original video'
     )
@@ -101,7 +93,6 @@ def parse_args() -> argparse.Namespace:
 
 
 def show_config(args: argparse.Namespace, input_dir: Path, output_dir: Path):
-    """Display configuration panel."""
     console.print(
         Panel.fit(
             f'[bold blue]Movie Translator[/bold blue]\n'
@@ -117,7 +108,6 @@ def show_config(args: argparse.Namespace, input_dir: Path, output_dir: Path):
 
 
 def show_results(successful: int, failed: int, total: int):
-    """Display results table."""
     table = Table(title='Translation Results')
     table.add_column('Status', style='green')
     table.add_column('Count', justify='right')
@@ -146,7 +136,6 @@ def show_results(successful: int, failed: int, total: int):
 
 
 def main():
-    """Main entry point."""
     args = parse_args()
 
     input_dir = Path(args.input_dir)
@@ -156,7 +145,6 @@ def main():
 
     check_dependencies()
 
-    # Find video files (all supported formats)
     video_files = []
     for ext in SUPPORTED_VIDEO_EXTENSIONS:
         video_files.extend(input_dir.glob(f'*{ext}'))
@@ -167,14 +155,12 @@ def main():
         log_info(f'Supported formats: {supported}')
         sys.exit(1)
 
-    # Create output directory
     output_dir = input_dir / 'translated'
     output_dir.mkdir(exist_ok=True)
 
     show_config(args, input_dir, output_dir)
     log_info(f'Found {len(video_files)} video file(s)')
 
-    # Create pipeline
     pipeline = TranslationPipeline(
         device=args.device,
         batch_size=args.batch_size,
@@ -183,7 +169,6 @@ def main():
         ocr_gpu=args.ocr_gpu,
     )
 
-    # Process files
     successful = 0
     failed = 0
 

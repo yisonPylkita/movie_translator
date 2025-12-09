@@ -1,20 +1,15 @@
-"""Subtitle file writing."""
-
 from pathlib import Path
 
 from ..utils import clear_memory, log_error, log_info, log_success, replace_polish_chars
 
 
 class SubtitleWriter:
-    """Creates subtitle files from dialogue lines."""
-
     def create_english_ass(
         self,
         original_ass: Path,
         dialogue_lines: list[tuple[int, int, str]],
         output_path: Path,
     ):
-        """Create clean English ASS file with only dialogue lines."""
         log_info(f'🔨 Creating clean English ASS: {output_path.name}')
 
         try:
@@ -44,7 +39,6 @@ class SubtitleWriter:
         output_path: Path,
         replace_chars: bool = True,
     ):
-        """Create Polish ASS file with translated dialogue."""
         log_info('🔤 Creating Polish subtitles')
 
         try:
@@ -71,7 +65,6 @@ class SubtitleWriter:
             log_error(f'Failed to create Polish ASS: {e}')
 
     def _create_subtitle_file(self, original_subs):
-        """Create a new subtitle file with copied metadata."""
         import pysubs2
 
         new_subs = pysubs2.SSAFile()
@@ -80,7 +73,6 @@ class SubtitleWriter:
         return new_subs
 
     def _add_dialogue_events(self, subs, dialogue_lines: list[tuple[int, int, str]]):
-        """Add dialogue events to subtitle file."""
         import pysubs2
 
         for start, end, text in dialogue_lines:
@@ -99,7 +91,6 @@ class SubtitleWriter:
         translated_dialogue: list[tuple[int, int, str]],
         replace_chars: bool,
     ):
-        """Add translated events to subtitle file."""
         import pysubs2
 
         for start, end, translated_text in translated_dialogue:

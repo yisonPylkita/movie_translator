@@ -1,5 +1,3 @@
-"""AI-powered subtitle translator."""
-
 import gc
 import time
 
@@ -13,8 +11,6 @@ from .models import DEFAULT_BATCH_SIZE, DEFAULT_DEVICE, DEFAULT_MODEL, TRANSLATI
 
 
 class SubtitleTranslator:
-    """AI-powered subtitle translator with multiple model support and memory optimization."""
-
     def __init__(
         self,
         model_name: str = DEFAULT_MODEL,
@@ -34,7 +30,6 @@ class SubtitleTranslator:
         )
 
     def _get_model_config(self, model_name: str) -> dict:
-        """Get model configuration by name or create custom config."""
         if model_name in TRANSLATION_MODELS:
             return TRANSLATION_MODELS[model_name]
         return {
@@ -44,13 +39,11 @@ class SubtitleTranslator:
         }
 
     def _clear_memory(self):
-        """Clear memory caches (MPS optimized for Apple Silicon)."""
         if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             torch.mps.empty_cache()
         gc.collect()
 
     def load_model(self) -> bool:
-        """Load the translation model with memory optimization."""
         print('📥 Loading translation model...')
 
         try:
@@ -67,7 +60,6 @@ class SubtitleTranslator:
             return False
 
     def _load_tokenizer(self):
-        """Load the appropriate tokenizer for the model."""
         if self.model_config.get('use_slow_tokenizer') and self.model_config.get('base_tokenizer'):
             base_tokenizer = self.model_config['base_tokenizer']
             self.tokenizer = AutoTokenizer.from_pretrained(base_tokenizer, use_fast=False)
@@ -76,7 +68,6 @@ class SubtitleTranslator:
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
     def _load_model(self):
-        """Load the translation model."""
         self.model = AutoModelForSeq2SeqLM.from_pretrained(
             self.model_name,
             torch_dtype=torch.float16 if self.device != 'cpu' else torch.float32,
@@ -85,7 +76,6 @@ class SubtitleTranslator:
         self.model.to(self.device)
 
     def translate_texts(self, texts: list[str], progress_callback=None) -> list[str]:
-        """Translate a list of texts with optional progress callback."""
         print(f'🔄 Translating {len(texts)} texts...')
 
         if not texts:
@@ -118,7 +108,6 @@ class SubtitleTranslator:
     def _report_progress(
         self, callback, batch_num: int, total_batches: int, start_time: float, total_texts: int
     ):
-        """Report translation progress via callback."""
         if callback:
             elapsed = time.time() - start_time
             lines_processed = min(batch_num * self.batch_size, total_texts)
@@ -126,7 +115,6 @@ class SubtitleTranslator:
             callback(batch_num, total_batches, rate)
 
     def _periodic_memory_cleanup(self, index: int):
-        """Periodically clear memory during long translations."""
         if index > 0 and index % (self.batch_size * 50) == 0:
             self._clear_memory()
 
@@ -139,13 +127,11 @@ class SubtitleTranslator:
         batch_texts: list[str],
         translations: list[str],
     ):
-        """Handle errors during batch translation."""
         if callback:
             callback(batch_num, total_batches, 0, error=str(error)[:50])
-        translations.extend(batch_texts)  # Fall back to original text
+        translations.extend(batch_texts)
 
     def _translate_batch(self, texts: list[str]) -> list[str]:
-        """Translate a batch of texts using model.generate()."""
         processed_texts = self._preprocess_texts(texts)
         encoded = self._encode_texts(processed_texts)
         outputs = self._generate_translations(encoded)
@@ -156,13 +142,11 @@ class SubtitleTranslator:
         return decoded
 
     def _preprocess_texts(self, texts: list[str]) -> list[str]:
-        """Apply model-specific text preprocessing."""
         if 'bidi' in self.model_name.lower():
             return [f'>>pol<< {text}' for text in texts]
         return texts
 
     def _encode_texts(self, texts: list[str]) -> dict:
-        """Encode texts for the model."""
         encoded = self.tokenizer.batch_encode_plus(
             texts,
             return_tensors='pt',
@@ -175,7 +159,6 @@ class SubtitleTranslator:
         return encoded
 
     def _generate_translations(self, encoded: dict) -> torch.Tensor:
-        """Generate translations using the model."""
         with torch.inference_mode():
             if 'mbart' in self.model_name.lower():
                 return self._generate_mbart(encoded)
@@ -183,7 +166,6 @@ class SubtitleTranslator:
                 return self._generate_default(encoded)
 
     def _generate_mbart(self, encoded: dict) -> torch.Tensor:
-        """Generate translations using mBART model."""
         self.tokenizer.src_lang = 'en_XX'
         return self.model.generate(
             **encoded,
@@ -195,7 +177,6 @@ class SubtitleTranslator:
         )
 
     def _generate_default(self, encoded: dict) -> torch.Tensor:
-        """Generate translations using default settings (Allegro BiDi)."""
         return self.model.generate(
             **encoded,
             max_new_tokens=128,
@@ -205,7 +186,6 @@ class SubtitleTranslator:
         )
 
     def _decode_outputs(self, outputs: torch.Tensor) -> list[str]:
-        """Decode model outputs to text."""
         return self.tokenizer.batch_decode(
             outputs,
             skip_special_tokens=True,
@@ -213,7 +193,6 @@ class SubtitleTranslator:
         )
 
     def cleanup(self):
-        """Clean up model and free memory."""
         print('🧹 Cleaning up AI Translator...')
         if self.model:
             del self.model
@@ -230,7 +209,6 @@ def translate_dialogue_lines(
     batch_size: int,
     model: str = 'allegro',
 ) -> list[tuple[int, int, str]]:
-    """Translate dialogue lines using AI with Rich progress bar."""
     console = Console()
     log_info('🤖 Translating to Polish...')
 
@@ -278,7 +256,6 @@ def translate_dialogue_lines(
     clear_memory()
     log_info('   - Final cleanup')
 
-    # Reconstruct with timing
     return [
         (start, end, text)
         for (start, end, _), text in zip(dialogue_lines, translated_texts, strict=True)
