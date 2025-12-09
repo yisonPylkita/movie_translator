@@ -13,14 +13,19 @@ copy_test_files() {
 	local source_dir="$HOME/Downloads/Torrents/completed/[neoDESU] SPY x FAMILY [Season 1+2] [BD 1080p x265 HEVC OPUS AAC] [Dual Audio]/Season 1"
 
 	# cp "$source_dir/SPY x FAMILY - S01E01.mkv" ~/Downloads/test_movies/
-	cp "$source_dir/SPY x FAMILY - S01E02.mkv" ~/Downloads/test_movies/
+	# cp "$source_dir/SPY x FAMILY - S01E02.mkv" ~/Downloads/test_movies/
 	# cp "$source_dir/SPY x FAMILY - S01E03.mkv" ~/Downloads/test_movies/
+	cp "$source_dir/SPY x FAMILY - S01E05.mkv" ~/Downloads/test_movies/
+	cp "$source_dir/SPY x FAMILY - S01E06.mkv" ~/Downloads/test_movies/
+	cp "$source_dir/SPY x FAMILY - S01E07.mkv" ~/Downloads/test_movies/
+	cp "$source_dir/SPY x FAMILY - S01E08.mkv" ~/Downloads/test_movies/
+	cp "$source_dir/SPY x FAMILY - S01E09.mkv" ~/Downloads/test_movies/
 	echo "   ✅ Test files copied"
 }
 
 run_translation() {
 	echo "🚀 Running translation..."
-	uv run python translate.py ~/Downloads/test_movies
+	uv run python translate.py --model nllb ~/Downloads/test_movies
 }
 
 show_completion() {

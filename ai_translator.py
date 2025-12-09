@@ -11,13 +11,45 @@ import time
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-DEFAULT_MODEL = 'allegro/BiDi-eng-pol'
+# Available translation models with their configurations
+TRANSLATION_MODELS = {
+    'allegro': {
+        'name': 'allegro/BiDi-eng-pol',
+        'description': 'Allegro BiDi English-Polish (default)',
+        'type': 'seq2seq',
+        'max_length': 512,
+    },
+    'flan-t5': {
+        'name': 'sdadas/flan-t5-base-translator-en-pl',
+        'description': 'FLAN-T5 English-Polish Translator',
+        'type': 'seq2seq',
+        'max_length': 512,
+        'base_tokenizer': 'google/flan-t5-base',
+        'use_slow_tokenizer': True,
+    },
+    'mbart': {
+        'name': 'facebook/mbart-large-50-many-to-many-mmt',
+        'description': 'mBART Many-to-Many Multilingual',
+        'type': 'seq2seq',
+        'max_length': 512,
+    },
+    'nllb': {
+        'name': 'facebook/nllb-200-distilled-600M',
+        'description': 'NLLB-200 Distilled 600M (200 languages)',
+        'type': 'seq2seq',
+        'max_length': 512,
+        'src_lang': 'eng_Latn',
+        'tgt_lang': 'pol_Latn',
+    },
+}
+
+DEFAULT_MODEL = 'allegro'  # Use model key instead of full name
 DEFAULT_DEVICE = 'mps'  # Apple Silicon GPU
 DEFAULT_BATCH_SIZE = 16  # Optimized for MacBook memory
 
 
 class SubtitleTranslator:
-    """AI-powered subtitle translator using BiDi-eng-pol model with memory optimization."""
+    """AI-powered subtitle translator with multiple model support and memory optimization."""
 
     def __init__(
         self,
@@ -25,7 +57,19 @@ class SubtitleTranslator:
         device: str = DEFAULT_DEVICE,
         batch_size: int = DEFAULT_BATCH_SIZE,
     ):
-        self.model_name = model_name
+        # Support both model keys and full model names
+        if model_name in TRANSLATION_MODELS:
+            self.model_config = TRANSLATION_MODELS[model_name]
+        else:
+            # Assume it's a full model name
+            self.model_config = {
+                'name': model_name,
+                'description': 'Custom model',
+                'type': 'seq2seq',
+                'max_length': 512,
+            }
+
+        self.model_name = self.model_config['name']
         self.device = self._determine_device(device)
         self.batch_size = batch_size
         self.translation_pipeline = None
@@ -33,7 +77,7 @@ class SubtitleTranslator:
         self.model = None
 
         print(
-            f'🤖 Initializing AI Translator: {model_name} on {self.device} with batch size {batch_size}'
+            f'🤖 Initializing AI Translator: {self.model_config["description"]} on {self.device} with batch size {batch_size}'
         )
 
     def _determine_device(self, device: str) -> str:
@@ -57,11 +101,22 @@ class SubtitleTranslator:
         try:
             self._clear_memory()
 
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            # Handle tokenizer loading with base model support for FLAN-T5
+            if self.model_config.get('use_slow_tokenizer') and self.model_config.get(
+                'base_tokenizer'
+            ):
+                # Use base model tokenizer in slow mode (for FLAN-T5 compatibility)
+                base_tokenizer = self.model_config['base_tokenizer']
+                self.tokenizer = AutoTokenizer.from_pretrained(base_tokenizer, use_fast=False)
+                print(f'   - Using base tokenizer: {base_tokenizer}')
+            else:
+                # Standard tokenizer loading
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
 
+            # Use AutoModelForSeq2SeqLM for all available models
             self.model = AutoModelForSeq2SeqLM.from_pretrained(
                 self.model_name,
-                torch_dtype=torch.float16 if self.device != 'cpu' else torch.float32,
+                dtype=torch.float16 if self.device != 'cpu' else torch.float32,
                 low_cpu_mem_usage=True,
             )
 
@@ -74,6 +129,9 @@ class SubtitleTranslator:
 
         except Exception as e:
             print(f'   ❌ Failed to load model: {e}')
+            import traceback
+
+            traceback.print_exc()
             return False
 
     def translate_texts(self, texts: list[str], progress_callback=None) -> list[str]:
@@ -116,35 +174,76 @@ class SubtitleTranslator:
         return translations
 
     def _translate_batch_direct(self, texts: list[str]) -> list[str]:
-        """Direct batch translation using model.generate() (proven working approach)."""
+        """Direct batch translation using model.generate() with model-specific handling."""
         try:
             import torch
         except ImportError as err:
             raise Exception('torch not installed') from err
 
+        # Handle different model types - simplified for available models
         if 'bidi' in self.model_name.lower():
+            # BiDi models need language prefix
             target = 'pol'
             texts = [f'>>{target}<< {text}' for text in texts]
+        elif 'flan-t5' in self.model_name.lower():
+            # FLAN-T5 models work with direct text input
+            # No special prefix needed
+            pass
+        elif 'mbart' in self.model_name.lower():
+            # mBART needs language codes set on tokenizer
+            # We'll handle this in the model.generate call
+            pass
+        elif 'nllb' in self.model_name.lower():
+            # NLLB works with direct text input
+            # Language codes handled in generation
+            pass
+        # Other models work with direct text input (no special handling needed)
 
         encoded = self.tokenizer.batch_encode_plus(
             texts,
             return_tensors='pt',
             padding=True,
             truncation=True,
-            max_length=512,
+            max_length=self.model_config.get('max_length', 512),
         )
 
         if self.device != 'cpu':
             encoded = {k: v.to(self.device) for k, v in encoded.items()}
 
         with torch.inference_mode():
-            translations = self.model.generate(
-                **encoded,
-                max_new_tokens=128,
-                num_beams=1,
-                early_stopping=True,
-                do_sample=False,
-            )
+            # Handle different model types for generation
+            if 'mbart' in self.model_name.lower():
+                # Set source language and force Polish target
+                self.tokenizer.src_lang = 'en_XX'
+                translations = self.model.generate(
+                    **encoded,
+                    forced_bos_token_id=self.tokenizer.lang_code_to_id['pl_PL'],
+                    max_new_tokens=128,
+                    num_beams=1,
+                    early_stopping=True,
+                    do_sample=False,
+                )
+            elif 'nllb' in self.model_name.lower():
+                # NLLB uses convert_tokens_to_ids for language codes
+                tgt_lang = self.model_config.get('tgt_lang', 'pol_Latn')
+                forced_bos_token_id = self.tokenizer.convert_tokens_to_ids(tgt_lang)
+                translations = self.model.generate(
+                    **encoded,
+                    forced_bos_token_id=forced_bos_token_id,
+                    max_new_tokens=128,
+                    num_beams=1,
+                    early_stopping=True,
+                    do_sample=False,
+                )
+            else:
+                # Standard generation for other models (Allegro, FLAN-T5)
+                translations = self.model.generate(
+                    **encoded,
+                    max_new_tokens=128,
+                    num_beams=1,
+                    early_stopping=True,
+                    do_sample=False,
+                )
 
         decoded = self.tokenizer.batch_decode(
             translations,
