@@ -1,4 +1,4 @@
-"""MKV processing pipeline."""
+"""Video processing pipeline."""
 
 import shutil
 from pathlib import Path
@@ -6,17 +6,17 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 
-from .mkv import MkvOperations
 from .ocr import SubtitleOCR
 from .subtitles import SubtitleExtractor, SubtitleParser, SubtitleValidator, SubtitleWriter
 from .translation import translate_dialogue_lines
 from .utils import log_error, log_info, log_success, log_warning
+from .video import VideoOperations
 
 console = Console()
 
 
 class TranslationPipeline:
-    """Orchestrates the complete MKV translation workflow."""
+    """Orchestrates the complete video translation workflow."""
 
     def __init__(
         self,
@@ -37,13 +37,13 @@ class TranslationPipeline:
         self.parser = SubtitleParser()
         self.writer = SubtitleWriter()
         self.validator = SubtitleValidator()
-        self.mkv_ops = MkvOperations()
+        self.video_ops = VideoOperations()
         self.ocr = SubtitleOCR(use_gpu=ocr_gpu) if enable_ocr else None
 
-    def process_mkv_file(self, mkv_path: Path, output_dir: Path) -> bool:
-        """Process a single MKV file and replace it with clean version."""
+    def process_video_file(self, video_path: Path, output_dir: Path) -> bool:
+        """Process a single video file and replace it with clean version."""
         console.print(
-            Panel(f'[bold blue]Processing: {mkv_path.name}[/bold blue]', border_style='blue')
+            Panel(f'[bold blue]Processing: {video_path.name}[/bold blue]', border_style='blue')
         )
 
         temp_dir = output_dir / 'temp'
@@ -51,7 +51,7 @@ class TranslationPipeline:
 
         try:
             # Step 1: Extract subtitles
-            extracted_ass = self._extract_subtitles(mkv_path, output_dir)
+            extracted_ass = self._extract_subtitles(video_path, output_dir)
             if not extracted_ass:
                 return False
 
@@ -67,36 +67,41 @@ class TranslationPipeline:
 
             # Step 4: Create subtitle files
             clean_english_ass, polish_ass = self._create_subtitle_files(
-                mkv_path, output_dir, extracted_ass, dialogue_lines, translated_dialogue
+                video_path, output_dir, extracted_ass, dialogue_lines, translated_dialogue
             )
             if not clean_english_ass or not polish_ass:
                 return False
 
-            # Step 5: Create and verify MKV
-            temp_mkv = temp_dir / f'{mkv_path.stem}_temp_clean.mkv'
-            if not self._create_and_verify_mkv(mkv_path, clean_english_ass, polish_ass, temp_mkv):
+            # Step 5: Create and verify video
+            # Preserve original extension for output
+            temp_video = temp_dir / f'{video_path.stem}_temp_clean{video_path.suffix}'
+            if not self._create_and_verify_video(
+                video_path, clean_english_ass, polish_ass, temp_video
+            ):
                 return False
 
             # Step 6: Replace original
-            if not self._replace_original(mkv_path, temp_mkv):
+            if not self._replace_original(video_path, temp_video):
                 return False
 
             # Cleanup
             shutil.rmtree(temp_dir)
             log_info('🧹 Cleaned up temporary files')
 
-            log_success(f'🎉 SUCCESS! Original MKV replaced with clean version: {mkv_path.name}')
+            log_success(
+                f'🎉 SUCCESS! Original video replaced with clean version: {video_path.name}'
+            )
             return True
 
         except Exception as e:
             log_error(f'Pipeline failed: {e}')
             return False
 
-    def _extract_subtitles(self, mkv_path: Path, output_dir: Path) -> Path | None:
+    def _extract_subtitles(self, video_path: Path, output_dir: Path) -> Path | None:
         """Step 1: Extract English subtitles."""
         log_info('📖 Step 1: Extracting English subtitles...')
 
-        track_info = self.extractor.get_track_info(mkv_path)
+        track_info = self.extractor.get_track_info(video_path)
         if not track_info:
             log_error('Could not read track information')
             return None
@@ -112,19 +117,22 @@ class TranslationPipeline:
 
         # Handle OCR if needed
         if eng_track.get('requires_ocr', False):
-            return self._process_ocr_subtitles(mkv_path, track_id, output_dir)
+            return self._process_ocr_subtitles(video_path, track_id, output_dir)
 
         # Normal extraction
         subtitle_ext = self.extractor.get_subtitle_extension(eng_track)
-        extracted_ass = output_dir / f'{mkv_path.stem}_extracted{subtitle_ext}'
+        extracted_ass = output_dir / f'{video_path.stem}_extracted{subtitle_ext}'
 
-        if not self.extractor.extract_subtitle(mkv_path, track_id, extracted_ass):
+        # Get subtitle stream index for ffmpeg
+        subtitle_index = eng_track.get('subtitle_index', 0)
+
+        if not self.extractor.extract_subtitle(video_path, track_id, extracted_ass, subtitle_index):
             return None
 
         return extracted_ass
 
     def _process_ocr_subtitles(
-        self, mkv_path: Path, track_id: int, output_dir: Path
+        self, video_path: Path, track_id: int, output_dir: Path
     ) -> Path | None:
         """Process image-based subtitles with OCR."""
         log_info('🤖 Processing image-based subtitles with OCR...')
@@ -132,7 +140,7 @@ class TranslationPipeline:
         if not self.ocr:
             self.ocr = SubtitleOCR(use_gpu=self.ocr_gpu)
 
-        extracted_srt = self.ocr.process_image_based_subtitles(mkv_path, track_id, output_dir)
+        extracted_srt = self.ocr.process_image_based_subtitles(video_path, track_id, output_dir)
         if not extracted_srt:
             log_error('OCR processing failed')
             return None
@@ -171,7 +179,7 @@ class TranslationPipeline:
 
     def _create_subtitle_files(
         self,
-        mkv_path: Path,
+        video_path: Path,
         output_dir: Path,
         extracted_ass: Path,
         dialogue_lines: list[tuple[int, int, str]],
@@ -180,13 +188,13 @@ class TranslationPipeline:
         """Step 4: Create clean subtitle files."""
         log_info('🔨 Step 4: Creating clean subtitle files...')
 
-        clean_english_ass = output_dir / f'{mkv_path.stem}_english_clean.ass'
-        polish_ass = output_dir / f'{mkv_path.stem}_polish.ass'
+        clean_english_ass = output_dir / f'{video_path.stem}_english_clean.ass'
+        polish_ass = output_dir / f'{video_path.stem}_polish.ass'
 
         self.writer.create_english_ass(extracted_ass, dialogue_lines, clean_english_ass)
 
         # Validate
-        extracted_ass_path = output_dir / f'{mkv_path.stem}_extracted.ass'
+        extracted_ass_path = output_dir / f'{video_path.stem}_extracted.ass'
         if not self.validator.validate_cleaned_subtitles(extracted_ass_path, clean_english_ass):
             log_error('❌ Validation failed! Cleaned subtitles have timestamp mismatches.')
             return None, None
@@ -195,43 +203,45 @@ class TranslationPipeline:
 
         return clean_english_ass, polish_ass
 
-    def _create_and_verify_mkv(
+    def _create_and_verify_video(
         self,
-        original_mkv: Path,
+        original_video: Path,
         english_ass: Path,
         polish_ass: Path,
-        temp_mkv: Path,
+        temp_video: Path,
     ) -> bool:
-        """Step 5: Create clean MKV and verify."""
-        log_info('🎬 Step 5: Creating clean MKV...')
+        """Step 5: Create clean video and verify."""
+        log_info('🎬 Step 5: Creating clean video...')
 
-        if not self.mkv_ops.create_clean_mkv(original_mkv, english_ass, polish_ass, temp_mkv):
+        if not self.video_ops.create_clean_video(
+            original_video, english_ass, polish_ass, temp_video
+        ):
             return False
 
-        if not self.mkv_ops.verify_result(temp_mkv):
+        if not self.video_ops.verify_result(temp_video):
             return False
 
         return True
 
-    def _replace_original(self, mkv_path: Path, temp_mkv: Path) -> bool:
+    def _replace_original(self, video_path: Path, temp_video: Path) -> bool:
         """Step 6: Replace original file with backup."""
-        log_info('🔄 Step 6: Replacing original MKV...')
+        log_info('🔄 Step 6: Replacing original video...')
 
-        backup_path = mkv_path.with_suffix('.mkv.backup')
+        backup_path = video_path.with_suffix(video_path.suffix + '.backup')
 
         try:
             # Create backup
-            shutil.copy2(mkv_path, backup_path)
+            shutil.copy2(video_path, backup_path)
             log_info(f'   - Created backup: {backup_path.name}')
 
             # Replace original
-            shutil.move(str(temp_mkv), str(mkv_path))
-            log_success(f'   - Replaced original: {mkv_path.name}')
+            shutil.move(str(temp_video), str(video_path))
+            log_success(f'   - Replaced original: {video_path.name}')
 
             # Verify replacement
-            if not self.mkv_ops.verify_result(mkv_path):
+            if not self.video_ops.verify_result(video_path):
                 log_error('   - Verification failed after replacement, restoring backup')
-                shutil.move(str(backup_path), str(mkv_path))
+                shutil.move(str(backup_path), str(video_path))
                 return False
 
             # Remove backup

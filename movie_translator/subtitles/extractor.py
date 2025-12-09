@@ -1,37 +1,64 @@
-"""Subtitle extraction from MKV files."""
+"""Subtitle extraction from video files."""
 
-import json
 import subprocess
 from pathlib import Path
 from typing import Any
 
+from ..ffmpeg import get_ffmpeg, get_video_info
 from ..utils import log_error, log_info, log_success, log_warning
 
 
 class SubtitleExtractor:
-    """Handles extraction of subtitle tracks from MKV files."""
+    """Handles extraction of subtitle tracks from video files."""
 
     # Keywords indicating non-dialogue tracks
     SIGNS_KEYWORDS = ('sign', 'song', 'title', 'op', 'ed')
-    TEXT_CODECS = ('substationalpha', 'ass', 'ssa')
-    IMAGE_CODECS = ('hdmv pgs', 'pgs')
+    # FFmpeg codec names for text-based subtitles
+    TEXT_CODECS = ('ass', 'ssa', 'subrip', 'srt', 'webvtt', 'mov_text')
+    # FFmpeg codec names for image-based subtitles
+    IMAGE_CODECS = ('hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle')
 
     def __init__(self, enable_ocr: bool = False):
         self.enable_ocr = enable_ocr
 
-    def get_track_info(self, mkv_path: Path) -> dict[str, Any]:
-        """Get track information from MKV file."""
+    def get_track_info(self, video_path: Path) -> dict[str, Any]:
+        """Get track information from video file using ffprobe."""
         try:
-            result = subprocess.run(
-                ['mkvmerge', '-J', str(mkv_path)],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            return json.loads(result.stdout)
-        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
-            log_error(f'Failed to get track info from {mkv_path.name}: {e}')
+            info = get_video_info(video_path)
+            # Convert ffprobe format to our internal format
+            return self._convert_ffprobe_info(info)
+        except Exception as e:
+            log_error(f'Failed to get track info from {video_path.name}: {e}')
             return {}
+
+    def _convert_ffprobe_info(self, ffprobe_info: dict[str, Any]) -> dict[str, Any]:
+        """Convert ffprobe output to internal track format."""
+        streams = ffprobe_info.get('streams', [])
+        tracks = []
+
+        # Track subtitle stream index separately (for extraction)
+        subtitle_index = 0
+
+        for stream in streams:
+            codec_type = stream.get('codec_type', '')
+            if codec_type == 'subtitle':
+                track = {
+                    'id': stream.get('index'),
+                    'type': 'subtitles',
+                    'codec': stream.get('codec_name', ''),
+                    'properties': {
+                        'language': stream.get('tags', {}).get('language', 'und'),
+                        'track_name': stream.get('tags', {}).get('title', ''),
+                        'codec_id': stream.get('codec_name', ''),
+                        'forced_track': stream.get('disposition', {}).get('forced', 0) == 1,
+                    },
+                    # Store subtitle stream index for ffmpeg extraction
+                    'subtitle_index': subtitle_index,
+                }
+                tracks.append(track)
+                subtitle_index += 1
+
+        return {'tracks': tracks}
 
     def find_english_track(self, track_info: dict[str, Any]) -> dict[str, Any] | None:
         """Find the best English subtitle track from available tracks."""
@@ -144,10 +171,13 @@ class SubtitleExtractor:
 
         for track in tracks:
             codec = track.get('codec', '').lower()
-            if any(c in codec for c in self.TEXT_CODECS):
+            if any(codec == c or codec.startswith(c) for c in self.TEXT_CODECS):
                 text_tracks.append(track)
-            elif any(c in codec for c in self.IMAGE_CODECS):
+            elif any(codec == c or codec.startswith(c) for c in self.IMAGE_CODECS):
                 image_tracks.append(track)
+            else:
+                # Unknown codec - assume text-based as fallback
+                text_tracks.append(track)
 
         return text_tracks, image_tracks
 
@@ -182,29 +212,61 @@ class SubtitleExtractor:
 
     def get_subtitle_extension(self, track: dict[str, Any]) -> str:
         """Get the appropriate subtitle file extension for a track."""
-        props = track.get('properties', {})
-        codec_id = props.get('codec_id', '')
         codec = track.get('codec', '').lower()
-        combined = f'{codec_id} {codec}'.lower()
 
-        if 'ass' in combined or 's_text/ass' in combined or 'substationalpha' in combined:
-            return '.ass'
-        elif 'ssa' in combined or 's_text/ssa' in combined:
-            return '.ssa'
-        return '.srt'
+        if codec in ('ass', 'ssa'):
+            return f'.{codec}'
+        elif codec in ('subrip', 'srt'):
+            return '.srt'
+        elif codec == 'webvtt':
+            return '.vtt'
+        elif codec == 'mov_text':
+            return '.srt'  # mov_text extracts to srt
+        return '.srt'  # Default to srt
 
-    def extract_subtitle(self, mkv_path: Path, track_id: int, output_path: Path) -> bool:
-        """Extract subtitle track from MKV file."""
+    def extract_subtitle(
+        self, video_path: Path, track_id: int, output_path: Path, subtitle_index: int | None = None
+    ) -> bool:
+        """Extract subtitle track from video file using ffmpeg.
+
+        Args:
+            video_path: Path to the video file
+            track_id: The absolute stream index (for logging)
+            output_path: Path for the extracted subtitle file
+            subtitle_index: The subtitle stream index (0-based among subtitle streams only)
+        """
         log_info(f'Extracting subtitle track {track_id}...')
 
-        cmd = ['mkvextract', 'tracks', str(mkv_path), f'{track_id}:{output_path}']
+        ffmpeg = get_ffmpeg()
+
+        # Use subtitle_index if provided, otherwise use track_id as subtitle index
+        sub_idx = subtitle_index if subtitle_index is not None else 0
+
+        cmd = [
+            ffmpeg,
+            '-y',  # Overwrite output
+            '-i',
+            str(video_path),
+            '-map',
+            f'0:s:{sub_idx}',
+            '-c:s',
+            'copy',
+            str(output_path),
+        ]
 
         try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
-            log_success(f'Extraction successful: {output_path.name}')
-            return True
-        except subprocess.CalledProcessError as e:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                log_success(f'Extraction successful: {output_path.name}')
+                return True
+            else:
+                log_error(f'Failed to extract subtitle track {track_id}')
+                if result.stderr:
+                    # Only show relevant error lines
+                    for line in result.stderr.split('\n'):
+                        if 'error' in line.lower() or 'invalid' in line.lower():
+                            log_error(f'   {line}')
+                return False
+        except Exception as e:
             log_error(f'Failed to extract subtitle track {track_id}: {e}')
-            if e.stderr:
-                log_error(f'stderr: {e.stderr}')
             return False

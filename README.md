@@ -1,22 +1,21 @@
 # Movie Translator 🎬
 
-**MacBook-only AI subtitle translator** for English→Polish translation using Apple Silicon acceleration.
-
-> ⚠️ **Important**: This project is designed and optimized for MacBook only.
+**AI subtitle translator** for English→Polish translation. Works on macOS and Linux.
 
 ## Features
 
-- **🍎 MacBook Optimized** - MPS acceleration for Apple Silicon (M1/M2/M3)
+- **💻 Cross-Platform** - Works on macOS (Intel/Apple Silicon) and Linux
+- **🍎 MPS Acceleration** - Optimized for Apple Silicon (M1/M2/M3)
 - **🤖 AI Translation** - High-quality models (Allegro BiDi, mBART)
-- **🎯 Smart Filtering** - Extracts dialogue only (skips signs/songs)
-- **🎨 Rich Progress** - Beautiful terminal output with live speed metrics
-- **📦 UV-First** - Modern Python tooling with `uv`
+- **🎥 Multi-Format** - Supports MKV, MP4, AVI, WebM, MOV
+- ** Smart Filtering** - Extracts dialogue only (skips signs/songs)
+- **📦 Zero System Dependencies** - FFmpeg bundled via Python, no Homebrew needed
 
 ## Requirements
 
-- **macOS** with Apple Silicon (M1/M2/M3) recommended
+- **macOS** or **Linux**
 - **[uv](https://docs.astral.sh/uv/)** - Python package manager
-- **mkvtoolnix** - `brew install mkvtoolnix`
+- That's it! FFmpeg is bundled automatically.
 
 ## Quick Start
 
@@ -33,20 +32,20 @@ uv sync
 ### Usage
 
 ```bash
-# Translate MKV files in a directory
-uv run movie-translator ~/Downloads/movies
+# Translate video files in a directory
+./run.sh ~/Downloads/movies
 
 # Use mBART model instead of default Allegro
-uv run movie-translator ~/Downloads/movies --model mbart
+./run.sh ~/Downloads/movies --model mbart
 
 # Adjust batch size for memory/speed tradeoff
-uv run movie-translator ~/Downloads/movies --batch-size 8
+./run.sh ~/Downloads/movies --batch-size 8
 
 # Use CPU instead of MPS
-uv run movie-translator ~/Downloads/movies --device cpu
+./run.sh ~/Downloads/movies --device cpu
 
 # Show all options
-uv run movie-translator --help
+./run.sh --help
 ```
 
 ### With OCR Support (Optional)
@@ -56,7 +55,7 @@ uv run movie-translator --help
 uv sync --extra ocr
 
 # Process image-based subtitles
-uv run movie-translator ~/Downloads/movies --enable-ocr
+./run.sh ~/Downloads/movies --enable-ocr
 ```
 
 ## UV Commands Reference
@@ -81,6 +80,16 @@ uv run ruff check .
 uv run pytest
 ```
 
+## Supported Formats
+
+| Format | Extension | Notes |
+|--------|-----------|-------|
+| Matroska | `.mkv` | Full support |
+| MP4 | `.mp4` | Full support |
+| AVI | `.avi` | Full support |
+| WebM | `.webm` | Full support |
+| QuickTime | `.mov` | Full support |
+
 ## Project Structure
 
 ```
@@ -92,9 +101,11 @@ movie_translator/
 └── movie_translator/        # Main package
     ├── main.py              # CLI entry point
     ├── pipeline.py          # Translation pipeline
+    ├── ffmpeg.py            # FFmpeg utilities (bundled)
+    ├── utils.py             # Logging utilities
     ├── translation/         # AI translation module
     ├── subtitles/           # Subtitle processing
-    ├── mkv/                 # MKV operations
+    ├── video/               # Video operations
     └── ocr/                 # OCR support (optional)
 ```
 
@@ -107,10 +118,10 @@ movie_translator/
 
 ## How It Works
 
-1. **Extract** - English subtitles from MKV
+1. **Extract** - English subtitles from video file
 2. **Filter** - Dialogue only (no signs/songs)
 3. **Translate** - AI translation with progress bar
-4. **Create** - Clean MKV with Polish + English tracks
+4. **Create** - Clean video with Polish + English tracks
 
 ## License
 

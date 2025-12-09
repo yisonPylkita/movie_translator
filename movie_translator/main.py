@@ -1,8 +1,6 @@
 """Main entry point for the Movie Translator CLI."""
 
 import argparse
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -10,6 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from .ffmpeg import SUPPORTED_VIDEO_EXTENSIONS, get_ffmpeg_version
 from .pipeline import TranslationPipeline
 from .utils import log_error, log_info
 
@@ -27,15 +26,13 @@ def check_dependencies():
         sys.exit(1)
     log_info(f'Python: {version.major}.{version.minor}.{version.micro}')
 
-    # Check mkvtoolnix
-    if not shutil.which('mkvmerge'):
-        log_error('mkvmerge not found. Please install mkvtoolnix')
-        sys.exit(1)
-    result = subprocess.run(['mkvmerge', '--version'], capture_output=True, text=True)
-    log_info(f'mkvmerge: {result.stdout.split()[0]}')
-
-    if not shutil.which('mkvextract'):
-        log_error('mkvextract not found. Please install mkvtoolnix')
+    # Check ffmpeg (via static-ffmpeg)
+    try:
+        ffmpeg_version = get_ffmpeg_version()
+        log_info(f'FFmpeg: {ffmpeg_version}')
+    except Exception as e:
+        log_error(f'FFmpeg not available: {e}')
+        log_info('FFmpeg should be installed automatically via static-ffmpeg package')
         sys.exit(1)
 
     # Check Python packages
@@ -69,9 +66,9 @@ def _check_python_packages():
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description='Movie Translator - Extract English dialogue → AI translate to Polish → Replace original MKV'
+        description='Movie Translator - Extract English dialogue → AI translate to Polish → Replace original video'
     )
-    parser.add_argument('input_dir', help='Directory containing MKV files')
+    parser.add_argument('input_dir', help='Directory containing video files (MKV, MP4, etc.)')
     parser.add_argument(
         '--device',
         choices=['cpu', 'mps'],
@@ -159,10 +156,15 @@ def main():
 
     check_dependencies()
 
-    # Find MKV files
-    mkv_files = list(input_dir.glob('*.mkv'))
-    if not mkv_files:
-        log_error(f'No MKV files found in {input_dir}')
+    # Find video files (all supported formats)
+    video_files = []
+    for ext in SUPPORTED_VIDEO_EXTENSIONS:
+        video_files.extend(input_dir.glob(f'*{ext}'))
+
+    if not video_files:
+        supported = ', '.join(SUPPORTED_VIDEO_EXTENSIONS)
+        log_error(f'No video files found in {input_dir}')
+        log_info(f'Supported formats: {supported}')
         sys.exit(1)
 
     # Create output directory
@@ -170,7 +172,7 @@ def main():
     output_dir.mkdir(exist_ok=True)
 
     show_config(args, input_dir, output_dir)
-    log_info(f'Found {len(mkv_files)} MKV file(s)')
+    log_info(f'Found {len(video_files)} video file(s)')
 
     # Create pipeline
     pipeline = TranslationPipeline(
@@ -185,13 +187,13 @@ def main():
     successful = 0
     failed = 0
 
-    for mkv_path in mkv_files:
-        if pipeline.process_mkv_file(mkv_path, output_dir):
+    for video_path in video_files:
+        if pipeline.process_video_file(video_path, output_dir):
             successful += 1
         else:
             failed += 1
 
-    show_results(successful, failed, len(mkv_files))
+    show_results(successful, failed, len(video_files))
 
     if failed == 0:
         console.print(f'📁 Output directory: {output_dir}')

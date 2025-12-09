@@ -4,19 +4,21 @@
 
 set -e
 
-echo "🍎 Setting up Movie Translator for MacBook..."
+echo "🎬 Setting up Movie Translator..."
 echo ""
 
-# Check macOS
-if [[ "$(uname)" != "Darwin" ]]; then
-	echo "❌ This setup is designed for MacBook only"
-	exit 1
-fi
-
-if [[ "$(uname -m)" == "arm64" ]]; then
-	echo "✅ Apple Silicon MacBook detected"
+# Detect OS
+OS="$(uname)"
+if [[ "$OS" == "Darwin" ]]; then
+	if [[ "$(uname -m)" == "arm64" ]]; then
+		echo "✅ Apple Silicon Mac detected (MPS acceleration available)"
+	else
+		echo "✅ Intel Mac detected"
+	fi
+elif [[ "$OS" == "Linux" ]]; then
+	echo "✅ Linux detected"
 else
-	echo "⚠️  Intel Mac detected - MPS acceleration not available"
+	echo "⚠️  Unknown OS: $OS - may not be fully supported"
 fi
 
 # Install uv if needed
@@ -27,27 +29,26 @@ if ! command -v uv &>/dev/null; then
 fi
 echo "✅ uv $(uv --version)"
 
-# Install mkvtoolnix if needed
-if ! command -v mkvmerge &>/dev/null; then
-	echo "📦 Installing mkvtoolnix..."
-	if ! command -v brew &>/dev/null; then
-		/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-	fi
-	brew install mkvtoolnix
-fi
-echo "✅ mkvtoolnix installed"
-
-# Sync dependencies with uv
+# Sync dependencies with uv (includes static-ffmpeg)
 echo "📦 Syncing Python dependencies..."
 uv sync
 
 echo ""
 echo "🎉 Setup complete!"
 echo ""
+echo "All dependencies installed via Python - no system packages required!"
+echo "FFmpeg is bundled via static-ffmpeg package."
+echo ""
 echo "Usage:"
-echo "  uv run movie-translator ~/Downloads/movies"
-echo "  uv run movie-translator --help"
+echo "  ./run.sh ~/Downloads/movies"
+echo ""
+echo "Supported formats: MKV, MP4, AVI, WebM, MOV"
+echo ""
+echo "Options:"
+echo "  ./run.sh ~/Downloads/movies --model mbart"
+echo "  ./run.sh ~/Downloads/movies --batch-size 8"
+echo "  ./run.sh --help"
 echo ""
 echo "With OCR support:"
 echo "  uv sync --extra ocr"
-echo "  uv run movie-translator --enable-ocr ~/Downloads/movies"
+echo "  ./run.sh ~/Downloads/movies --enable-ocr"
