@@ -29,6 +29,7 @@ dependencies = [
     "sentencepiece~=0.2",
     "rich~=14.0",
     "static-ffmpeg~=2.7",
+    "fonttools>=4.61.0",
 ]
 
 [project.optional-dependencies]

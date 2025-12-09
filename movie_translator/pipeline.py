@@ -4,6 +4,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
 
+from .fonts import check_embedded_fonts_support_polish
 from .ocr import SubtitleOCR
 from .subtitles import SubtitleExtractor, SubtitleParser, SubtitleValidator, SubtitleWriter
 from .translation import translate_dialogue_lines
@@ -56,8 +57,10 @@ class TranslationPipeline:
             if not translated_dialogue:
                 return False
 
+            fonts_support_polish = check_embedded_fonts_support_polish(video_path, extracted_ass)
+
             clean_english_ass, polish_ass = self._create_subtitle_files(
-                video_path, output_dir, extracted_ass, dialogue_lines, translated_dialogue
+                video_path, output_dir, extracted_ass, dialogue_lines, translated_dialogue, fonts_support_polish
             )
             if not clean_english_ass or not polish_ass:
                 return False
@@ -163,6 +166,7 @@ class TranslationPipeline:
         extracted_ass: Path,
         dialogue_lines: list[tuple[int, int, str]],
         translated_dialogue: list[tuple[int, int, str]],
+        fonts_support_polish: bool = False,
     ) -> tuple[Path | None, Path | None]:
         log_info('🔨 Step 4: Creating clean subtitle files...')
 
@@ -176,7 +180,8 @@ class TranslationPipeline:
             log_error('❌ Validation failed! Cleaned subtitles have timestamp mismatches.')
             return None, None
 
-        self.writer.create_polish_ass(extracted_ass, translated_dialogue, polish_ass)
+        replace_chars = not fonts_support_polish
+        self.writer.create_polish_ass(extracted_ass, translated_dialogue, polish_ass, replace_chars)
 
         return clean_english_ass, polish_ass
 
