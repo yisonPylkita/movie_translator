@@ -3,6 +3,7 @@ import subprocess
 import pytest
 
 from movie_translator.ffmpeg import get_ffmpeg
+from movie_translator.types import DialogueLine
 
 
 @pytest.fixture
@@ -148,16 +149,16 @@ Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Hello world
 @pytest.fixture
 def sample_dialogue_lines():
     return [
-        (1000, 3000, 'Hello, how are you?'),
-        (4000, 6000, 'I am fine, thank you.'),
-        (10000, 12000, 'What a beautiful day!'),
+        DialogueLine(1000, 3000, 'Hello, how are you?'),
+        DialogueLine(4000, 6000, 'I am fine, thank you.'),
+        DialogueLine(10000, 12000, 'What a beautiful day!'),
     ]
 
 
 @pytest.fixture
 def sample_translated_lines():
     return [
-        (1000, 3000, 'Cześć, jak się masz?'),
-        (4000, 6000, 'Dobrze, dziękuję.'),
-        (10000, 12000, 'Jaki piękny dzień!'),
+        DialogueLine(1000, 3000, 'Cześć, jak się masz?'),
+        DialogueLine(4000, 6000, 'Dobrze, dziękuję.'),
+        DialogueLine(10000, 12000, 'Jaki piękny dzień!'),
     ]

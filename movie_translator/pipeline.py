@@ -8,6 +8,7 @@ from .logging import console, logger
 from .ocr import SubtitleOCR
 from .subtitles import SubtitleExtractor, SubtitleParser, SubtitleValidator, SubtitleWriter
 from .translation import translate_dialogue_lines
+from .types import DialogueLine
 from .video import VideoOperations
 
 
@@ -33,16 +34,13 @@ class TranslationPipeline:
         self.video_ops = VideoOperations()
         self.ocr = SubtitleOCR(use_gpu=ocr_gpu) if enable_ocr else None
 
-    def process_video_file(self, video_path: Path, output_dir: Path) -> bool:
+    def process_video_file(self, video_path: Path, temp_dir: Path) -> bool:
         console.print(
             Panel(f'[bold blue]Processing: {video_path.name}[/bold blue]', border_style='blue')
         )
 
-        temp_dir = output_dir / 'temp'
-        temp_dir.mkdir(exist_ok=True)
-
         try:
-            extracted_ass = self._extract_subtitles(video_path, output_dir)
+            extracted_ass = self._extract_subtitles(video_path, temp_dir)
             if not extracted_ass:
                 return False
 
@@ -58,7 +56,7 @@ class TranslationPipeline:
 
             clean_english_ass, polish_ass = self._create_subtitle_files(
                 video_path,
-                output_dir,
+                temp_dir,
                 extracted_ass,
                 dialogue_lines,
                 translated_dialogue,
@@ -67,7 +65,7 @@ class TranslationPipeline:
             if not clean_english_ass or not polish_ass:
                 return False
 
-            temp_video = temp_dir / f'{video_path.stem}_temp_clean{video_path.suffix}'
+            temp_video = temp_dir / f'{video_path.stem}_temp{video_path.suffix}'
             if not self._create_and_verify_video(
                 video_path, clean_english_ass, polish_ass, temp_video
             ):
@@ -76,11 +74,8 @@ class TranslationPipeline:
             if not self._replace_original(video_path, temp_video):
                 return False
 
-            shutil.rmtree(temp_dir)
-            logger.info('🧹 Cleaned up temporary files')
-
             logger.info(
-                f'🎉 SUCCESS! Original video replaced with clean version: {video_path.name}'
+                f'🎉 SUCCESS! Original video replaced with translated version: {video_path.name}'
             )
             return True
 
@@ -133,7 +128,7 @@ class TranslationPipeline:
 
         return extracted_srt
 
-    def _parse_dialogue(self, subtitle_file: Path) -> list[tuple[int, int, str]] | None:
+    def _parse_dialogue(self, subtitle_file: Path) -> list[DialogueLine] | None:
         logger.info('🔍 Step 2: Extracting dialogue lines...')
 
         dialogue_lines = self.parser.extract_dialogue_lines(subtitle_file)
@@ -143,9 +138,7 @@ class TranslationPipeline:
 
         return dialogue_lines
 
-    def _translate(
-        self, dialogue_lines: list[tuple[int, int, str]]
-    ) -> list[tuple[int, int, str]] | None:
+    def _translate(self, dialogue_lines: list[DialogueLine]) -> list[DialogueLine] | None:
         logger.info('🤖 Step 3: AI translating to Polish...')
 
         try:
@@ -166,8 +159,8 @@ class TranslationPipeline:
         video_path: Path,
         output_dir: Path,
         extracted_ass: Path,
-        dialogue_lines: list[tuple[int, int, str]],
-        translated_dialogue: list[tuple[int, int, str]],
+        dialogue_lines: list[DialogueLine],
+        translated_dialogue: list[DialogueLine],
         fonts_support_polish: bool,
     ) -> tuple[Path | None, Path | None]:
         logger.info('🔨 Step 4: Creating clean subtitle files...')
@@ -218,14 +211,17 @@ class TranslationPipeline:
             logger.info(f'   - Replaced original: {video_path.name}')
 
             if not self.video_ops.verify_result(video_path):
-                logger.error('   - Verification failed after replacement, restoring backup')
+                logger.error('   - Verification failed, restoring backup')
                 shutil.move(str(backup_path), str(video_path))
                 return False
 
             backup_path.unlink()
-            logger.info('   - Removed backup (verification successful)')
+            logger.info('   - Verified and cleaned up backup')
             return True
 
         except Exception as e:
             logger.error(f'   - Failed to replace original: {e}')
+            if backup_path.exists() and not video_path.exists():
+                shutil.move(str(backup_path), str(video_path))
+                logger.info('   - Restored backup after failure')
             return False

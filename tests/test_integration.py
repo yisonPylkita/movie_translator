@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from movie_translator.pipeline import TranslationPipeline
+from movie_translator.types import DialogueLine
 
 
 def test_full_pipeline_with_ass_subtitles(create_test_mkv, tmp_output_dir):
@@ -23,8 +24,8 @@ Dialogue: 0,0:00:04.00,0:00:06.00,Default,,0,0,0,,How are you
     )
 
     mock_translated = [
-        (1000, 3000, 'Witaj swiecie'),
-        (4000, 6000, 'Jak sie masz'),
+        DialogueLine(1000, 3000, 'Witaj swiecie'),
+        DialogueLine(4000, 6000, 'Jak sie masz'),
     ]
 
     pipeline = TranslationPipeline(device='cpu', batch_size=1, model='allegro')
@@ -52,8 +53,8 @@ How are you
     )
 
     mock_translated = [
-        (1000, 3000, 'Witaj swiecie'),
-        (4000, 6000, 'Jak sie masz'),
+        DialogueLine(1000, 3000, 'Witaj swiecie'),
+        DialogueLine(4000, 6000, 'Jak sie masz'),
     ]
 
     pipeline = TranslationPipeline(device='cpu', batch_size=1, model='allegro')

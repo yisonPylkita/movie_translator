@@ -2,12 +2,11 @@ import json
 import subprocess
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import static_ffmpeg.run
 
-if TYPE_CHECKING:
-    from .types import SubtitleFile
+from .types import SubtitleFile
 
 
 @lru_cache(maxsize=1)
@@ -45,29 +44,6 @@ def get_subtitle_streams(video_path: Path) -> list[dict[str, Any]]:
     info = get_video_info(video_path)
     streams = info.get('streams', [])
     return [s for s in streams if s.get('codec_type') == 'subtitle']
-
-
-def extract_subtitle(
-    video_path: Path,
-    stream_index: int,
-    output_path: Path,
-) -> bool:
-    ffmpeg = get_ffmpeg()
-
-    cmd = [
-        ffmpeg,
-        '-y',
-        '-i',
-        str(video_path),
-        '-map',
-        f'0:s:{stream_index}',
-        '-c:s',
-        'copy',
-        str(output_path),
-    ]
-
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return result.returncode == 0
 
 
 def mux_video_with_subtitles(
@@ -114,10 +90,3 @@ def get_ffmpeg_version() -> str:
     result = subprocess.run([ffmpeg, '-version'], capture_output=True, text=True)
     first_line = result.stdout.split('\n')[0]
     return first_line
-
-
-SUPPORTED_VIDEO_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.webm', '.mov'}
-
-
-def is_supported_video(path: Path) -> bool:
-    return path.suffix.lower() in SUPPORTED_VIDEO_EXTENSIONS

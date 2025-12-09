@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from ..logging import logger
+from ._pysubs2 import get_pysubs2
 
 TIMING_TOLERANCE_MS = 50
 
@@ -9,10 +10,8 @@ class SubtitleValidator:
     def validate_cleaned_subtitles(self, original_ass: Path, cleaned_ass: Path) -> bool:
         logger.info('🔍 Validating cleaned subtitles...')
 
-        try:
-            import pysubs2
-        except ImportError:
-            logger.error('pysubs2 package not found. Install with: uv add pysubs2')
+        pysubs2 = get_pysubs2()
+        if pysubs2 is None:
             return False
 
         try:

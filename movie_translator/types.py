@@ -3,8 +3,6 @@ from typing import NamedTuple
 
 
 class SubtitleFile(NamedTuple):
-    """Subtitle file with metadata for muxing."""
-
     path: Path
     language: str
     title: str
@@ -12,8 +10,6 @@ class SubtitleFile(NamedTuple):
 
 
 class DialogueLine(NamedTuple):
-    """A single dialogue line with timing."""
-
-    start: int
-    end: int
+    start_ms: int
+    end_ms: int
     text: str

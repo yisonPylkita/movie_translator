@@ -72,9 +72,13 @@ def font_supports_polish(font_path: Path) -> bool:
 
 
 def get_ass_font_names(ass_path: Path) -> set[str]:
-    try:
-        import pysubs2
+    from .subtitles._pysubs2 import get_pysubs2
 
+    pysubs2 = get_pysubs2()
+    if pysubs2 is None:
+        return set()
+
+    try:
         subs = pysubs2.load(str(ass_path))
         font_names = set()
         for style in subs.styles.values():

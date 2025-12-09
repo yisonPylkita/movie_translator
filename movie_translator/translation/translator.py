@@ -1,12 +1,13 @@
 import gc
 import time
-from collections.abc import Callable
+from typing import Protocol
 
 import torch
 from rich.progress import Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeElapsedColumn
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from ..logging import console, logger
+from ..types import DialogueLine
 from .models import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_DEVICE,
@@ -15,7 +16,15 @@ from .models import (
     ModelConfig,
 )
 
-type ProgressCallback = Callable[[int, int, float, str | None], None]
+
+class ProgressCallback(Protocol):
+    def __call__(
+        self,
+        batch_num: int,
+        total_batches: int,
+        lines_per_second: float,
+        error: str | None,
+    ) -> None: ...
 
 
 class SubtitleTranslator:
@@ -80,9 +89,7 @@ class SubtitleTranslator:
         )
         self.model.to(self.device)
 
-    def translate_texts(
-        self, texts: list[str], progress_callback: ProgressCallback
-    ) -> list[str]:
+    def translate_texts(self, texts: list[str], progress_callback: ProgressCallback) -> list[str]:
         logger.info(f'🔄 Translating {len(texts)} texts...')
 
         if not texts:
@@ -219,11 +226,11 @@ class SubtitleTranslator:
 
 
 def translate_dialogue_lines(
-    dialogue_lines: list[tuple[int, int, str]],
+    dialogue_lines: list[DialogueLine],
     device: str,
     batch_size: int,
     model: str,
-) -> list[tuple[int, int, str]]:
+) -> list[DialogueLine]:
     logger.info('🤖 Translating to Polish...')
 
     translator = SubtitleTranslator(device=device, batch_size=batch_size, model_name=model)
@@ -255,12 +262,15 @@ def translate_dialogue_lines(
         )
 
         def on_progress(
-            batch_num: int, total_batches: int, rate: float, error: str | None
+            batch_num: int,
+            total_batches: int,
+            lines_per_second: float,
+            error: str | None,
         ) -> None:
             if error:
                 progress.update(task, advance=1, rate=f'❌ {error}')
             else:
-                progress.update(task, advance=1, rate=f'{rate:.1f} lines/s')
+                progress.update(task, advance=1, rate=f'{lines_per_second:.1f} lines/s')
 
         translated_texts = translator.translate_texts(texts, on_progress)
 
@@ -273,6 +283,6 @@ def translate_dialogue_lines(
     logger.info('   - Final cleanup')
 
     return [
-        (start, end, text)
-        for (start, end, _), text in zip(dialogue_lines, translated_texts, strict=True)
+        DialogueLine(line.start_ms, line.end_ms, text)
+        for line, text in zip(dialogue_lines, translated_texts, strict=True)
     ]

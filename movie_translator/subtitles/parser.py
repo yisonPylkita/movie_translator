@@ -1,12 +1,14 @@
 from pathlib import Path
 
 from ..logging import logger
+from ..types import DialogueLine
+from ._pysubs2 import get_pysubs2
 
 
 class SubtitleParser:
     NON_DIALOGUE_STYLES = ('sign', 'song', 'title', 'op', 'ed')
 
-    def extract_dialogue_lines(self, subtitle_file: Path) -> list[tuple[int, int, str]]:
+    def extract_dialogue_lines(self, subtitle_file: Path) -> list[DialogueLine]:
         logger.info(f'📖 Reading {subtitle_file.name}...')
 
         subs = self._load_subtitle_file(subtitle_file)
@@ -21,10 +23,8 @@ class SubtitleParser:
         return dialogue_lines
 
     def _load_subtitle_file(self, subtitle_file: Path):
-        try:
-            import pysubs2
-        except ImportError:
-            logger.error('pysubs2 package not found. Install with: uv add pysubs2')
+        pysubs2 = get_pysubs2()
+        if pysubs2 is None:
             return None
 
         try:
@@ -74,7 +74,8 @@ class SubtitleParser:
         return unique_subs
 
     def _consolidate_last_event(self, unique_subs: list, start: int, end: int, text: str):
-        import pysubs2
+        pysubs2 = get_pysubs2()
+        assert pysubs2 is not None
 
         consolidated_event = pysubs2.SSAEvent(
             start=start,
@@ -84,7 +85,7 @@ class SubtitleParser:
         )
         unique_subs[-1] = consolidated_event
 
-    def _filter_dialogue(self, events: list) -> list[tuple[int, int, str]]:
+    def _filter_dialogue(self, events: list) -> list[DialogueLine]:
         dialogue_lines = []
         skipped_count = 0
 
@@ -103,7 +104,7 @@ class SubtitleParser:
                 skipped_count += 1
                 continue
 
-            dialogue_lines.append((event.start, event.end, clean_text))
+            dialogue_lines.append(DialogueLine(event.start, event.end, clean_text))
 
         logger.info(f'   - Extracted {len(dialogue_lines)} dialogue lines')
         logger.info(f'   - Skipped {skipped_count} non-dialogue events')

@@ -14,9 +14,9 @@ class TestSubtitleParser:
         lines = parser.extract_dialogue_lines(ass_file)
 
         assert len(lines) == 3
-        assert lines[0][2] == 'Hello, how are you?'
-        assert lines[1][2] == 'I am fine, thank you.'
-        assert lines[2][2] == 'What a beautiful day!'
+        assert lines[0].text == 'Hello, how are you?'
+        assert lines[1].text == 'I am fine, thank you.'
+        assert lines[2].text == 'What a beautiful day!'
 
     def test_extract_dialogue_lines_from_srt(self, create_srt_file):
         srt_file = create_srt_file()
@@ -25,16 +25,16 @@ class TestSubtitleParser:
         lines = parser.extract_dialogue_lines(srt_file)
 
         assert len(lines) == 3
-        assert lines[0][2] == 'Hello, how are you?'
-        assert lines[1][2] == 'I am fine, thank you.'
-        assert lines[2][2] == 'What a beautiful day!'
+        assert lines[0].text == 'Hello, how are you?'
+        assert lines[1].text == 'I am fine, thank you.'
+        assert lines[2].text == 'What a beautiful day!'
 
     def test_filters_signs_songs_style(self, create_ass_file):
         ass_file = create_ass_file()
         parser = SubtitleParser()
 
         lines = parser.extract_dialogue_lines(ass_file)
-        texts = [line[2] for line in lines]
+        texts = [line.text for line in lines]
 
         assert 'EPISODE 1' not in texts
 
@@ -44,11 +44,11 @@ class TestSubtitleParser:
 
         lines = parser.extract_dialogue_lines(ass_file)
 
-        for start, end, text in lines:
-            assert isinstance(start, int)
-            assert isinstance(end, int)
-            assert isinstance(text, str)
-            assert end > start
+        for line in lines:
+            assert isinstance(line.start_ms, int)
+            assert isinstance(line.end_ms, int)
+            assert isinstance(line.text, str)
+            assert line.end_ms > line.start_ms
 
     def test_returns_timing_tuples_from_srt(self, create_srt_file):
         srt_file = create_srt_file()
@@ -56,11 +56,11 @@ class TestSubtitleParser:
 
         lines = parser.extract_dialogue_lines(srt_file)
 
-        for start, end, text in lines:
-            assert isinstance(start, int)
-            assert isinstance(end, int)
-            assert isinstance(text, str)
-            assert end > start
+        for line in lines:
+            assert isinstance(line.start_ms, int)
+            assert isinstance(line.end_ms, int)
+            assert isinstance(line.text, str)
+            assert line.end_ms > line.start_ms
 
 
 class TestSubtitleWriter:

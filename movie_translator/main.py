@@ -5,7 +5,7 @@ from pathlib import Path
 from rich.panel import Panel
 from rich.table import Table
 
-from .ffmpeg import SUPPORTED_VIDEO_EXTENSIONS, get_ffmpeg_version
+from .ffmpeg import get_ffmpeg_version
 from .logging import console, logger
 from .pipeline import TranslationPipeline
 
@@ -89,12 +89,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def show_config(args: argparse.Namespace, input_dir: Path, output_dir: Path):
+def show_config(args: argparse.Namespace, input_dir: Path, temp_dir: Path):
     console.print(
         Panel.fit(
             f'[bold blue]Movie Translator[/bold blue]\n'
             f'  Input        {input_dir}\n'
-            f'  Output       {output_dir}\n'
+            f'  Temp Dir     {temp_dir}\n'
             f'  Device       {args.device}\n'
             f'  Batch Size   {args.batch_size}\n'
             f'  Model        {args.model}\n'
@@ -142,21 +142,17 @@ def main():
 
     check_dependencies()
 
-    video_files = []
-    for ext in SUPPORTED_VIDEO_EXTENSIONS:
-        video_files.extend(input_dir.glob(f'*{ext}'))
+    mkv_files = list(input_dir.glob('*.mkv'))
 
-    if not video_files:
-        supported = ', '.join(SUPPORTED_VIDEO_EXTENSIONS)
-        logger.error(f'No video files found in {input_dir}')
-        logger.info(f'Supported formats: {supported}')
+    if not mkv_files:
+        logger.error(f'No MKV files found in {input_dir}')
         sys.exit(1)
 
-    output_dir = input_dir / 'translated'
-    output_dir.mkdir(exist_ok=True)
+    temp_dir = input_dir / '.translate_temp'
+    temp_dir.mkdir(exist_ok=True)
 
-    show_config(args, input_dir, output_dir)
-    logger.info(f'Found {len(video_files)} video file(s)')
+    show_config(args, input_dir, temp_dir)
+    logger.info(f'Found {len(mkv_files)} MKV file(s)')
 
     pipeline = TranslationPipeline(
         device=args.device,
@@ -169,16 +165,16 @@ def main():
     successful = 0
     failed = 0
 
-    for video_path in video_files:
-        if pipeline.process_video_file(video_path, output_dir):
+    for mkv_path in mkv_files:
+        if pipeline.process_video_file(mkv_path, temp_dir):
             successful += 1
         else:
             failed += 1
 
-    show_results(successful, failed, len(video_files))
+    show_results(successful, failed, len(mkv_files))
 
     if failed == 0:
-        console.print(f'📁 Output directory: {output_dir}')
+        console.print(f'📁 Temp files kept in: {temp_dir}')
     else:
         sys.exit(1)
 
