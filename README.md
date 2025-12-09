@@ -56,6 +56,22 @@ uv sync --extra ocr
 ./run.sh ~/Downloads/movies --enable-ocr
 ```
 
+## Development
+
+```bash
+# Install dev dependencies
+uv sync --group dev
+
+# Run linter
+uv run ruff check .
+
+# Run formatter
+uv run ruff format .
+
+# Run tests
+uv run pytest -v
+```
+
 ## License
 
 MIT License - see LICENSE file for details.
