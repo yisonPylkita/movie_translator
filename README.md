@@ -65,6 +65,9 @@ uv sync --group dev
 # Run linter
 uv run ruff check .
 
+# Run type checker
+uv run ty check
+
 # Run formatter
 uv run ruff format .
 

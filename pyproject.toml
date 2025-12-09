@@ -46,7 +46,7 @@ build-backend = "hatchling.build"
 packages = ["movie_translator"]
 
 [dependency-groups]
-dev = ["ruff~=0.14", "pytest~=8.0"]
+dev = ["ruff~=0.14", "pytest~=8.0", "ty"]
 
 [tool.ruff]
 line-length = 100
@@ -67,3 +67,9 @@ quote-style = "single"
 testpaths = ["tests", "movie_translator"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.ty.rules]
+unresolved-import = "ignore"

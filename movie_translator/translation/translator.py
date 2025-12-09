@@ -1,12 +1,21 @@
 import gc
 import time
+from collections.abc import Callable
 
 import torch
 from rich.progress import Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeElapsedColumn
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from ..logging import console, logger
-from .models import DEFAULT_BATCH_SIZE, DEFAULT_DEVICE, DEFAULT_MODEL, TRANSLATION_MODELS
+from .models import (
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_DEVICE,
+    DEFAULT_MODEL,
+    TRANSLATION_MODELS,
+    ModelConfig,
+)
+
+type ProgressCallback = Callable[[int, int, float, str | None], None]
 
 
 class SubtitleTranslator:
@@ -28,7 +37,7 @@ class SubtitleTranslator:
             f'on {self.device} with batch size {batch_size}'
         )
 
-    def _get_model_config(self, model_name: str) -> dict:
+    def _get_model_config(self, model_name: str) -> ModelConfig:
         if model_name in TRANSLATION_MODELS:
             return TRANSLATION_MODELS[model_name]
         return {
@@ -71,7 +80,9 @@ class SubtitleTranslator:
         )
         self.model.to(self.device)
 
-    def translate_texts(self, texts: list[str], progress_callback=None) -> list[str]:
+    def translate_texts(
+        self, texts: list[str], progress_callback: ProgressCallback
+    ) -> list[str]:
         logger.info(f'🔄 Translating {len(texts)} texts...')
 
         if not texts:
@@ -102,13 +113,17 @@ class SubtitleTranslator:
         return translations
 
     def _report_progress(
-        self, callback, batch_num: int, total_batches: int, start_time: float, total_texts: int
+        self,
+        callback: ProgressCallback,
+        batch_num: int,
+        total_batches: int,
+        start_time: float,
+        total_texts: int,
     ):
-        if callback:
-            elapsed = time.time() - start_time
-            lines_processed = min(batch_num * self.batch_size, total_texts)
-            rate = lines_processed / elapsed if elapsed > 0 else 0
-            callback(batch_num, total_batches, rate)
+        elapsed = time.time() - start_time
+        lines_processed = min(batch_num * self.batch_size, total_texts)
+        rate = lines_processed / elapsed if elapsed > 0 else 0
+        callback(batch_num, total_batches, rate, None)
 
     def _periodic_memory_cleanup(self, index: int):
         if index > 0 and index % (self.batch_size * 50) == 0:
@@ -116,15 +131,14 @@ class SubtitleTranslator:
 
     def _handle_batch_error(
         self,
-        callback,
+        callback: ProgressCallback,
         batch_num: int,
         total_batches: int,
         error: Exception,
         batch_texts: list[str],
         translations: list[str],
     ):
-        if callback:
-            callback(batch_num, total_batches, 0, error=str(error)[:50])
+        callback(batch_num, total_batches, 0, str(error)[:50])
         translations.extend(batch_texts)
 
     def _translate_batch(self, texts: list[str]) -> list[str]:
@@ -143,6 +157,7 @@ class SubtitleTranslator:
         return texts
 
     def _encode_texts(self, texts: list[str]) -> dict:
+        assert self.tokenizer is not None
         encoded = self.tokenizer.batch_encode_plus(
             texts,
             return_tensors='pt',
@@ -162,10 +177,12 @@ class SubtitleTranslator:
                 return self._generate_default(encoded)
 
     def _generate_mbart(self, encoded: dict) -> torch.Tensor:
-        self.tokenizer.src_lang = 'en_XX'
+        assert self.tokenizer is not None
+        assert self.model is not None
+        self.tokenizer.src_lang = 'en_XX'  # type: ignore[attr-defined]
         return self.model.generate(
             **encoded,
-            forced_bos_token_id=self.tokenizer.lang_code_to_id['pl_PL'],
+            forced_bos_token_id=self.tokenizer.lang_code_to_id['pl_PL'],  # type: ignore[attr-defined]
             max_new_tokens=128,
             num_beams=1,
             early_stopping=True,
@@ -173,6 +190,7 @@ class SubtitleTranslator:
         )
 
     def _generate_default(self, encoded: dict) -> torch.Tensor:
+        assert self.model is not None
         return self.model.generate(
             **encoded,
             max_new_tokens=128,
@@ -182,6 +200,7 @@ class SubtitleTranslator:
         )
 
     def _decode_outputs(self, outputs: torch.Tensor) -> list[str]:
+        assert self.tokenizer is not None
         return self.tokenizer.batch_decode(
             outputs,
             skip_special_tokens=True,
@@ -203,7 +222,7 @@ def translate_dialogue_lines(
     dialogue_lines: list[tuple[int, int, str]],
     device: str,
     batch_size: int,
-    model: str = 'allegro',
+    model: str,
 ) -> list[tuple[int, int, str]]:
     logger.info('🤖 Translating to Polish...')
 
@@ -235,13 +254,15 @@ def translate_dialogue_lines(
             rate='0.0 lines/s',
         )
 
-        def progress_callback(batch_num, total_batches, rate, error=None):
+        def on_progress(
+            batch_num: int, total_batches: int, rate: float, error: str | None
+        ) -> None:
             if error:
                 progress.update(task, advance=1, rate=f'❌ {error}')
             else:
                 progress.update(task, advance=1, rate=f'{rate:.1f} lines/s')
 
-        translated_texts = translator.translate_texts(texts, progress_callback=progress_callback)
+        translated_texts = translator.translate_texts(texts, on_progress)
 
     logger.info('   - Translation complete')
 

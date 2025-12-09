@@ -36,9 +36,9 @@ class SubtitleParser:
     def _deduplicate_events(self, subs) -> list:
         original_count = len(subs)
         unique_subs = []
-        last_text = None
-        current_group_start = None
-        current_group_end = None
+        last_text: str | None = None
+        current_group_start: int = 0
+        current_group_end: int = 0
 
         for event in subs:
             clean_text = event.plaintext.strip()

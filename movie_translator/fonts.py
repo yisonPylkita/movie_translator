@@ -1,3 +1,4 @@
+import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -19,7 +20,6 @@ def get_embedded_fonts(video_path: Path) -> list[dict]:
         '-show_streams',
         str(video_path),
     ]
-    import json
 
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     data = json.loads(result.stdout)

@@ -168,7 +168,7 @@ class TranslationPipeline:
         extracted_ass: Path,
         dialogue_lines: list[tuple[int, int, str]],
         translated_dialogue: list[tuple[int, int, str]],
-        fonts_support_polish: bool = False,
+        fonts_support_polish: bool,
     ) -> tuple[Path | None, Path | None]:
         logger.info('🔨 Step 4: Creating clean subtitle files...')
 

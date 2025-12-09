@@ -1,7 +1,9 @@
 from pathlib import Path
+from typing import Any
 
 from ..ffmpeg import get_video_info, mux_video_with_subtitles
 from ..logging import logger
+from ..types import SubtitleFile
 
 
 class VideoOperations:
@@ -15,10 +17,9 @@ class VideoOperations:
         logger.info(f'🎬 Creating clean video: {output_video.name}')
         logger.info('   - Adding: Polish (AI) + English dialogue (Polish as default)')
 
-        # Subtitle files: (path, language, title, is_default)
         subtitle_files = [
-            (polish_ass, 'pol', 'Polish (AI)', True),
-            (english_ass, 'eng', 'English Dialogue', False),
+            SubtitleFile(polish_ass, 'pol', 'Polish (AI)', is_default=True),
+            SubtitleFile(english_ass, 'eng', 'English Dialogue', is_default=False),
         ]
 
         try:
@@ -63,7 +64,7 @@ class VideoOperations:
             logger.error(f'Failed to verify: {e}')
             return False
 
-    def _get_subtitle_tracks(self, video_info: dict) -> list[dict]:
+    def _get_subtitle_tracks(self, video_info: dict[str, Any]) -> list[dict[str, Any]]:
         streams = video_info.get('streams', [])
         subtitle_tracks = []
 
@@ -80,7 +81,7 @@ class VideoOperations:
 
         return subtitle_tracks
 
-    def _validate_track_order(self, subtitle_tracks: list[dict]) -> bool:
+    def _validate_track_order(self, subtitle_tracks: list[dict[str, Any]]) -> bool:
         if len(subtitle_tracks) != 2:
             logger.error(f'   ❌ Expected 2 subtitle tracks, found {len(subtitle_tracks)}')
             return False

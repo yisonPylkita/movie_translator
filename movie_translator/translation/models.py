@@ -1,4 +1,15 @@
-TRANSLATION_MODELS = {
+from typing import TypedDict
+
+
+class ModelConfig(TypedDict, total=False):
+    name: str
+    description: str
+    max_length: int
+    use_slow_tokenizer: bool
+    base_tokenizer: str
+
+
+TRANSLATION_MODELS: dict[str, ModelConfig] = {
     'allegro': {
         'name': 'allegro/BiDi-eng-pol',
         'description': 'Allegro BiDi English-Polish',

@@ -2,9 +2,12 @@ import json
 import subprocess
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import static_ffmpeg
+import static_ffmpeg.run
+
+if TYPE_CHECKING:
+    from .types import SubtitleFile
 
 
 @lru_cache(maxsize=1)
@@ -69,10 +72,8 @@ def extract_subtitle(
 
 def mux_video_with_subtitles(
     video_path: Path,
-    subtitle_files: list[tuple[Path, str, str, bool]],
+    subtitle_files: list[SubtitleFile],
     output_path: Path,
-    copy_audio: bool = True,
-    copy_video: bool = True,
 ) -> bool:
     ffmpeg = get_ffmpeg()
 
@@ -83,27 +84,23 @@ def mux_video_with_subtitles(
         str(video_path),
     ]
 
-    for sub_path, _, _, _ in subtitle_files:
-        cmd.extend(['-i', str(sub_path)])
+    for sub in subtitle_files:
+        cmd.extend(['-i', str(sub.path)])
 
-    if copy_video:
-        cmd.extend(['-map', '0:v'])
-    if copy_audio:
-        cmd.extend(['-map', '0:a'])
+    cmd.extend(['-map', '0:v'])
+    cmd.extend(['-map', '0:a'])
 
     for i in range(1, len(subtitle_files) + 1):
         cmd.extend(['-map', f'{i}:0'])
 
-    if copy_video:
-        cmd.extend(['-c:v', 'copy'])
-    if copy_audio:
-        cmd.extend(['-c:a', 'copy'])
+    cmd.extend(['-c:v', 'copy'])
+    cmd.extend(['-c:a', 'copy'])
     cmd.extend(['-c:s', 'ass'])
 
-    for i, (_, lang, title, is_default) in enumerate(subtitle_files):
-        cmd.extend([f'-metadata:s:s:{i}', f'language={lang}'])
-        cmd.extend([f'-metadata:s:s:{i}', f'title={title}'])
-        disposition = 'default' if is_default else '0'
+    for i, sub in enumerate(subtitle_files):
+        cmd.extend([f'-metadata:s:s:{i}', f'language={sub.language}'])
+        cmd.extend([f'-metadata:s:s:{i}', f'title={sub.title}'])
+        disposition = 'default' if sub.is_default else '0'
         cmd.extend([f'-disposition:s:{i}', disposition])
 
     cmd.append(str(output_path))

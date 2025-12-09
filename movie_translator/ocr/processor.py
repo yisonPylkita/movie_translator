@@ -50,6 +50,7 @@ class SubtitleOCR:
             return ''
 
         try:
+            assert self.ocr is not None
             result = self.ocr.ocr(str(image_path), cls=False)
             if result and result[0]:
                 return ' '.join([line[1][0] for line in result[0] if line[1][0].strip()])
