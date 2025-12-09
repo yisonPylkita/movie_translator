@@ -5,9 +5,7 @@ description = "AI-powered subtitle translator for video files (English → Polis
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10,<3.15"
-authors = [
-    { name = "Movie Translator Team" }
-]
+authors = [{ name = "Movie Translator Team" }]
 keywords = ["subtitles", "translation", "video", "mkv", "mp4", "ai", "polish"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -34,11 +32,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ocr = [
-    "opencv-python~=4.12",
-    "paddleocr~=3.3",
-    "paddlepaddle~=3.2",
-]
+ocr = ["opencv-python~=4.12", "paddleocr~=3.3", "paddlepaddle~=3.2"]
 
 [project.scripts]
 movie-translator = "movie_translator.main:main"
@@ -51,10 +45,7 @@ build-backend = "hatchling.build"
 packages = ["movie_translator"]
 
 [dependency-groups]
-dev = [
-    "ruff~=0.14",
-    "pytest~=8.0",
-]
+dev = ["ruff~=0.14"]
 
 [tool.ruff]
 line-length = 100
@@ -70,8 +61,3 @@ known-first-party = ["movie_translator"]
 [tool.ruff.format]
 indent-style = "space"
 quote-style = "single"
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_functions = ["test_*"]
