@@ -2,102 +2,116 @@
 
 **MacBook-only AI subtitle translator** for English→Polish translation using Apple Silicon acceleration.
 
-> ⚠️ **Important**: This project is designed and optimized for MacBook only. For other systems, please create a separate setup.
+> ⚠️ **Important**: This project is designed and optimized for MacBook only.
 
-## Features 🚀
+## Features
 
-- **🍎 MacBook Optimized**: MPS acceleration for Apple Silicon (M1/M2/M3)
-- **🤖 AI Translation**: High-quality `allegro/BiDi-eng-pol` model
-- **🎯 Smart Filtering**: Extracts dialogue only (skips signs/songs)
-- **🎨 Rich Progress**: Beautiful terminal output with live speed metrics
-- **🧠 Memory Efficient**: Proven leak-free implementation
+- **🍎 MacBook Optimized** - MPS acceleration for Apple Silicon (M1/M2/M3)
+- **🤖 AI Translation** - High-quality models (Allegro BiDi, mBART)
+- **🎯 Smart Filtering** - Extracts dialogue only (skips signs/songs)
+- **🎨 Rich Progress** - Beautiful terminal output with live speed metrics
+- **📦 UV-First** - Modern Python tooling with `uv`
 
-## System Requirements 🍎
+## Requirements
 
 - **macOS** with Apple Silicon (M1/M2/M3) recommended
-- **Python 3.10+** (managed by uv)
-- **Homebrew** (for mkvtoolnix)
-- **uv** (Python package manager)
+- **[uv](https://docs.astral.sh/uv/)** - Python package manager
+- **mkvtoolnix** - `brew install mkvtoolnix`
 
-> **Intel Macs**: May work but without MPS acceleration (slower performance)
-> **Non-Mac systems**: Not supported - please create separate setup
-
-## Quick Start 🎯
+## Quick Start
 
 ### Setup (One-time)
+
 ```bash
-cd /Users/arlen/h_dev/movie_translator
-./setup.sh  # Install dependencies and check requirements
+# Option 1: Use the setup script
+./setup.sh
+
+# Option 2: Manual setup with uv
+uv sync
 ```
 
 ### Usage
+
 ```bash
-# Process directory (uses MPS by default)
-uv run python translate.py ~/Downloads/test_movies
+# Translate MKV files in a directory
+uv run movie-translator ~/Downloads/movies
 
-# Process single file
-uv run python translate.py ~/Downloads/test_movies/SPY\ x\ FAMILY\ -\ S01E01.mkv
+# Use mBART model instead of default Allegro
+uv run movie-translator ~/Downloads/movies --model mbart
 
-# Custom output
-uv run python translate.py ~/Downloads/test_movies --output ~/Downloads/translated
+# Adjust batch size for memory/speed tradeoff
+uv run movie-translator ~/Downloads/movies --batch-size 8
+
+# Use CPU instead of MPS
+uv run movie-translator ~/Downloads/movies --device cpu
+
+# Show all options
+uv run movie-translator --help
 ```
 
-### Advanced Options
-```bash
-# Different batch sizes
-uv run python translate.py ~/Downloads/test_movies --batch-size 32  # Faster
-uv run python translate.py ~/Downloads/test_movies --batch-size 8   # Less memory
+### With OCR Support (Optional)
 
-# CPU fallback (if MPS issues)
-uv run python translate.py ~/Downloads/test_movies --device cpu
+```bash
+# Install OCR dependencies
+uv sync --extra ocr
+
+# Process image-based subtitles
+uv run movie-translator ~/Downloads/movies --enable-ocr
 ```
 
-## Project Structure 📁
+## UV Commands Reference
+
+```bash
+# Install/sync dependencies
+uv sync
+
+# Run the translator
+uv run movie-translator <input_dir> [options]
+
+# Run with dev dependencies
+uv sync --group dev
+
+# Format code
+uv run ruff format .
+
+# Lint code
+uv run ruff check .
+
+# Run tests
+uv run pytest
+```
+
+## Project Structure
 
 ```
 movie_translator/
-├── translate.py          # Main pipeline (MacBook optimized)
-├── ai_translator.py      # AI engine (MPS acceleration)
-├── run.sh               # Quick test script
-├── setup.sh             # Setup script (dependencies + requirements)
-├── pyproject.toml       # uv dependencies
-└── README.md            # This file
+├── pyproject.toml           # UV/Python project configuration
+├── uv.lock                  # Locked dependencies
+├── setup.sh                 # Setup convenience script
+├── run.sh                   # Run convenience script
+└── movie_translator/        # Main package
+    ├── main.py              # CLI entry point
+    ├── pipeline.py          # Translation pipeline
+    ├── translation/         # AI translation module
+    ├── subtitles/           # Subtitle processing
+    ├── mkv/                 # MKV operations
+    └── ocr/                 # OCR support (optional)
 ```
 
-## MacBook Optimization 🍎
+## Translation Models
 
-This project is **exclusively optimized for MacBook**:
+| Model | Key | Description |
+|-------|-----|-------------|
+| Allegro BiDi | `allegro` | English-Polish (default, recommended) |
+| mBART | `mbart` | Multilingual (50 languages) |
 
-- **Default Device**: MPS (Apple Silicon GPU) - fastest performance
-- **Batch Size**: 16 (optimized for MacBook memory)
-- **Memory Management**: Leak-free with periodic cleanup
-- **Dependencies**: uv-managed for consistency
-- **Setup Detection**: Automatically verifies MacBook compatibility
+## How It Works
 
-### Platform Support
-- ✅ **Apple Silicon Macs** (M1/M2/M3) - Full support
-- ⚠️ **Intel Macs** - Works but slower (no MPS)
-- ❌ **Windows/Linux** - Not supported (create separate setup)
+1. **Extract** - English subtitles from MKV
+2. **Filter** - Dialogue only (no signs/songs)
+3. **Translate** - AI translation with progress bar
+4. **Create** - Clean MKV with Polish + English tracks
 
-## Dependencies 📦
-
-MacBook-optimized dependencies managed by `uv`:
-- `torch` (MPS acceleration for Apple Silicon)
-- `transformers` (AI models)
-- `rich` (terminal UI)
-- `pysubs2` (subtitle handling)
-
-**System Requirements:**
-- macOS with Apple Silicon (M1/M2/M3)
-- `mkvtoolnix` (`brew install mkvtoolnix`)
-
-## How It Works 🔄
-
-1. **Extract** English subtitles from MKV
-2. **Filter** dialogue only (no signs/songs)
-3. **Translate** with AI + Rich progress bar
-4. **Create** clean MKV with English + Polish tracks
-
-## License 📄
+## License
 
 MIT License - see LICENSE file for details.

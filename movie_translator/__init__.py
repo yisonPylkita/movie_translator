@@ -7,15 +7,24 @@ This package provides a complete solution for:
 3. Creating clean MKV files with Polish as default subtitle track
 
 Usage:
-    from movie_translator import translate_mkv
-    translate_mkv("/path/to/mkv", "/path/to/output")
+    from movie_translator import TranslationPipeline
+
+    pipeline = TranslationPipeline(device='mps', batch_size=16)
+    pipeline.process_mkv_file(mkv_path, output_dir)
 """
 
 __version__ = '1.0.0'
 __author__ = 'Movie Translator Team'
 
-# Import main functions for easy access
-from .main import main, process_mkv_file
+from .main import main
+from .pipeline import TranslationPipeline
 from .utils import log_error, log_info, log_success, log_warning
 
-__all__ = ['process_mkv_file', 'main', 'log_info', 'log_success', 'log_warning', 'log_error']
+__all__ = [
+    'TranslationPipeline',
+    'main',
+    'log_info',
+    'log_success',
+    'log_warning',
+    'log_error',
+]

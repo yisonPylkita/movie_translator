@@ -1,47 +1,24 @@
 #!/bin/bash
+# Run script for Movie Translator
+# This is a convenience wrapper around: uv run movie-translator
 
-set -e # Exit on any error
+set -e
 
-cleanup_previous_run() {
-	echo "🧹 Cleaning previous run results..."
-	rm -rf ~/Downloads/test_movies/*
-	echo "   ✅ Previous run results cleaned"
-}
-
-copy_test_files() {
-	echo "📁 Copying test files..."
-	local source_dir="$HOME/Downloads/Torrents/completed/[neoDESU] SPY x FAMILY [Season 1+2] [BD 1080p x265 HEVC OPUS AAC] [Dual Audio]/Season 1"
-
-	# cp "$source_dir/SPY x FAMILY - S01E01.mkv" ~/Downloads/test_movies/
-	# cp "$source_dir/SPY x FAMILY - S01E02.mkv" ~/Downloads/test_movies/
-	# cp "$source_dir/SPY x FAMILY - S01E03.mkv" ~/Downloads/test_movies/
-	cp "$source_dir/SPY x FAMILY - S01E05.mkv" ~/Downloads/test_movies/
-	cp "$source_dir/SPY x FAMILY - S01E06.mkv" ~/Downloads/test_movies/
-	cp "$source_dir/SPY x FAMILY - S01E07.mkv" ~/Downloads/test_movies/
-	cp "$source_dir/SPY x FAMILY - S01E08.mkv" ~/Downloads/test_movies/
-	cp "$source_dir/SPY x FAMILY - S01E09.mkv" ~/Downloads/test_movies/
-	echo "   ✅ Test files copied"
-}
-
-run_translation() {
-	echo "🚀 Running translation..."
-	uv run python translate.py --model nllb ~/Downloads/test_movies
-}
-
-show_completion() {
-	echo ""
-	echo "🎉 Translation complete!"
-	echo "Check ~/Downloads/test_movies/translated/ for results."
-}
-
-echo "🎬 Running Movie Translator"
+echo "🎬 Movie Translator"
 echo ""
 
-main() {
-	cleanup_previous_run
-	copy_test_files
-	run_translation
-	show_completion
-}
+# Pass all arguments to uv run movie-translator
+if [[ $# -eq 0 ]]; then
+	echo "Usage: ./run.sh <input_directory> [options]"
+	echo ""
+	echo "Examples:"
+	echo "  ./run.sh ~/Downloads/movies"
+	echo "  ./run.sh ~/Downloads/movies --model mbart"
+	echo "  ./run.sh ~/Downloads/movies --batch-size 8"
+	echo ""
+	echo "For all options:"
+	echo "  uv run movie-translator --help"
+	exit 0
+fi
 
-main "$@"
+uv run movie-translator "$@"

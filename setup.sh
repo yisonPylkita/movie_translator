@@ -1,86 +1,53 @@
 #!/bin/bash
+# Setup script for Movie Translator
+# This is a convenience wrapper around uv commands
 
-set -e # Exit on any error
+set -e
 
-ensure_system_macos() {
-	echo "🍎 Checking system compatibility..."
-	if [[ "$(uname)" != "Darwin" ]]; then
-		echo "   ❌ This setup is designed for MacBook only"
-		echo "   ❌ Current system: $(uname)"
-		echo "   💡 For non-MacBook systems, please create a separate setup script"
-		exit 1
-	fi
+echo "🍎 Setting up Movie Translator for MacBook..."
+echo ""
 
-	if [[ "$(uname -m)" != "arm64" ]]; then
-		echo "   ⚠️  Warning: This is optimized for Apple Silicon (arm64)"
-		echo "   ⚠️  Current architecture: $(uname -m)"
-		echo "   💡 Intel Macs may work but won't have MPS acceleration"
-	else
-		echo "   ✅ Apple Silicon MacBook detected"
-	fi
-}
+# Check macOS
+if [[ "$(uname)" != "Darwin" ]]; then
+	echo "❌ This setup is designed for MacBook only"
+	exit 1
+fi
 
-install_uv() {
-	echo "📦 Checking uv..."
-	if ! command -v uv &>/dev/null; then
-		echo "   Installing uv..."
-		curl -LsSf https://astral.sh/uv/install.sh | sh
-		export PATH="$HOME/.cargo/bin:$PATH"
-		echo "   ✅ uv installed"
-	else
-		echo "   ✅ uv already installed"
-	fi
-}
+if [[ "$(uname -m)" == "arm64" ]]; then
+	echo "✅ Apple Silicon MacBook detected"
+else
+	echo "⚠️  Intel Mac detected - MPS acceleration not available"
+fi
 
-install_homebrew_if_needed() {
+# Install uv if needed
+if ! command -v uv &>/dev/null; then
+	echo "📦 Installing uv..."
+	curl -LsSf https://astral.sh/uv/install.sh | sh
+	export PATH="$HOME/.cargo/bin:$PATH"
+fi
+echo "✅ uv $(uv --version)"
+
+# Install mkvtoolnix if needed
+if ! command -v mkvmerge &>/dev/null; then
+	echo "📦 Installing mkvtoolnix..."
 	if ! command -v brew &>/dev/null; then
-		echo "📦 Installing Homebrew..."
 		/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-		echo "   ✅ Homebrew installed"
-	else
-		echo "   ✅ Homebrew already installed"
 	fi
-}
+	brew install mkvtoolnix
+fi
+echo "✅ mkvtoolnix installed"
 
-install_mkvtoolnix() {
-	echo "📦 Checking mkvtoolnix..."
-	if ! command -v mkvmerge &>/dev/null; then
-		install_homebrew_if_needed
-		echo "   Installing mkvtoolnix..."
-		brew install mkvtoolnix
-		echo "   ✅ mkvtoolnix installed"
-	else
-		echo "   ✅ mkvtoolnix already installed"
-	fi
-}
+# Sync dependencies with uv
+echo "📦 Syncing Python dependencies..."
+uv sync
 
-install_python_dependencies() {
-	echo "📦 Installing Python dependencies..."
-	uv sync
-	echo "   ✅ Dependencies installed"
-}
-
-show_usage() {
-	echo ""
-	echo "🎉 Setup complete!"
-	echo ""
-	echo "Quick usage:"
-	echo "  uv run python translate.py ~/Downloads/test_movies"
-	echo ""
-	echo "For more options:"
-	echo "  uv run python translate.py --help"
-}
-
-# Main setup flow
-main() {
-	echo "🍎 Setting up Movie Translator for MacBook..."
-	echo ""
-
-	ensure_system_macos
-	install_uv
-	install_mkvtoolnix
-	install_python_dependencies
-	show_usage
-}
-
-main "$@"
+echo ""
+echo "🎉 Setup complete!"
+echo ""
+echo "Usage:"
+echo "  uv run movie-translator ~/Downloads/movies"
+echo "  uv run movie-translator --help"
+echo ""
+echo "With OCR support:"
+echo "  uv sync --extra ocr"
+echo "  uv run movie-translator --enable-ocr ~/Downloads/movies"
