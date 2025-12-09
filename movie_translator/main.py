@@ -8,6 +8,7 @@ from rich.table import Table
 from .ffmpeg import get_ffmpeg_version
 from .logging import console, logger
 from .pipeline import TranslationPipeline
+from .subtitles import SubtitleExtractor
 
 
 def check_dependencies():
@@ -86,50 +87,120 @@ def parse_args() -> argparse.Namespace:
         action='store_true',
         help='Use GPU for OCR processing',
     )
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Process files but do not replace originals (keeps output in temp directory)',
+    )
     return parser.parse_args()
 
 
-def show_config(args: argparse.Namespace, input_dir: Path, temp_dir: Path):
+def show_config(args: argparse.Namespace, input_dir: Path):
+    dry_run_status = (
+        '[bold yellow]YES (originals will NOT be modified)[/bold yellow]' if args.dry_run else 'No'
+    )
     console.print(
         Panel.fit(
             f'[bold blue]Movie Translator[/bold blue]\n'
             f'  Input        {input_dir}\n'
-            f'  Temp Dir     {temp_dir}\n'
             f'  Device       {args.device}\n'
             f'  Batch Size   {args.batch_size}\n'
             f'  Model        {args.model}\n'
-            f'  OCR Enabled  {args.enable_ocr}',
+            f'  OCR Enabled  {args.enable_ocr}\n'
+            f'  Dry Run      {dry_run_status}',
             border_style='blue',
         )
     )
 
 
-def show_results(successful: int, failed: int, total: int):
-    table = Table(title='Translation Results')
-    table.add_column('Status', style='green')
-    table.add_column('Count', justify='right')
+def show_results(
+    results: list[tuple[str, str]],
+    dry_run: bool = False,
+):
+    successful = sum(1 for _, status in results if status == 'success')
+    failed = sum(1 for _, status in results if status == 'failed')
+    skipped = sum(1 for _, status in results if status == 'skipped')
+    total = len(results)
 
-    table.add_row('✅ Successful', str(successful))
+    summary_table = Table(title='Summary')
+    summary_table.add_column('Status', style='green')
+    summary_table.add_column('Count', justify='right')
+
+    summary_table.add_row('✅ Successful', str(successful))
+    if skipped > 0:
+        summary_table.add_row('⏭️  Skipped', str(skipped))
     if failed > 0:
-        table.add_row('❌ Failed', str(failed))
-    table.add_row('📁 Total', str(total))
+        summary_table.add_row('❌ Failed', str(failed))
+    summary_table.add_row('📁 Total', str(total))
 
-    console.print(table)
+    console.print(summary_table)
 
-    if failed == 0:
+    if len(results) > 1:
+        details_table = Table(title='File Details')
+        details_table.add_column('File', style='cyan')
+        details_table.add_column('Status', justify='right')
+
+        for filename, status in results:
+            if status == 'success':
+                status_str = '[green]✅ Success[/green]'
+            elif status == 'skipped':
+                status_str = '[blue]⏭️  Skipped[/blue]'
+            else:
+                status_str = '[red]❌ Failed[/red]'
+            details_table.add_row(filename, status_str)
+
+        console.print(details_table)
+
+    if failed == 0 and successful > 0:
+        if dry_run:
+            console.print(
+                Panel(
+                    '[bold green]🏁 DRY RUN complete![/bold green]\n'
+                    '🎬 Output files are in the temp directory. Originals were NOT modified.',
+                    border_style='green',
+                )
+            )
+        else:
+            console.print(
+                Panel(
+                    '[bold green]🎉 All files processed successfully![/bold green]\n'
+                    '🎬 Clean videos with English dialogue + Polish translation created',
+                    border_style='green',
+                )
+            )
+    elif failed == 0 and successful == 0 and skipped > 0:
         console.print(
             Panel(
-                '[bold green]🎉 All files processed successfully![/bold green]\n'
-                '🎬 Clean videos with English dialogue + Polish translation created',
-                border_style='green',
+                '[bold blue]ℹ️  All files already have Polish subtitles.[/bold blue]',
+                border_style='blue',
             )
         )
-    else:
+    elif failed > 0:
         console.print(
             Panel(
-                '[bold yellow]⚠️  Some files failed to process.[/bold yellow]', border_style='yellow'
+                '[bold yellow]⚠️  Some files failed to process.[/bold yellow]',
+                border_style='yellow',
             )
         )
+
+
+def find_mkv_files_with_temp_dirs(input_dir: Path) -> list[tuple[Path, Path]]:
+    mkv_files_direct = sorted(input_dir.glob('*.mkv'))
+    if mkv_files_direct:
+        temp_dir = input_dir / '.translate_temp'
+        temp_dir.mkdir(exist_ok=True)
+        return [(mkv, temp_dir) for mkv in mkv_files_direct]
+
+    results: list[tuple[Path, Path]] = []
+    for subdir in sorted(input_dir.iterdir()):
+        if subdir.is_dir() and not subdir.name.startswith('.'):
+            mkv_files_in_subdir = sorted(subdir.glob('*.mkv'))
+            if mkv_files_in_subdir:
+                temp_dir = subdir / '.translate_temp'
+                temp_dir.mkdir(exist_ok=True)
+                results.extend((mkv, temp_dir) for mkv in mkv_files_in_subdir)
+
+    return results
 
 
 def main():
@@ -142,17 +213,18 @@ def main():
 
     check_dependencies()
 
-    mkv_files = list(input_dir.glob('*.mkv'))
+    mkv_files_with_temps = find_mkv_files_with_temp_dirs(input_dir)
 
-    if not mkv_files:
-        logger.error(f'No MKV files found in {input_dir}')
+    if not mkv_files_with_temps:
+        logger.error(f'No MKV files found in {input_dir} or its subdirectories')
         sys.exit(1)
 
-    temp_dir = input_dir / '.translate_temp'
-    temp_dir.mkdir(exist_ok=True)
+    show_config(args, input_dir)
+    logger.info(f'Found {len(mkv_files_with_temps)} MKV file(s)')
 
-    show_config(args, input_dir, temp_dir)
-    logger.info(f'Found {len(mkv_files)} MKV file(s)')
+    if any(mkv.parent != input_dir for mkv, _ in mkv_files_with_temps):
+        subdirs = sorted({mkv.parent.name for mkv, _ in mkv_files_with_temps})
+        logger.info(f'Scanning subdirectories: {", ".join(subdirs)}')
 
     pipeline = TranslationPipeline(
         device=args.device,
@@ -162,19 +234,40 @@ def main():
         ocr_gpu=args.ocr_gpu,
     )
 
-    successful = 0
-    failed = 0
+    extractor = SubtitleExtractor()
 
-    for mkv_path in mkv_files:
-        if pipeline.process_video_file(mkv_path, temp_dir):
-            successful += 1
+    results: list[tuple[str, str]] = []
+    total_files = len(mkv_files_with_temps)
+
+    for idx, (mkv_path, temp_dir) in enumerate(mkv_files_with_temps, start=1):
+        relative_name = (
+            f'{mkv_path.parent.name}/{mkv_path.name}'
+            if mkv_path.parent != input_dir
+            else mkv_path.name
+        )
+
+        console.print(
+            f'\n[bold cyan]📊 Progress: {idx}/{total_files}[/bold cyan]',
+            highlight=False,
+        )
+
+        if extractor.has_polish_subtitles(mkv_path):
+            logger.info(f'⏭️  Skipping {relative_name} - already has Polish subtitles')
+            results.append((relative_name, 'skipped'))
+            continue
+
+        if pipeline.process_video_file(mkv_path, temp_dir, dry_run=args.dry_run):
+            results.append((relative_name, 'success'))
         else:
-            failed += 1
+            results.append((relative_name, 'failed'))
 
-    show_results(successful, failed, len(mkv_files))
+    show_results(results, dry_run=args.dry_run)
 
+    failed = sum(1 for _, status in results if status == 'failed')
     if failed == 0:
-        console.print(f'📁 Temp files kept in: {temp_dir}')
+        temp_dirs = sorted({temp_dir for _, temp_dir in mkv_files_with_temps})
+        for temp_dir in temp_dirs:
+            console.print(f'📁 Temp files kept in: {temp_dir}')
     else:
         sys.exit(1)
 

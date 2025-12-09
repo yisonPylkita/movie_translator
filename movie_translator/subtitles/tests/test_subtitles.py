@@ -175,6 +175,18 @@ class TestSubtitleExtractor:
 
         assert eng_track is None
 
+    def test_has_polish_subtitles_returns_true_for_polish(self, create_test_mkv):
+        mkv_file = create_test_mkv(language='pol', track_name='Polish')
+        extractor = SubtitleExtractor()
+
+        assert extractor.has_polish_subtitles(mkv_file) is True
+
+    def test_has_polish_subtitles_returns_false_for_english(self, create_test_mkv):
+        mkv_file = create_test_mkv(language='eng', track_name='English')
+        extractor = SubtitleExtractor()
+
+        assert extractor.has_polish_subtitles(mkv_file) is False
+
     def test_extract_subtitle_ass(self, create_test_mkv, tmp_path):
         mkv_file = create_test_mkv(language='eng', subtitle_format='ass')
         extractor = SubtitleExtractor()

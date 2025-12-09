@@ -1,6 +1,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
+from movie_translator.main import find_mkv_files_with_temp_dirs
 from movie_translator.pipeline import TranslationPipeline
 from movie_translator.types import DialogueLine
 
@@ -106,3 +107,64 @@ def test_full_pipeline_fails_with_nonexistent_file(tmp_output_dir):
     result = pipeline.process_video_file(Path('/nonexistent/video.mkv'), tmp_output_dir)
 
     assert result is False
+
+
+class TestFindMkvFiles:
+    def test_finds_mkv_in_root_directory(self, tmp_path):
+        mkv1 = tmp_path / 'video1.mkv'
+        mkv2 = tmp_path / 'video2.mkv'
+        mkv1.touch()
+        mkv2.touch()
+
+        results = find_mkv_files_with_temp_dirs(tmp_path)
+
+        assert len(results) == 2
+        assert results[0][0] == mkv1
+        assert results[1][0] == mkv2
+        assert results[0][1] == tmp_path / '.translate_temp'
+        assert (tmp_path / '.translate_temp').exists()
+
+    def test_finds_mkv_in_subdirectories(self, tmp_path):
+        season1 = tmp_path / 'Season 1'
+        season2 = tmp_path / 'Season 2'
+        season1.mkdir()
+        season2.mkdir()
+
+        (season1 / 'ep01.mkv').touch()
+        (season1 / 'ep02.mkv').touch()
+        (season2 / 'ep01.mkv').touch()
+
+        results = find_mkv_files_with_temp_dirs(tmp_path)
+
+        assert len(results) == 3
+        assert results[0][1] == season1 / '.translate_temp'
+        assert results[2][1] == season2 / '.translate_temp'
+        assert (season1 / '.translate_temp').exists()
+        assert (season2 / '.translate_temp').exists()
+
+    def test_returns_empty_for_no_mkv_files(self, tmp_path):
+        (tmp_path / 'video.mp4').touch()
+
+        results = find_mkv_files_with_temp_dirs(tmp_path)
+
+        assert results == []
+
+    def test_ignores_hidden_directories(self, tmp_path):
+        hidden = tmp_path / '.hidden'
+        hidden.mkdir()
+        (hidden / 'video.mkv').touch()
+
+        results = find_mkv_files_with_temp_dirs(tmp_path)
+
+        assert results == []
+
+    def test_prefers_root_over_subdirectories(self, tmp_path):
+        (tmp_path / 'root.mkv').touch()
+        subdir = tmp_path / 'subdir'
+        subdir.mkdir()
+        (subdir / 'sub.mkv').touch()
+
+        results = find_mkv_files_with_temp_dirs(tmp_path)
+
+        assert len(results) == 1
+        assert results[0][0].name == 'root.mkv'

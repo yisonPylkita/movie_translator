@@ -50,6 +50,19 @@ class SubtitleExtractor:
 
         return {'tracks': tracks}
 
+    def has_polish_subtitles(self, video_path: Path) -> bool:
+        track_info = self.get_track_info(video_path)
+        tracks = track_info.get('tracks', [])
+
+        for track in tracks:
+            if track.get('type') == 'subtitles':
+                props = track.get('properties', {})
+                lang = props.get('language', '')
+                if lang in ('pol', 'pl'):
+                    return True
+
+        return False
+
     def find_english_track(self, track_info: dict[str, Any]) -> dict[str, Any] | None:
         english_tracks = self._get_english_tracks(track_info)
 

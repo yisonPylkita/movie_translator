@@ -34,7 +34,7 @@ class TranslationPipeline:
         self.video_ops = VideoOperations()
         self.ocr = SubtitleOCR(use_gpu=ocr_gpu) if enable_ocr else None
 
-    def process_video_file(self, video_path: Path, temp_dir: Path) -> bool:
+    def process_video_file(self, video_path: Path, temp_dir: Path, dry_run: bool = False) -> bool:
         console.print(
             Panel(f'[bold blue]Processing: {video_path.name}[/bold blue]', border_style='blue')
         )
@@ -66,11 +66,13 @@ class TranslationPipeline:
             temp_video = temp_dir / f'{video_path.stem}_temp{video_path.suffix}'
             self._create_and_verify_video(video_path, clean_english_ass, polish_ass, temp_video)
 
-            self._replace_original(video_path, temp_video)
-
-            logger.info(
-                f'🎉 SUCCESS! Original video replaced with translated version: {video_path.name}'
-            )
+            if dry_run:
+                logger.info(f'🏁 DRY RUN complete! Output available at: {temp_video.name}')
+            else:
+                self._replace_original(video_path, temp_video)
+                logger.info(
+                    f'🎉 SUCCESS! Original video replaced with translated version: {video_path.name}'
+                )
             return True
 
         except Exception as e:
