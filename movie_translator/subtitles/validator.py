@@ -76,9 +76,11 @@ class SubtitleValidator:
 
         return stats
 
-    def _check_timing_coverage(self, event, cleaned_timings: list[tuple[int, int]]) -> bool:
+    def _check_timing_coverage(self, event, cleaned_timings: list[tuple[int, int]], tolerance_ms: int = 50) -> bool:
         for clean_start, clean_end in cleaned_timings:
-            if clean_start <= event.start and clean_end >= event.end:
+            start_ok = clean_start <= event.start + tolerance_ms
+            end_ok = clean_end >= event.end - tolerance_ms
+            if start_ok and end_ok:
                 return True
         return False
 

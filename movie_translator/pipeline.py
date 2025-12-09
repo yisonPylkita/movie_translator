@@ -60,7 +60,12 @@ class TranslationPipeline:
             fonts_support_polish = check_embedded_fonts_support_polish(video_path, extracted_ass)
 
             clean_english_ass, polish_ass = self._create_subtitle_files(
-                video_path, output_dir, extracted_ass, dialogue_lines, translated_dialogue, fonts_support_polish
+                video_path,
+                output_dir,
+                extracted_ass,
+                dialogue_lines,
+                translated_dialogue,
+                fonts_support_polish,
             )
             if not clean_english_ass or not polish_ass:
                 return False
@@ -175,8 +180,7 @@ class TranslationPipeline:
 
         self.writer.create_english_ass(extracted_ass, dialogue_lines, clean_english_ass)
 
-        extracted_ass_path = output_dir / f'{video_path.stem}_extracted.ass'
-        if not self.validator.validate_cleaned_subtitles(extracted_ass_path, clean_english_ass):
+        if not self.validator.validate_cleaned_subtitles(extracted_ass, clean_english_ass):
             log_error('❌ Validation failed! Cleaned subtitles have timestamp mismatches.')
             return None, None
 

@@ -46,7 +46,7 @@ build-backend = "hatchling.build"
 packages = ["movie_translator"]
 
 [dependency-groups]
-dev = ["ruff~=0.14"]
+dev = ["ruff~=0.14", "pytest~=8.0"]
 
 [tool.ruff]
 line-length = 100
@@ -62,3 +62,8 @@ known-first-party = ["movie_translator"]
 [tool.ruff.format]
 indent-style = "space"
 quote-style = "single"
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "movie_translator"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]

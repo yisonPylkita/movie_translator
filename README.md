@@ -1,5 +1,7 @@
 # Movie Translator 🎬
 
+[![Tests](https://github.com/yisonPylkita/movie_translator/actions/workflows/tests.yml/badge.svg)](https://github.com/yisonPylkita/movie_translator/actions/workflows/tests.yml)
+
 **AI subtitle translator** for English→Polish translation. Works on macOS and Linux.
 
 ## Features
