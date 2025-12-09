@@ -6,6 +6,10 @@ from ..ffmpeg import get_ffmpeg, get_video_info
 from ..logging import logger
 
 
+class SubtitleExtractionError(Exception):
+    pass
+
+
 class SubtitleExtractor:
     SIGNS_KEYWORDS = ('sign', 'song', 'title', 'op', 'ed')
     TEXT_CODECS = ('ass', 'ssa', 'subrip', 'srt', 'webvtt', 'mov_text')
@@ -15,12 +19,11 @@ class SubtitleExtractor:
         self.enable_ocr = enable_ocr
 
     def get_track_info(self, video_path: Path) -> dict[str, Any]:
-        try:
-            info = get_video_info(video_path)
-            return self._convert_ffprobe_info(info)
-        except Exception as e:
-            logger.error(f'Failed to get track info from {video_path.name}: {e}')
-            return {}
+        if not video_path.exists():
+            raise SubtitleExtractionError(f'Video file not found: {video_path}')
+
+        info = get_video_info(video_path)
+        return self._convert_ffprobe_info(info)
 
     def _convert_ffprobe_info(self, ffprobe_info: dict[str, Any]) -> dict[str, Any]:
         streams = ffprobe_info.get('streams', [])
@@ -199,7 +202,10 @@ class SubtitleExtractor:
 
     def extract_subtitle(
         self, video_path: Path, track_id: int, output_path: Path, subtitle_index: int | None = None
-    ) -> bool:
+    ) -> None:
+        if not video_path.exists():
+            raise SubtitleExtractionError(f'Video file not found: {video_path}')
+
         logger.info(f'Extracting subtitle track {track_id}...')
 
         ffmpeg = get_ffmpeg()
@@ -218,18 +224,16 @@ class SubtitleExtractor:
             str(output_path),
         ]
 
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode == 0:
-                logger.info(f'Extraction successful: {output_path.name}')
-                return True
-            else:
-                logger.error(f'Failed to extract subtitle track {track_id}')
-                if result.stderr:
-                    for line in result.stderr.split('\n'):
-                        if 'error' in line.lower() or 'invalid' in line.lower():
-                            logger.error(f'   {line}')
-                return False
-        except Exception as e:
-            logger.error(f'Failed to extract subtitle track {track_id}: {e}')
-            return False
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            error_lines = [
+                line
+                for line in result.stderr.split('\n')
+                if 'error' in line.lower() or 'invalid' in line.lower()
+            ]
+            error_msg = '; '.join(error_lines) if error_lines else 'Unknown ffmpeg error'
+            raise SubtitleExtractionError(
+                f'Failed to extract subtitle track {track_id}: {error_msg}'
+            )
+
+        logger.info(f'Extraction successful: {output_path.name}')

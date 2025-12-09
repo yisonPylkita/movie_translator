@@ -9,6 +9,10 @@ import static_ffmpeg.run
 from .types import SubtitleFile
 
 
+class VideoMuxError(Exception):
+    pass
+
+
 @lru_cache(maxsize=1)
 def get_ffmpeg_paths() -> tuple[str, str]:
     return static_ffmpeg.run.get_or_fetch_platform_executables_else_raise()
@@ -40,17 +44,18 @@ def get_video_info(video_path: Path) -> dict[str, Any]:
     return json.loads(result.stdout)
 
 
-def get_subtitle_streams(video_path: Path) -> list[dict[str, Any]]:
-    info = get_video_info(video_path)
-    streams = info.get('streams', [])
-    return [s for s in streams if s.get('codec_type') == 'subtitle']
-
-
 def mux_video_with_subtitles(
     video_path: Path,
     subtitle_files: list[SubtitleFile],
     output_path: Path,
-) -> bool:
+) -> None:
+    if not video_path.exists():
+        raise VideoMuxError(f'Video file not found: {video_path}')
+
+    for sub in subtitle_files:
+        if not sub.path.exists():
+            raise VideoMuxError(f'Subtitle file not found: {sub.path}')
+
     ffmpeg = get_ffmpeg()
 
     cmd = [
@@ -82,7 +87,10 @@ def mux_video_with_subtitles(
     cmd.append(str(output_path))
 
     result = subprocess.run(cmd, capture_output=True, text=True)
-    return result.returncode == 0
+    if result.returncode != 0:
+        error_lines = [line for line in result.stderr.split('\n') if 'error' in line.lower()]
+        error_msg = '; '.join(error_lines) if error_lines else 'Unknown ffmpeg error'
+        raise VideoMuxError(f'Failed to mux video: {error_msg}')
 
 
 def get_ffmpeg_version() -> str:

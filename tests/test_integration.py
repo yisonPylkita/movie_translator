@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import patch
 
 from movie_translator.pipeline import TranslationPipeline
@@ -73,5 +74,35 @@ def test_full_pipeline_detects_no_english_subtitles(create_test_mkv, tmp_output_
 
     with patch.object(pipeline, '_translate', return_value=[]):
         result = pipeline.process_video_file(mkv_file, tmp_output_dir)
+
+    assert result is False
+
+
+def test_full_pipeline_fails_when_translation_returns_empty(create_test_mkv, tmp_output_dir):
+    mkv_file = create_test_mkv(language='eng', track_name='English')
+
+    pipeline = TranslationPipeline(device='cpu', batch_size=1)
+
+    with patch.object(pipeline, '_translate', return_value=[]):
+        result = pipeline.process_video_file(mkv_file, tmp_output_dir)
+
+    assert result is False
+
+
+def test_full_pipeline_fails_when_translation_returns_none(create_test_mkv, tmp_output_dir):
+    mkv_file = create_test_mkv(language='eng', track_name='English')
+
+    pipeline = TranslationPipeline(device='cpu', batch_size=1)
+
+    with patch.object(pipeline, '_translate', return_value=None):
+        result = pipeline.process_video_file(mkv_file, tmp_output_dir)
+
+    assert result is False
+
+
+def test_full_pipeline_fails_with_nonexistent_file(tmp_output_dir):
+    pipeline = TranslationPipeline(device='cpu', batch_size=1)
+
+    result = pipeline.process_video_file(Path('/nonexistent/video.mkv'), tmp_output_dir)
 
     assert result is False

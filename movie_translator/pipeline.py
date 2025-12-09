@@ -62,17 +62,11 @@ class TranslationPipeline:
                 translated_dialogue,
                 fonts_support_polish,
             )
-            if not clean_english_ass or not polish_ass:
-                return False
 
             temp_video = temp_dir / f'{video_path.stem}_temp{video_path.suffix}'
-            if not self._create_and_verify_video(
-                video_path, clean_english_ass, polish_ass, temp_video
-            ):
-                return False
+            self._create_and_verify_video(video_path, clean_english_ass, polish_ass, temp_video)
 
-            if not self._replace_original(video_path, temp_video):
-                return False
+            self._replace_original(video_path, temp_video)
 
             logger.info(
                 f'🎉 SUCCESS! Original video replaced with translated version: {video_path.name}'
@@ -108,8 +102,7 @@ class TranslationPipeline:
 
         subtitle_index = eng_track.get('subtitle_index', 0)
 
-        if not self.extractor.extract_subtitle(video_path, track_id, extracted_ass, subtitle_index):
-            return None
+        self.extractor.extract_subtitle(video_path, track_id, extracted_ass, subtitle_index)
 
         return extracted_ass
 
@@ -162,7 +155,7 @@ class TranslationPipeline:
         dialogue_lines: list[DialogueLine],
         translated_dialogue: list[DialogueLine],
         fonts_support_polish: bool,
-    ) -> tuple[Path | None, Path | None]:
+    ) -> tuple[Path, Path]:
         logger.info('🔨 Step 4: Creating clean subtitle files...')
 
         clean_english_ass = output_dir / f'{video_path.stem}_english_clean.ass'
@@ -170,9 +163,7 @@ class TranslationPipeline:
 
         self.writer.create_english_ass(extracted_ass, dialogue_lines, clean_english_ass)
 
-        if not self.validator.validate_cleaned_subtitles(extracted_ass, clean_english_ass):
-            logger.error('❌ Validation failed! Cleaned subtitles have timestamp mismatches.')
-            return None, None
+        self.validator.validate_cleaned_subtitles(extracted_ass, clean_english_ass)
 
         replace_chars = not fonts_support_polish
         self.writer.create_polish_ass(extracted_ass, translated_dialogue, polish_ass, replace_chars)
@@ -185,43 +176,31 @@ class TranslationPipeline:
         english_ass: Path,
         polish_ass: Path,
         temp_video: Path,
-    ) -> bool:
+    ) -> None:
         logger.info('🎬 Step 5: Creating clean video...')
 
-        if not self.video_ops.create_clean_video(
-            original_video, english_ass, polish_ass, temp_video
-        ):
-            return False
+        self.video_ops.create_clean_video(original_video, english_ass, polish_ass, temp_video)
+        self.video_ops.verify_result(temp_video)
 
-        if not self.video_ops.verify_result(temp_video):
-            return False
-
-        return True
-
-    def _replace_original(self, video_path: Path, temp_video: Path) -> bool:
+    def _replace_original(self, video_path: Path, temp_video: Path) -> None:
         logger.info('🔄 Step 6: Replacing original video...')
 
         backup_path = video_path.with_suffix(video_path.suffix + '.backup')
 
-        try:
-            shutil.copy2(video_path, backup_path)
-            logger.info(f'   - Created backup: {backup_path.name}')
+        shutil.copy2(video_path, backup_path)
+        logger.info(f'   - Created backup: {backup_path.name}')
 
+        try:
             shutil.move(str(temp_video), str(video_path))
             logger.info(f'   - Replaced original: {video_path.name}')
 
-            if not self.video_ops.verify_result(video_path):
-                logger.error('   - Verification failed, restoring backup')
-                shutil.move(str(backup_path), str(video_path))
-                return False
+            self.video_ops.verify_result(video_path)
 
             backup_path.unlink()
             logger.info('   - Verified and cleaned up backup')
-            return True
 
-        except Exception as e:
-            logger.error(f'   - Failed to replace original: {e}')
+        except Exception:
             if backup_path.exists() and not video_path.exists():
                 shutil.move(str(backup_path), str(video_path))
                 logger.info('   - Restored backup after failure')
-            return False
+            raise

@@ -1,3 +1,3 @@
-from .operations import VideoOperations
+from .operations import VideoOperationError, VideoOperations
 
-__all__ = ['VideoOperations']
+__all__ = ['VideoOperationError', 'VideoOperations']

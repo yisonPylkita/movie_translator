@@ -5,6 +5,10 @@ from ..types import DialogueLine
 from ._pysubs2 import get_pysubs2
 
 
+class SubtitleParseError(Exception):
+    pass
+
+
 class SubtitleParser:
     NON_DIALOGUE_STYLES = ('sign', 'song', 'title', 'op', 'ed')
 
@@ -12,8 +16,6 @@ class SubtitleParser:
         logger.info(f'📖 Reading {subtitle_file.name}...')
 
         subs = self._load_subtitle_file(subtitle_file)
-        if subs is None:
-            return []
 
         logger.info(f'   - Loaded {len(subs)} total events')
 
@@ -23,15 +25,17 @@ class SubtitleParser:
         return dialogue_lines
 
     def _load_subtitle_file(self, subtitle_file: Path):
+        if not subtitle_file.exists():
+            raise SubtitleParseError(f'Subtitle file not found: {subtitle_file}')
+
         pysubs2 = get_pysubs2()
         if pysubs2 is None:
-            return None
+            raise SubtitleParseError('pysubs2 library not available')
 
         try:
             return pysubs2.load(str(subtitle_file))
         except Exception as e:
-            logger.error(f'Failed to load: {e}')
-            return None
+            raise SubtitleParseError(f'Failed to parse subtitle file: {e}') from e
 
     def _deduplicate_events(self, subs) -> list:
         original_count = len(subs)

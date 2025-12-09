@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description='Movie Translator - Extract English dialogue → AI translate to Polish → Replace original video'
     )
-    parser.add_argument('input_dir', help='Directory containing video files (MKV, MP4, etc.)')
+    parser.add_argument('input_dir', help='Directory containing MKV files')
     parser.add_argument(
         '--device',
         choices=['cpu', 'mps'],

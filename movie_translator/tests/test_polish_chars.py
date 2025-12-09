@@ -1,5 +1,3 @@
-import gc
-
 from movie_translator.subtitles.writer import _replace_polish_chars
 
 
@@ -29,7 +27,3 @@ def test_replace_polish_chars_mixed_text():
 
 def test_replace_polish_chars_empty_string():
     assert _replace_polish_chars('') == ''
-
-
-def test_gc_collect_runs_without_error():
-    gc.collect()

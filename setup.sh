@@ -1,13 +1,9 @@
 #!/bin/bash
-# Setup script for Movie Translator
-# This is a convenience wrapper around uv commands
-
 set -e
 
 echo "🎬 Setting up Movie Translator..."
 echo ""
 
-# Detect OS
 OS="$(uname)"
 if [[ "$OS" == "Darwin" ]]; then
 	if [[ "$(uname -m)" == "arm64" ]]; then
@@ -21,7 +17,6 @@ else
 	echo "⚠️  Unknown OS: $OS - may not be fully supported"
 fi
 
-# Install uv if needed
 if ! command -v uv &>/dev/null; then
 	echo "📦 Installing uv..."
 	curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -29,7 +24,6 @@ if ! command -v uv &>/dev/null; then
 fi
 echo "✅ uv $(uv --version)"
 
-# Sync dependencies with uv (includes static-ffmpeg)
 echo "📦 Syncing Python dependencies..."
 uv sync
 
@@ -45,7 +39,7 @@ echo ""
 echo "Supported format: MKV"
 echo ""
 echo "Options:"
-echo "  ./run.sh ~/Downloads/movies --model mbart"
+echo "  ./run.sh ~/Downloads/movies --model facebook"
 echo "  ./run.sh ~/Downloads/movies --batch-size 8"
 echo "  ./run.sh --help"
 echo ""

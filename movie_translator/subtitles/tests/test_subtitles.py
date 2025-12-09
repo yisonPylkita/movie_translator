@@ -1,6 +1,13 @@
+from pathlib import Path
+
+import pytest
+
 from movie_translator.subtitles import (
+    SubtitleExtractionError,
     SubtitleExtractor,
+    SubtitleParseError,
     SubtitleParser,
+    SubtitleValidationError,
     SubtitleValidator,
     SubtitleWriter,
 )
@@ -61,6 +68,38 @@ class TestSubtitleParser:
             assert isinstance(line.end_ms, int)
             assert isinstance(line.text, str)
             assert line.end_ms > line.start_ms
+
+    def test_raises_for_nonexistent_file(self):
+        parser = SubtitleParser()
+        with pytest.raises(SubtitleParseError, match='not found'):
+            parser.extract_dialogue_lines(Path('/nonexistent/file.ass'))
+
+    def test_raises_for_invalid_file(self, tmp_path):
+        invalid_file = tmp_path / 'invalid.ass'
+        invalid_file.write_text('this is not valid subtitle content')
+
+        parser = SubtitleParser()
+        with pytest.raises(SubtitleParseError, match='Failed to parse'):
+            parser.extract_dialogue_lines(invalid_file)
+
+    def test_returns_empty_list_for_valid_file_with_no_dialogue(self, tmp_path):
+        no_dialogue_file = tmp_path / 'no_dialogue.ass'
+        no_dialogue_file.write_text("""[Script Info]
+Title: Test
+ScriptType: v4.00+
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Signs,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:03.00,Signs,,0,0,0,,EPISODE 1
+""")
+
+        parser = SubtitleParser()
+        lines = parser.extract_dialogue_lines(no_dialogue_file)
+        assert lines == []
 
 
 class TestSubtitleWriter:
@@ -141,9 +180,8 @@ class TestSubtitleExtractor:
         extractor = SubtitleExtractor()
         output_path = tmp_path / 'extracted.ass'
 
-        result = extractor.extract_subtitle(mkv_file, 0, output_path, subtitle_index=0)
+        extractor.extract_subtitle(mkv_file, 0, output_path, subtitle_index=0)
 
-        assert result is True
         assert output_path.exists()
 
     def test_extract_subtitle_srt(self, create_test_mkv, tmp_path):
@@ -151,10 +189,33 @@ class TestSubtitleExtractor:
         extractor = SubtitleExtractor()
         output_path = tmp_path / 'extracted.srt'
 
-        result = extractor.extract_subtitle(mkv_file, 0, output_path, subtitle_index=0)
+        extractor.extract_subtitle(mkv_file, 0, output_path, subtitle_index=0)
 
-        assert result is True
         assert output_path.exists()
+
+
+class TestSubtitleExtractorErrors:
+    def test_get_track_info_raises_for_nonexistent_file(self):
+        extractor = SubtitleExtractor()
+        with pytest.raises(SubtitleExtractionError, match='not found'):
+            extractor.get_track_info(Path('/nonexistent/file.mkv'))
+
+    def test_extract_subtitle_raises_for_nonexistent_file(self, tmp_path):
+        extractor = SubtitleExtractor()
+        output_path = tmp_path / 'extracted.ass'
+
+        with pytest.raises(SubtitleExtractionError, match='not found'):
+            extractor.extract_subtitle(
+                Path('/nonexistent/file.mkv'), 0, output_path, subtitle_index=0
+            )
+
+    def test_extract_subtitle_raises_for_invalid_track(self, create_test_mkv, tmp_path):
+        mkv_file = create_test_mkv(language='eng')
+        extractor = SubtitleExtractor()
+        output_path = tmp_path / 'extracted.ass'
+
+        with pytest.raises(SubtitleExtractionError, match='Failed to extract'):
+            extractor.extract_subtitle(mkv_file, 999, output_path, subtitle_index=999)
 
 
 class TestSubtitleValidator:
@@ -179,6 +240,34 @@ Dialogue: 0,0:00:10.00,0:00:12.00,Default,,0,0,0,,What a beautiful day!
         cleaned.write_text(cleaned_content)
 
         validator = SubtitleValidator()
-        result = validator.validate_cleaned_subtitles(original, cleaned)
+        validator.validate_cleaned_subtitles(original, cleaned)
 
-        assert result is True
+    def test_validate_raises_for_nonexistent_file(self, tmp_path):
+        original = tmp_path / 'nonexistent.ass'
+        cleaned = tmp_path / 'also_nonexistent.ass'
+
+        validator = SubtitleValidator()
+        with pytest.raises(SubtitleValidationError, match='not found'):
+            validator.validate_cleaned_subtitles(original, cleaned)
+
+    def test_validate_raises_for_timing_mismatch(self, create_ass_file, tmp_path):
+        original = create_ass_file('original.ass')
+
+        mismatched_content = """[Script Info]
+Title: Test
+ScriptType: v4.00+
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:05.00,0:00:06.00,Default,,0,0,0,,Hello, how are you?
+"""
+        cleaned = tmp_path / 'cleaned.ass'
+        cleaned.write_text(mismatched_content)
+
+        validator = SubtitleValidator()
+        with pytest.raises(SubtitleValidationError, match='timing gaps'):
+            validator.validate_cleaned_subtitles(original, cleaned)

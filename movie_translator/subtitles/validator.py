@@ -6,33 +6,38 @@ from ._pysubs2 import get_pysubs2
 TIMING_TOLERANCE_MS = 50
 
 
+class SubtitleValidationError(Exception):
+    pass
+
+
 class SubtitleValidator:
-    def validate_cleaned_subtitles(self, original_ass: Path, cleaned_ass: Path) -> bool:
+    def validate_cleaned_subtitles(self, original_ass: Path, cleaned_ass: Path) -> None:
         logger.info('🔍 Validating cleaned subtitles...')
+
+        if not original_ass.exists():
+            raise SubtitleValidationError(f'Original subtitle file not found: {original_ass}')
+        if not cleaned_ass.exists():
+            raise SubtitleValidationError(f'Cleaned subtitle file not found: {cleaned_ass}')
 
         pysubs2 = get_pysubs2()
         if pysubs2 is None:
-            return False
+            raise SubtitleValidationError('pysubs2 library not available')
 
         try:
             original_subs = pysubs2.load(str(original_ass))
             cleaned_subs = pysubs2.load(str(cleaned_ass))
-
-            cleaned_dict = self._build_cleaned_dict(cleaned_subs)
-            stats = self._validate_coverage(original_subs, cleaned_dict)
-
-            self._log_validation_stats(stats, len(cleaned_subs))
-
-            if stats['mismatches'] == 0:
-                logger.info('   ✅ All original events are properly covered!')
-                return True
-            else:
-                logger.error(f'   ❌ Found {stats["mismatches"]} timing gaps!')
-                return False
-
         except Exception as e:
-            logger.error(f'Failed to validate cleaned subtitles: {e}')
-            return False
+            raise SubtitleValidationError(f'Failed to load subtitle files: {e}') from e
+
+        cleaned_dict = self._build_cleaned_dict(cleaned_subs)
+        stats = self._validate_coverage(original_subs, cleaned_dict)
+
+        self._log_validation_stats(stats, len(cleaned_subs))
+
+        if stats['mismatches'] > 0:
+            raise SubtitleValidationError(f'Found {stats["mismatches"]} timing gaps')
+
+        logger.info('   ✅ All original events are properly covered!')
 
     def _build_cleaned_dict(self, cleaned_subs) -> dict[str, list[tuple[int, int]]]:
         cleaned_dict = {}
