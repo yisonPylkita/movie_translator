@@ -20,6 +20,23 @@ else
 	echo "⚠️  Unknown OS: $OS - may not be fully supported"
 fi
 
+if ! command -v git-lfs &>/dev/null; then
+	if [[ "$OS" == "Darwin" ]] && command -v brew &>/dev/null; then
+		echo "📦 Installing Git LFS..."
+		brew install git-lfs
+	else
+		echo "❌ Git LFS is required but not installed"
+		echo ""
+		echo "   Install it with:"
+		echo "   - macOS: brew install git-lfs"
+		echo "   - Ubuntu/Debian: sudo apt install git-lfs"
+		echo "   - Fedora: sudo dnf install git-lfs"
+		exit 1
+	fi
+fi
+echo "✅ Git LFS found"
+git lfs install >/dev/null 2>&1
+
 if ! command -v uv &>/dev/null; then
 	echo "📦 Installing uv..."
 	curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -37,34 +54,16 @@ uv run python -c "from static_ffmpeg import run; run.get_or_fetch_platform_execu
 echo "✅ FFmpeg ready"
 
 echo ""
-echo "🤖 Checking AI translation model..."
-if [[ -f "models/allegro/model.safetensors" ]]; then
-	echo "✅ Model already exists"
+echo "🤖 Fetching AI translation model..."
+git lfs pull
+
+MODEL_FILE="models/allegro/model.safetensors"
+MODEL_SIZE=$(stat -f%z "$MODEL_FILE" 2>/dev/null || stat -c%s "$MODEL_FILE" 2>/dev/null || echo "0")
+if [[ "$MODEL_SIZE" -gt 1000000 ]]; then
+	echo "✅ Model ready ($((MODEL_SIZE / 1024 / 1024))MB)"
 else
-	echo "📥 Downloading model from HuggingFace..."
-	uv run python -c "
-from huggingface_hub import snapshot_download
-from pathlib import Path
-import shutil
-
-target = Path('models/allegro')
-target.mkdir(parents=True, exist_ok=True)
-snapshot_download(repo_id='allegro/BiDi-eng-pol', local_dir=str(target))
-
-# Clean up unnecessary files
-for f in target.glob('*.svg'):
-    f.unlink()
-for f in target.glob('*.md'):
-    f.unlink()
-cache_dir = target / '.cache'
-if cache_dir.exists():
-    shutil.rmtree(cache_dir)
-gitattr = target / '.gitattributes'
-if gitattr.exists():
-    gitattr.unlink()
-
-print('✅ Model downloaded successfully')
-"
+	echo "❌ Failed to download model via Git LFS"
+	exit 1
 fi
 
 echo ""
