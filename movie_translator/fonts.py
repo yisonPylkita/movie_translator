@@ -5,8 +5,7 @@ from pathlib import Path
 
 from .ffmpeg import get_ffmpeg, get_ffprobe
 from .logging import logger
-
-POLISH_CHARS = 'ąćęłńóśźżĄĆĘŁŃÓŚŹŻ'
+from .types import POLISH_CHARS
 
 
 def get_embedded_fonts(video_path: Path) -> list[dict]:

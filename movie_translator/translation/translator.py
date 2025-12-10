@@ -1,6 +1,6 @@
 import gc
 import time
-from typing import Protocol
+from collections.abc import Callable
 
 import torch
 from rich.progress import Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeElapsedColumn
@@ -17,25 +17,19 @@ from .models import (
     get_local_model_path,
 )
 
-
-class ProgressCallback(Protocol):
-    def __call__(
-        self,
-        batch_num: int,
-        total_batches: int,
-        lines_per_second: float,
-        error: str | None,
-    ) -> None: ...
+# Callback receives (batch_num, total_batches, lines_per_second)
+ProgressCallback = Callable[[int, int, float], None]
 
 
 class SubtitleTranslator:
     def __init__(
         self,
-        model_name: str = DEFAULT_MODEL,
+        model_key: str = DEFAULT_MODEL,
         device: str = DEFAULT_DEVICE,
         batch_size: int = DEFAULT_BATCH_SIZE,
     ):
-        self.model_config = self._get_model_config(model_name)
+        self.model_key = model_key
+        self.model_config = self._get_model_config(model_key)
         self.model_path = self._resolve_model_path()
         self.device = 'mps' if device == 'mps' else 'cpu'
         self.batch_size = batch_size
@@ -46,16 +40,16 @@ class SubtitleTranslator:
 
     def _resolve_model_path(self) -> str:
         """Return local model path if available, otherwise HuggingFace model ID."""
-        local_path = get_local_model_path(self.model_config)
+        local_path = get_local_model_path(self.model_key)
         if local_path:
             return str(local_path)
-        return self.model_config.get('name', '')
+        return self.model_config.get('huggingface_id', '')
 
-    def _get_model_config(self, model_name: str) -> ModelConfig:
-        if model_name in TRANSLATION_MODELS:
-            return TRANSLATION_MODELS[model_name]
+    def _get_model_config(self, model_key: str) -> ModelConfig:
+        if model_key in TRANSLATION_MODELS:
+            return TRANSLATION_MODELS[model_key]
         return {
-            'name': model_name,
+            'huggingface_id': model_key,
             'description': 'Custom model',
             'max_length': 512,
         }
@@ -88,7 +82,9 @@ class SubtitleTranslator:
         )
         self.model.to(self.device)
 
-    def translate_texts(self, texts: list[str], progress_callback: ProgressCallback) -> list[str]:
+    def translate_texts(
+        self, texts: list[str], progress_callback: ProgressCallback | None = None
+    ) -> list[str]:
         if not texts:
             return []
 
@@ -102,26 +98,17 @@ class SubtitleTranslator:
 
             batch_translations = self._translate_batch(batch_texts)
             translations.extend(batch_translations)
-            self._report_progress(
-                progress_callback, batch_num, total_batches, start_time, len(texts)
-            )
+
+            if progress_callback:
+                elapsed = time.time() - start_time
+                lines_processed = min(batch_num * self.batch_size, len(texts))
+                rate = lines_processed / elapsed if elapsed > 0 else 0
+                progress_callback(batch_num, total_batches, rate)
+
             self._periodic_memory_cleanup(i)
 
         self._clear_memory()
         return translations
-
-    def _report_progress(
-        self,
-        callback: ProgressCallback,
-        batch_num: int,
-        total_batches: int,
-        start_time: float,
-        total_texts: int,
-    ):
-        elapsed = time.time() - start_time
-        lines_processed = min(batch_num * self.batch_size, total_texts)
-        rate = lines_processed / elapsed if elapsed > 0 else 0
-        callback(batch_num, total_batches, rate, None)
 
     def _periodic_memory_cleanup(self, index: int):
         if index > 0 and index % (self.batch_size * 50) == 0:
@@ -138,7 +125,8 @@ class SubtitleTranslator:
         return decoded
 
     def _preprocess_texts(self, texts: list[str]) -> list[str]:
-        if 'bidi' in self.model_path.lower():
+        huggingface_id = self.model_config.get('huggingface_id', '').lower()
+        if 'bidi' in huggingface_id:
             return [f'>>pol<< {text}' for text in texts]
         return texts
 
@@ -191,12 +179,12 @@ def translate_dialogue_lines(
     batch_size: int,
     model: str,
 ) -> list[DialogueLine]:
-    translator = SubtitleTranslator(device=device, batch_size=batch_size, model_name=model)
+    translator = SubtitleTranslator(device=device, batch_size=batch_size, model_key=model)
 
     if not translator.load_model():
         return []
 
-    texts = [text for _, _, text in dialogue_lines]
+    texts = [line.text for line in dialogue_lines]
     total_batches = (len(texts) + batch_size - 1) // batch_size
 
     with Progress(
@@ -216,16 +204,8 @@ def translate_dialogue_lines(
             rate='',
         )
 
-        def on_progress(
-            batch_num: int,
-            total_batches: int,
-            lines_per_second: float,
-            error: str | None,
-        ) -> None:
-            if error:
-                progress.update(task, advance=1, rate=f'[red]{error}[/red]')
-            else:
-                progress.update(task, advance=1, rate=f'{lines_per_second:.1f}/s')
+        def on_progress(batch_num: int, total_batches: int, rate: float) -> None:
+            progress.update(task, advance=1, rate=f'{rate:.1f}/s')
 
         translated_texts = translator.translate_texts(texts, on_progress)
 

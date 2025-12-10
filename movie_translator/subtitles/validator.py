@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from ..logging import logger
+from ..types import NON_DIALOGUE_STYLES
 from ._pysubs2 import get_pysubs2
 
 TIMING_TOLERANCE_MS = 50
@@ -57,11 +58,9 @@ class SubtitleValidator:
             'found_in_cleaned': 0,
         }
 
-        non_dialogue_styles = ('sign', 'song', 'title', 'op', 'ed')
-
         for event in original_subs:
             style = getattr(event, 'style', 'Default').lower()
-            if any(keyword in style for keyword in non_dialogue_styles):
+            if any(keyword in style for keyword in NON_DIALOGUE_STYLES):
                 continue
 
             clean_text = event.plaintext.strip()

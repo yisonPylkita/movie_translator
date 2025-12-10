@@ -152,7 +152,6 @@ def main():
         model=args.model,
         enable_ocr=args.enable_ocr,
         ocr_gpu=args.ocr_gpu,
-        verbose=args.verbose,
     )
 
     extractor = SubtitleExtractor()
@@ -198,4 +197,5 @@ def main():
 
 
 if __name__ == '__main__':
+    main()
     main()

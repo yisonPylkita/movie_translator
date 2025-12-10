@@ -18,14 +18,12 @@ class TranslationPipeline:
         model: str = 'allegro',
         enable_ocr: bool = False,
         ocr_gpu: bool = False,
-        verbose: bool = False,
     ):
         self.device = device
         self.batch_size = batch_size
         self.model = model
         self.enable_ocr = enable_ocr
         self.ocr_gpu = ocr_gpu
-        self.verbose = verbose
 
         self.extractor = SubtitleExtractor(enable_ocr=enable_ocr)
         self.parser = SubtitleParser()
@@ -189,4 +187,5 @@ class TranslationPipeline:
         except Exception:
             if backup_path.exists() and not video_path.exists():
                 shutil.move(str(backup_path), str(video_path))
+            raise
             raise

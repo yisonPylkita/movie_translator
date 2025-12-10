@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from ..logging import logger
-from ..types import DialogueLine
+from ..types import NON_DIALOGUE_STYLES, DialogueLine
 from ._pysubs2 import get_pysubs2
 
 
@@ -10,8 +10,6 @@ class SubtitleParseError(Exception):
 
 
 class SubtitleParser:
-    NON_DIALOGUE_STYLES = ('sign', 'song', 'title', 'op', 'ed')
-
     def extract_dialogue_lines(self, subtitle_file: Path) -> list[DialogueLine]:
         logger.info(f'📖 Reading {subtitle_file.name}...')
 
@@ -99,7 +97,7 @@ class SubtitleParser:
                 continue
 
             style = getattr(event, 'style', 'Default').lower()
-            if any(keyword in style for keyword in self.NON_DIALOGUE_STYLES):
+            if any(keyword in style for keyword in NON_DIALOGUE_STYLES):
                 skipped_count += 1
                 continue
 

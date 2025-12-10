@@ -11,7 +11,6 @@ class SubtitleExtractionError(Exception):
 
 
 class SubtitleExtractor:
-    SIGNS_KEYWORDS = ('sign', 'song', 'title', 'op', 'ed')
     TEXT_CODECS = ('ass', 'ssa', 'subrip', 'srt', 'webvtt', 'mov_text')
     IMAGE_CODECS = ('hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle')
 
@@ -104,7 +103,7 @@ class SubtitleExtractor:
             props = track.get('properties', {})
             track_name = props.get('track_name', '').lower()
 
-            if any(keyword in track_name for keyword in self.SIGNS_KEYWORDS):
+            if any(keyword in track_name for keyword in NON_DIALOGUE_STYLES):
                 signs_tracks.append(track)
             else:
                 dialogue_tracks.append(track)
