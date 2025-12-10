@@ -42,20 +42,14 @@ class SubtitleTranslator:
         self.tokenizer = None
         self.model = None
 
-        logger.info(
-            f'🤖 Initializing AI Translator: {self.model_config.get("description", model_name)} '
-            f'on {self.device} with batch size {batch_size}'
-        )
+        logger.info(f'Initializing translator on {self.device}')
 
     def _resolve_model_path(self) -> str:
         """Return local model path if available, otherwise HuggingFace model ID."""
         local_path = get_local_model_path(self.model_config)
         if local_path:
-            logger.info(f'   - Using local model: {local_path}')
             return str(local_path)
-        model_id = self.model_config.get('name', '')
-        logger.info(f'   - Using HuggingFace model: {model_id}')
-        return model_id
+        return self.model_config.get('name', '')
 
     def _get_model_config(self, model_name: str) -> ModelConfig:
         if model_name in TRANSLATION_MODELS:
@@ -72,16 +66,15 @@ class SubtitleTranslator:
         gc.collect()
 
     def load_model(self) -> bool:
-        logger.info('📥 Loading translation model...')
+        logger.info('Loading model...')
 
         try:
             self._clear_memory()
             self._load_tokenizer()
             self._load_model()
-            logger.info(f'   ✅ Model loaded successfully on {self.device}')
             return True
         except Exception as e:
-            logger.error(f'   ❌ Failed to load model: {e}')
+            logger.error(f'Failed to load model: {e}')
             return False
 
     def _load_tokenizer(self):
@@ -96,8 +89,6 @@ class SubtitleTranslator:
         self.model.to(self.device)
 
     def translate_texts(self, texts: list[str], progress_callback: ProgressCallback) -> list[str]:
-        logger.info(f'🔄 Translating {len(texts)} texts...')
-
         if not texts:
             return []
 
@@ -109,20 +100,14 @@ class SubtitleTranslator:
             batch_num = i // self.batch_size + 1
             batch_texts = texts[i : i + self.batch_size]
 
-            try:
-                batch_translations = self._translate_batch(batch_texts)
-                translations.extend(batch_translations)
-                self._report_progress(
-                    progress_callback, batch_num, total_batches, start_time, len(texts)
-                )
-                self._periodic_memory_cleanup(i)
-            except Exception as e:
-                self._handle_batch_error(
-                    progress_callback, batch_num, total_batches, e, batch_texts, translations
-                )
+            batch_translations = self._translate_batch(batch_texts)
+            translations.extend(batch_translations)
+            self._report_progress(
+                progress_callback, batch_num, total_batches, start_time, len(texts)
+            )
+            self._periodic_memory_cleanup(i)
 
         self._clear_memory()
-        logger.info(f'   ✅ Translation complete: {len(translations)} texts processed')
         return translations
 
     def _report_progress(
@@ -141,18 +126,6 @@ class SubtitleTranslator:
     def _periodic_memory_cleanup(self, index: int):
         if index > 0 and index % (self.batch_size * 50) == 0:
             self._clear_memory()
-
-    def _handle_batch_error(
-        self,
-        callback: ProgressCallback,
-        batch_num: int,
-        total_batches: int,
-        error: Exception,
-        batch_texts: list[str],
-        translations: list[str],
-    ):
-        callback(batch_num, total_batches, 0, str(error)[:50])
-        translations.extend(batch_texts)
 
     def _translate_batch(self, texts: list[str]) -> list[str]:
         processed_texts = self._preprocess_texts(texts)
@@ -218,16 +191,10 @@ def translate_dialogue_lines(
     batch_size: int,
     model: str,
 ) -> list[DialogueLine]:
-    logger.info('🤖 Translating to Polish...')
-
     translator = SubtitleTranslator(device=device, batch_size=batch_size, model_name=model)
-    logger.info('   - AI Translator initialized')
 
     if not translator.load_model():
-        logger.error('❌ Failed to load translation model')
         return []
-
-    logger.info('   - Model loaded')
 
     texts = [text for _, _, text in dialogue_lines]
     total_batches = (len(texts) + batch_size - 1) // batch_size
@@ -241,11 +208,12 @@ def translate_dialogue_lines(
         TextColumn('•'),
         TextColumn('{task.fields[rate]}'),
         console=console,
+        transient=True,
     ) as progress:
         task = progress.add_task(
-            f'[cyan]Translating {len(texts)} texts...[/cyan]',
+            f'[cyan]Translating {len(texts)} lines...[/cyan]',
             total=total_batches,
-            rate='0.0 lines/s',
+            rate='',
         )
 
         def on_progress(
@@ -255,19 +223,14 @@ def translate_dialogue_lines(
             error: str | None,
         ) -> None:
             if error:
-                progress.update(task, advance=1, rate=f'❌ {error}')
+                progress.update(task, advance=1, rate=f'[red]{error}[/red]')
             else:
-                progress.update(task, advance=1, rate=f'{lines_per_second:.1f} lines/s')
+                progress.update(task, advance=1, rate=f'{lines_per_second:.1f}/s')
 
         translated_texts = translator.translate_texts(texts, on_progress)
 
-    logger.info('   - Translation complete')
-
     translator.cleanup()
-    logger.info('   - Translator cleaned up')
-
     gc.collect()
-    logger.info('   - Final cleanup')
 
     return [
         DialogueLine(line.start_ms, line.end_ms, text)
