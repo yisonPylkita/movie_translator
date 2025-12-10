@@ -1,0 +1,45 @@
+{
+  "_name_or_path": "../models/en-pl/pytorch/",
+  "activation_dropout": 0.0,
+  "activation_function": "relu",
+  "architectures": [
+    "MarianMTModel"
+  ],
+  "attention_dropout": 0.0,
+  "bad_words_ids": [
+    [
+      1
+    ]
+  ],
+  "bos_token_id": 0,
+  "d_model": 1024,
+  "decoder_attention_heads": 16,
+  "decoder_ffn_dim": 4096,
+  "decoder_layerdrop": 0.0,
+  "decoder_layers": 6,
+  "decoder_start_token_id": 1,
+  "decoder_vocab_size": 32000,
+  "dropout": 0.1,
+  "encoder_attention_heads": 16,
+  "encoder_ffn_dim": 4096,
+  "encoder_layerdrop": 0.0,
+  "encoder_layers": 6,
+  "eos_token_id": 2,
+  "forced_eos_token_id": 2,
+  "init_std": 0.02,
+  "is_encoder_decoder": true,
+  "max_length": 512,
+  "max_position_embeddings": 1024,
+  "model_type": "marian",
+  "normalize_embedding": false,
+  "num_beams": 8,
+  "num_hidden_layers": 6,
+  "pad_token_id": 1,
+  "scale_embedding": true,
+  "share_encoder_decoder_embeddings": true,
+  "static_position_embeddings": true,
+  "torch_dtype": "float32",
+  "transformers_version": "4.39.0.dev0",
+  "use_cache": true,
+  "vocab_size": 32000
+}

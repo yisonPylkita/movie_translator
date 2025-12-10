@@ -73,7 +73,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         '--model',
-        choices=['allegro', 'facebook'],
+        choices=['allegro'],
         default='allegro',
         help='Translation model to use (default: allegro)',
     )

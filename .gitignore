@@ -22,6 +22,5 @@ build/
 movies/
 test_output.srt  # Test translation output
 
-# Cached translation models (exclude from git)
-src/movie_translator/models/
-**/models/
+# Temp directories
+.translate_temp/

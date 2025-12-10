@@ -14,6 +14,7 @@ from .models import (
     DEFAULT_MODEL,
     TRANSLATION_MODELS,
     ModelConfig,
+    get_local_model_path,
 )
 
 
@@ -35,16 +36,26 @@ class SubtitleTranslator:
         batch_size: int = DEFAULT_BATCH_SIZE,
     ):
         self.model_config = self._get_model_config(model_name)
-        self.model_name = self.model_config['name']
+        self.model_path = self._resolve_model_path()
         self.device = 'mps' if device == 'mps' else 'cpu'
         self.batch_size = batch_size
         self.tokenizer = None
         self.model = None
 
         logger.info(
-            f'🤖 Initializing AI Translator: {self.model_config["description"]} '
+            f'🤖 Initializing AI Translator: {self.model_config.get("description", model_name)} '
             f'on {self.device} with batch size {batch_size}'
         )
+
+    def _resolve_model_path(self) -> str:
+        """Return local model path if available, otherwise HuggingFace model ID."""
+        local_path = get_local_model_path(self.model_config)
+        if local_path:
+            logger.info(f'   - Using local model: {local_path}')
+            return str(local_path)
+        model_id = self.model_config.get('name', '')
+        logger.info(f'   - Using HuggingFace model: {model_id}')
+        return model_id
 
     def _get_model_config(self, model_name: str) -> ModelConfig:
         if model_name in TRANSLATION_MODELS:
@@ -74,16 +85,11 @@ class SubtitleTranslator:
             return False
 
     def _load_tokenizer(self):
-        if self.model_config.get('use_slow_tokenizer') and self.model_config.get('base_tokenizer'):
-            base_tokenizer = self.model_config['base_tokenizer']
-            self.tokenizer = AutoTokenizer.from_pretrained(base_tokenizer, use_fast=False)
-            logger.info(f'   - Using base tokenizer: {base_tokenizer}')
-        else:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
 
     def _load_model(self):
         self.model = AutoModelForSeq2SeqLM.from_pretrained(
-            self.model_name,
+            self.model_path,
             torch_dtype=torch.float16 if self.device != 'cpu' else torch.float32,
             low_cpu_mem_usage=True,
         )
@@ -159,7 +165,7 @@ class SubtitleTranslator:
         return decoded
 
     def _preprocess_texts(self, texts: list[str]) -> list[str]:
-        if 'bidi' in self.model_name.lower():
+        if 'bidi' in self.model_path.lower():
             return [f'>>pol<< {text}' for text in texts]
         return texts
 
@@ -177,34 +183,15 @@ class SubtitleTranslator:
         return encoded
 
     def _generate_translations(self, encoded: dict) -> torch.Tensor:
+        assert self.model is not None
         with torch.inference_mode():
-            if 'mbart' in self.model_name.lower():
-                return self._generate_mbart(encoded)
-            else:
-                return self._generate_default(encoded)
-
-    def _generate_mbart(self, encoded: dict) -> torch.Tensor:
-        assert self.tokenizer is not None
-        assert self.model is not None
-        self.tokenizer.src_lang = 'en_XX'  # type: ignore[attr-defined]
-        return self.model.generate(
-            **encoded,
-            forced_bos_token_id=self.tokenizer.lang_code_to_id['pl_PL'],  # type: ignore[attr-defined]
-            max_new_tokens=128,
-            num_beams=1,
-            early_stopping=True,
-            do_sample=False,
-        )
-
-    def _generate_default(self, encoded: dict) -> torch.Tensor:
-        assert self.model is not None
-        return self.model.generate(
-            **encoded,
-            max_new_tokens=128,
-            num_beams=1,
-            early_stopping=True,
-            do_sample=False,
-        )
+            return self.model.generate(
+                **encoded,
+                max_new_tokens=128,
+                num_beams=1,
+                early_stopping=True,
+                do_sample=False,
+            )
 
     def _decode_outputs(self, outputs: torch.Tensor) -> list[str]:
         assert self.tokenizer is not None
