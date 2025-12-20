@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -129,7 +130,12 @@ class SubtitleExtractor:
             props = track.get('properties', {})
             track_name = props.get('track_name', '').lower()
 
-            if any(keyword in track_name for keyword in NON_DIALOGUE_STYLES):
+            is_signs = any(
+                re.search(rf'\b{re.escape(keyword)}s?\b', track_name)
+                for keyword in NON_DIALOGUE_STYLES
+            )
+
+            if is_signs:
                 signs_tracks.append(track)
             else:
                 dialogue_tracks.append(track)
