@@ -8,6 +8,7 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from ..logging import console, logger
 from ..types import DialogueLine
+from .enhancements import postprocess_translation, preprocess_for_translation
 from .models import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_DEVICE,
@@ -27,16 +28,20 @@ class SubtitleTranslator:
         model_key: str = DEFAULT_MODEL,
         device: str = DEFAULT_DEVICE,
         batch_size: int = DEFAULT_BATCH_SIZE,
+        enable_enhancements: bool = True,
     ):
         self.model_key = model_key
         self.model_config = self._get_model_config(model_key)
         self.model_path = self._resolve_model_path()
         self.device = 'mps' if device == 'mps' else 'cpu'
         self.batch_size = batch_size
+        self.enable_enhancements = enable_enhancements
         self.tokenizer = None
         self.model = None
 
         logger.info(f'Initializing translator on {self.device}')
+        if enable_enhancements:
+            logger.info('Translation enhancements enabled (idioms, short phrases, cleanup)')
 
     def _resolve_model_path(self) -> str:
         """Return local model path if available, otherwise HuggingFace model ID."""
@@ -115,14 +120,101 @@ class SubtitleTranslator:
             self._clear_memory()
 
     def _translate_batch(self, texts: list[str]) -> list[str]:
-        processed_texts = self._preprocess_texts(texts)
+        self._validate_inputs(texts)
+
+        if self.enable_enhancements:
+            enhanced_texts, skip_indices, cached_translations = self._apply_preprocessing(texts)
+        else:
+            enhanced_texts = texts
+            skip_indices = set()
+            cached_translations = {}
+
+        processed_texts = self._preprocess_texts(enhanced_texts)
         encoded = self._encode_texts(processed_texts)
         outputs = self._generate_translations(encoded)
         decoded = self._decode_outputs(outputs)
 
         del encoded
         del outputs
-        return decoded
+
+        if self.enable_enhancements:
+            decoded = self._apply_postprocessing(decoded)
+
+        return self._apply_fallbacks(texts, decoded, skip_indices, cached_translations)
+
+    def _validate_inputs(self, texts: list[str]) -> None:
+        """Log warnings for inputs that may produce poor translations."""
+        for i, text in enumerate(texts):
+            stripped = text.strip()
+            if len(stripped) < 3:
+                logger.warning(
+                    f'Very short input at index {i}: "{text}" ({len(stripped)} chars) - '
+                    'may produce empty or poor translation'
+                )
+            elif len(stripped) < 5:
+                logger.debug(
+                    f'Short input at index {i}: "{text}" ({len(stripped)} chars) - '
+                    'translation quality may vary'
+                )
+
+    def _apply_preprocessing(self, texts: list[str]) -> tuple[list[str], set[int], dict[int, str]]:
+        """Apply preprocessing enhancements to texts."""
+        enhanced_texts = []
+        skip_indices = set()
+        cached_translations = {}
+
+        for i, text in enumerate(texts):
+            enhanced, was_mapped = preprocess_for_translation(text)
+            if was_mapped:
+                skip_indices.add(i)
+                cached_translations[i] = enhanced
+                enhanced_texts.append(text)
+            else:
+                enhanced_texts.append(enhanced)
+
+        return enhanced_texts, skip_indices, cached_translations
+
+    def _apply_postprocessing(self, translations: list[str]) -> list[str]:
+        """Apply postprocessing cleanup to translations."""
+        return [postprocess_translation(t) for t in translations]
+
+    def _apply_fallbacks(
+        self,
+        originals: list[str],
+        translations: list[str],
+        skip_indices: set[int] | None = None,
+        cached_translations: dict[int, str] | None = None,
+    ) -> list[str]:
+        """Apply fallback logic for empty or invalid translations."""
+        if skip_indices is None:
+            skip_indices = set()
+        if cached_translations is None:
+            cached_translations = {}
+
+        result = []
+        for i, (original, translated) in enumerate(zip(originals, translations, strict=True)):
+            if i in skip_indices:
+                result.append(cached_translations.get(i, translated))
+                continue
+
+            stripped_translation = translated.strip()
+
+            if not stripped_translation:
+                logger.warning(
+                    f'Empty translation for line {i}: "{original}" - '
+                    'using original text as fallback'
+                )
+                result.append(original)
+            elif len(stripped_translation) < 2 and len(original.strip()) > 5:
+                logger.warning(
+                    f'Suspiciously short translation for line {i}: '
+                    f'"{original}" -> "{translated}" - using original as fallback'
+                )
+                result.append(original)
+            else:
+                result.append(translated)
+
+        return result
 
     def _preprocess_texts(self, texts: list[str]) -> list[str]:
         huggingface_id = self.model_config.get('huggingface_id', '').lower()

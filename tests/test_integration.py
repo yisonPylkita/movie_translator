@@ -32,7 +32,7 @@ Dialogue: 0,0:00:04.00,0:00:06.00,Default,,0,0,0,,How are you
 
     pipeline = TranslationPipeline(device='cpu', batch_size=1, model='allegro')
 
-    with patch.object(pipeline, '_translate', return_value=mock_translated):
+    with patch('movie_translator.pipeline.translate_dialogue_lines', return_value=mock_translated):
         result = pipeline.process_video_file(mkv_file, tmp_output_dir)
 
     assert result is True
@@ -61,7 +61,7 @@ How are you
 
     pipeline = TranslationPipeline(device='cpu', batch_size=1, model='allegro')
 
-    with patch.object(pipeline, '_translate', return_value=mock_translated):
+    with patch('movie_translator.pipeline.translate_dialogue_lines', return_value=mock_translated):
         result = pipeline.process_video_file(mkv_file, tmp_output_dir)
 
     assert result is True
@@ -73,7 +73,7 @@ def test_full_pipeline_detects_no_english_subtitles(create_test_mkv, tmp_output_
 
     pipeline = TranslationPipeline(device='cpu', batch_size=1)
 
-    with patch.object(pipeline, '_translate', return_value=[]):
+    with patch('movie_translator.pipeline.translate_dialogue_lines', return_value=[]):
         result = pipeline.process_video_file(mkv_file, tmp_output_dir)
 
     assert result is False
@@ -84,7 +84,7 @@ def test_full_pipeline_fails_when_translation_returns_empty(create_test_mkv, tmp
 
     pipeline = TranslationPipeline(device='cpu', batch_size=1)
 
-    with patch.object(pipeline, '_translate', return_value=[]):
+    with patch('movie_translator.pipeline.translate_dialogue_lines', return_value=[]):
         result = pipeline.process_video_file(mkv_file, tmp_output_dir)
 
     assert result is False
@@ -95,7 +95,7 @@ def test_full_pipeline_fails_when_translation_returns_none(create_test_mkv, tmp_
 
     pipeline = TranslationPipeline(device='cpu', batch_size=1)
 
-    with patch.object(pipeline, '_translate', return_value=None):
+    with patch('movie_translator.pipeline.translate_dialogue_lines', return_value=None):
         result = pipeline.process_video_file(mkv_file, tmp_output_dir)
 
     assert result is False
