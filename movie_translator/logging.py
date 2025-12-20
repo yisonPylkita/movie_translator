@@ -19,5 +19,5 @@ logger = logging.getLogger('movie_translator')
 def set_verbose(verbose: bool) -> None:
     """Enable or disable verbose logging."""
     level = logging.INFO if verbose else logging.WARNING
-    logger.setLevel(level)
-    logging.getLogger().setLevel(level)
+    logger.setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.DEBUG)

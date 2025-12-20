@@ -78,3 +78,21 @@ uv run pytest -v
 ## License
 
 MIT License - see LICENSE file for details.
+
+
+❯ ./run.sh ~/Downloads/test_movies 
+🎬 Movie Translator
+
+DEBUG    Attempting to acquire lock 4401263488 on /Users/arlen/h_dev/movie_translator/.venv/lib/python3.14/site-packages/static_ffmpeg/lock.file                                                          
+DEBUG    Lock 4401263488 acquired on /Users/arlen/h_dev/movie_translator/.venv/lib/python3.14/site-packages/static_ffmpeg/lock.file                                                                       
+DEBUG    Attempting to release lock 4401263488 on /Users/arlen/h_dev/movie_translator/.venv/lib/python3.14/site-packages/static_ffmpeg/lock.file                                                          
+DEBUG    Lock 4401263488 released on /Users/arlen/h_dev/movie_translator/.venv/lib/python3.14/site-packages/static_ffmpeg/lock.file                                                                       
+🎬 Movie Translator - 1 file(s)
+INFO     Processing: Jujutsu Kaisen 0.mkv                                                                                                                                                                 
+INFO     Extracting subtitles...                                                                                                                                                                          
+INFO     Found 2 English subtitle track(s):                                                                                                                                                               
+INFO       Track 1: ID=3, Name="Signs", Codec=ass                                                                                                                                                         
+INFO       Track 2: ID=4, Name="Full Subtitles", Codec=ass                                                                                                                                                
+INFO     Categorized: 0 dialogue track(s), 2 signs/songs track(s)                                                                                                                                         
+ERROR    Only signs/songs tracks available (2 track(s)). Full dialogue track required. Skipping this video.                                                                                               
+ERROR    No English subtitle track found   
