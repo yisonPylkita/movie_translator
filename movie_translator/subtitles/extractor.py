@@ -4,6 +4,7 @@ from typing import Any
 
 from ..ffmpeg import get_ffmpeg, get_video_info
 from ..logging import logger
+from ..types import NON_DIALOGUE_STYLES
 
 
 class SubtitleExtractionError(Exception):
