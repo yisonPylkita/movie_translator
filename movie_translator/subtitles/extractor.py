@@ -67,11 +67,26 @@ class SubtitleExtractor:
         english_tracks = self._get_english_tracks(track_info)
 
         if not english_tracks:
+            logger.info('No English subtitle tracks found')
             return None
-        if len(english_tracks) == 1:
-            return english_tracks[0]
 
-        return self._select_best_track(english_tracks)
+        logger.info(f'Found {len(english_tracks)} English subtitle track(s):')
+        for i, track in enumerate(english_tracks, 1):
+            props = track.get('properties', {})
+            track_name = props.get('track_name', '<unnamed>')
+            codec = track.get('codec', '<unknown>')
+            track_id = track.get('id', '?')
+            logger.info(f'  Track {i}: ID={track_id}, Name="{track_name}", Codec={codec}')
+
+        selected = self._select_best_track(english_tracks)
+
+        if selected:
+            props = selected.get('properties', {})
+            track_name = props.get('track_name', '<unnamed>')
+            track_id = selected.get('id', '?')
+            logger.info(f'Selected track: ID={track_id}, Name="{track_name}"')
+
+        return selected
 
     def _get_english_tracks(self, track_info: dict[str, Any]) -> list[dict]:
         tracks = track_info.get('tracks', [])
@@ -89,12 +104,22 @@ class SubtitleExtractor:
     def _select_best_track(self, english_tracks: list[dict]) -> dict | None:
         dialogue_tracks, signs_tracks = self._categorize_tracks(english_tracks)
 
+        logger.info(
+            f'Categorized: {len(dialogue_tracks)} dialogue track(s), {len(signs_tracks)} signs/songs track(s)'
+        )
+
         if dialogue_tracks:
             result = self._select_from_dialogue_tracks(dialogue_tracks, len(english_tracks))
             if result:
                 return result
 
-        return self._select_from_signs_tracks(signs_tracks, english_tracks)
+        if signs_tracks:
+            logger.error(
+                f'Only signs/songs tracks available ({len(signs_tracks)} track(s)). '
+                'Full dialogue track required. Skipping this video.'
+            )
+
+        return None
 
     def _categorize_tracks(self, tracks: list[dict]) -> tuple[list[dict], list[dict]]:
         dialogue_tracks = []
@@ -117,14 +142,12 @@ class SubtitleExtractor:
         text_tracks, image_tracks = self._separate_by_codec(dialogue_tracks)
 
         if text_tracks:
-            logger.info(f'Found {total_count} English tracks, selected text-based dialogue track')
             return text_tracks[0]
 
         if image_tracks:
             return self._handle_image_tracks(image_tracks, total_count)
 
         if dialogue_tracks:
-            logger.info(f'Found {total_count} English tracks, selected dialogue track')
             return dialogue_tracks[0]
 
         return None
