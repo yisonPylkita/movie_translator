@@ -76,8 +76,8 @@ class TestBatchTranslation:
             assert 'English' not in text, f'Found untranslated English text: {text}'
 
     def test_translation_batch_size_1_worst_case(self):
-        texts = ['Hello', 'World', 'Test']
-        expected = ['Witaj', 'Swiat', 'Testuj']
+        texts = ['Good', 'World', 'Test']
+        expected = ['Dobry', 'Swiat', 'Testuj']
 
         translator = SubtitleTranslator(model_key='allegro', device='cpu', batch_size=1)
         translator.tokenizer = MagicMock()
@@ -159,8 +159,8 @@ class TestBatchTranslation:
         assert result == []
 
     def test_all_lines_translated_no_english_remainder(self):
-        texts = ['Hello', 'World', 'How', 'Are', 'You', 'Today', 'Friend']
-        expected = ['Witaj', 'Swiat', 'Jak', 'Sie', 'Masz', 'Dzisiaj', 'Przyjaciel']
+        texts = ['Good', 'World', 'How', 'Are', 'You', 'Today', 'Friend']
+        expected = ['Dobry', 'Swiat', 'Jak', 'Sie', 'Masz', 'Dzisiaj', 'Przyjaciel']
 
         translator = SubtitleTranslator(model_key='allegro', device='cpu', batch_size=3)
         translator.tokenizer = MagicMock()

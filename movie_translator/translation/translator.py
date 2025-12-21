@@ -8,7 +8,7 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from ..logging import console, logger
 from ..types import DialogueLine
-from .enhancements import postprocess_translation, preprocess_for_translation
+from .enhancements import PreprocessingStats, postprocess_translation, preprocess_for_translation
 from .models import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_DEVICE,
@@ -36,6 +36,7 @@ class SubtitleTranslator:
         self.device = 'mps' if device == 'mps' else 'cpu'
         self.batch_size = batch_size
         self.enable_enhancements = enable_enhancements
+        self.preprocessing_stats = PreprocessingStats()
         self.tokenizer = None
         self.model = None
 
@@ -113,6 +114,11 @@ class SubtitleTranslator:
             self._periodic_memory_cleanup(i)
 
         self._clear_memory()
+
+        # Log preprocessing statistics if enhancements are enabled
+        if self.enable_enhancements and self.preprocessing_stats.total_processed > 0:
+            logger.info(self.preprocessing_stats.get_summary())
+
         return translations
 
     def _periodic_memory_cleanup(self, index: int):
@@ -159,20 +165,22 @@ class SubtitleTranslator:
 
     def _apply_preprocessing(self, texts: list[str]) -> tuple[list[str], set[int], dict[int, str]]:
         """Apply preprocessing enhancements to texts."""
-        enhanced_texts = []
+        if not self.enable_enhancements:
+            return texts, set(), {}
+
+        processed_texts = []
         skip_indices = set()
         cached_translations = {}
 
         for i, text in enumerate(texts):
-            enhanced, was_mapped = preprocess_for_translation(text)
+            processed, was_mapped = preprocess_for_translation(text, self.preprocessing_stats)
+            processed_texts.append(processed)
+
             if was_mapped:
                 skip_indices.add(i)
-                cached_translations[i] = enhanced
-                enhanced_texts.append(text)
-            else:
-                enhanced_texts.append(enhanced)
+                cached_translations[i] = processed
 
-        return enhanced_texts, skip_indices, cached_translations
+        return processed_texts, skip_indices, cached_translations
 
     def _apply_postprocessing(self, translations: list[str]) -> list[str]:
         """Apply postprocessing cleanup to translations."""

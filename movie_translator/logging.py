@@ -5,8 +5,6 @@ from rich.logging import RichHandler
 
 console = Console()
 
-# Default to WARNING level (quiet mode)
-# Use set_verbose(True) to enable INFO level logging
 logging.basicConfig(
     level=logging.WARNING,
     format='%(message)s',
@@ -17,7 +15,6 @@ logger = logging.getLogger('movie_translator')
 
 
 def set_verbose(verbose: bool) -> None:
-    """Enable or disable verbose logging."""
-    level = logging.INFO if verbose else logging.WARNING
-    logger.setLevel(logging.DEBUG)
-    logging.getLogger().setLevel(logging.DEBUG)
+    level = logging.DEBUG if verbose else logging.INFO
+    logger.setLevel(level)
+    logging.getLogger().setLevel(level)

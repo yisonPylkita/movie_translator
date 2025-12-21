@@ -20,6 +20,63 @@ class TestPreprocessing:
         assert was_mapped is True
         assert text == 'Czekaj!'
 
+    def test_punctuation_variations_exclamation(self):
+        """Test that different punctuation variations all map correctly."""
+        result, was_mapped = preprocess_for_translation('Sure!')
+        assert result == 'Jasne!'
+        assert was_mapped is True
+
+    def test_punctuation_variations_question(self):
+        result, was_mapped = preprocess_for_translation('Sure?')
+        assert result == 'Jasne?'
+        assert was_mapped is True
+
+    def test_punctuation_variations_ellipsis(self):
+        result, was_mapped = preprocess_for_translation('Sure...')
+        assert result == 'Jasne...'
+        assert was_mapped is True
+
+    def test_punctuation_variations_multiple(self):
+        result, was_mapped = preprocess_for_translation('Sure?!')
+        assert result == 'Jasne?!'
+        assert was_mapped is True
+
+    def test_capitalization_preserved_upper(self):
+        """Test that UPPERCASE is preserved."""
+        result, was_mapped = preprocess_for_translation('WAIT')
+        assert result == 'CZEKAJ'
+        assert was_mapped is True
+
+    def test_capitalization_preserved_title(self):
+        """Test that Title case is preserved."""
+        result, was_mapped = preprocess_for_translation('Wait')
+        assert result == 'Czekaj'
+        assert was_mapped is True
+
+    def test_capitalization_preserved_lower(self):
+        """Test that lowercase is preserved."""
+        result, was_mapped = preprocess_for_translation('wait')
+        assert result == 'czekaj'
+        assert was_mapped is True
+
+    def test_no_punctuation_works(self):
+        """Test phrases without punctuation."""
+        result, was_mapped = preprocess_for_translation('okay')
+        assert result == 'dobrze'
+        assert was_mapped is True
+
+    def test_multi_word_phrase(self):
+        """Test multi-word phrase matching."""
+        result, was_mapped = preprocess_for_translation('Thank you!')
+        assert result == 'Dziękuję!'
+        assert was_mapped is True
+
+    def test_multi_word_phrase_various_caps(self):
+        """Test multi-word phrase with different capitalization."""
+        result, was_mapped = preprocess_for_translation('THANK YOU!')
+        assert result == 'DZIĘKUJĘ!'
+        assert was_mapped is True
+
     def test_idiom_break_a_leg(self):
         text, was_mapped = preprocess_for_translation('Break a leg!')
         assert was_mapped is False

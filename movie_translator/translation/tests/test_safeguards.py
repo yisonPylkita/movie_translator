@@ -111,7 +111,7 @@ class TestTranslationSafeguards:
 
     def test_fallback_preserves_original_formatting(self, translator):
         """Test that fallback preserves original text including whitespace."""
-        texts = ['  Hello  ', '\tWorld\n']
+        texts = ['  Morning  ', '\tEvening\n']
 
         translator.tokenizer.batch_encode_plus.return_value = {'input_ids': MagicMock()}
         translator.model.generate.return_value = MagicMock()
@@ -119,5 +119,5 @@ class TestTranslationSafeguards:
 
         result = translator.translate_texts(texts)
 
-        assert result[0] == '  Hello  '
-        assert result[1] == '\tWorld\n'
+        assert result[0] == '  Morning  '
+        assert result[1] == '\tEvening\n'
