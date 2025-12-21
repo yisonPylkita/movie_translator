@@ -172,7 +172,7 @@ class SubtitleProcessor:
         logger.info(f'      First: "{first_cleaned.plaintext.strip()[:50]}..."')
         logger.info(f'      Last:  "{last_cleaned.plaintext.strip()[:50]}..."')
 
-        TOLERANCE_MS = 2000
+        TOLERANCE_MS = 50
 
         start_diff = cleaned_start - original_start
         end_diff = cleaned_end - original_end
