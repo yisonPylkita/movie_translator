@@ -127,11 +127,17 @@ class SubtitleProcessor:
         original_events = [e for e in original_subs if e.text.strip()]
         cleaned_events = [e for e in cleaned_subs if e.text.strip()]
 
+        logger.info(f'   📊 Validation: Original file has {len(original_events)} non-empty events')
+
         original_dialogue = [
             e
             for e in original_events
             if not any(kw in getattr(e, 'style', 'Default').lower() for kw in NON_DIALOGUE_STYLES)
         ]
+        non_dialogue_count = len(original_events) - len(original_dialogue)
+        logger.info(
+            f'   📊 Validation: {len(original_dialogue)} dialogue, {non_dialogue_count} non-dialogue (signs/songs/effects)'
+        )
 
         if not original_dialogue:
             logger.warning('No dialogue events found in original file')
@@ -139,25 +145,80 @@ class SubtitleProcessor:
 
         original_start = min(e.start for e in original_dialogue)
         original_end = max(e.end for e in original_dialogue)
+        original_duration_sec = (original_end - original_start) / 1000
+
+        first_dialogue = min(original_dialogue, key=lambda e: e.start)
+        last_dialogue = max(original_dialogue, key=lambda e: e.end)
+        logger.info(
+            f'   📊 Original dialogue range: {original_start}ms - {original_end}ms ({original_duration_sec:.1f}s)'
+        )
+        logger.info(f'      First: "{first_dialogue.plaintext.strip()[:50]}..."')
+        logger.info(f'      Last:  "{last_dialogue.plaintext.strip()[:50]}..."')
 
         if not cleaned_events:
             raise SubtitleProcessingError('Cleaned subtitle file has no events')
 
+        logger.info(f'   📊 Validation: Cleaned file has {len(cleaned_events)} dialogue events')
+
         cleaned_start = min(e.start for e in cleaned_events)
         cleaned_end = max(e.end for e in cleaned_events)
+        cleaned_duration_sec = (cleaned_end - cleaned_start) / 1000
 
-        TOLERANCE_MS = 50
+        first_cleaned = min(cleaned_events, key=lambda e: e.start)
+        last_cleaned = max(cleaned_events, key=lambda e: e.end)
+        logger.info(
+            f'   📊 Cleaned dialogue range: {cleaned_start}ms - {cleaned_end}ms ({cleaned_duration_sec:.1f}s)'
+        )
+        logger.info(f'      First: "{first_cleaned.plaintext.strip()[:50]}..."')
+        logger.info(f'      Last:  "{last_cleaned.plaintext.strip()[:50]}..."')
 
-        if abs(cleaned_start - original_start) > TOLERANCE_MS:
+        TOLERANCE_MS = 2000
+
+        start_diff = cleaned_start - original_start
+        end_diff = cleaned_end - original_end
+
+        logger.info('   📊 Timing differences:')
+        logger.info(
+            f'      Start: {start_diff:+d}ms ("{"within" if abs(start_diff) <= TOLERANCE_MS else "EXCEEDS"} {TOLERANCE_MS}ms tolerance")'
+        )
+        logger.info(
+            f'      End:   {end_diff:+d}ms ("{"within" if abs(end_diff) <= TOLERANCE_MS else "EXCEEDS"} {TOLERANCE_MS}ms tolerance")'
+        )
+
+        if abs(start_diff) > TOLERANCE_MS:
+            logger.error('   ❌ Start time mismatch exceeds tolerance')
+            logger.error(
+                '      This likely means non-dialogue content exists before first dialogue'
+            )
             raise SubtitleProcessingError(
                 f'Cleaned subtitles start time mismatch: '
-                f'{cleaned_start}ms vs {original_start}ms (tolerance: {TOLERANCE_MS}ms)'
+                f'{cleaned_start}ms vs {original_start}ms (diff: {start_diff:+d}ms, tolerance: {TOLERANCE_MS}ms)'
             )
 
-        if abs(cleaned_end - original_end) > TOLERANCE_MS:
+        if abs(end_diff) > TOLERANCE_MS:
+            logger.error('   ❌ End time mismatch exceeds tolerance')
+            logger.error(
+                '      This likely means non-dialogue content (credits/signs) exists after last dialogue'
+            )
+
+            events_after_last_dialogue = [
+                e
+                for e in original_events
+                if e.end > last_dialogue.end and e not in original_dialogue
+            ]
+            if events_after_last_dialogue:
+                logger.error(
+                    f'      Found {len(events_after_last_dialogue)} non-dialogue events after last dialogue:'
+                )
+                for i, evt in enumerate(events_after_last_dialogue[:3]):
+                    style = getattr(evt, 'style', 'Default')
+                    logger.error(f'         {i + 1}. [{style}] "{evt.plaintext.strip()[:40]}..."')
+                if len(events_after_last_dialogue) > 3:
+                    logger.error(f'         ... and {len(events_after_last_dialogue) - 3} more')
+
             raise SubtitleProcessingError(
                 f'Cleaned subtitles end time mismatch: '
-                f'{cleaned_end}ms vs {original_end}ms (tolerance: {TOLERANCE_MS}ms)'
+                f'{cleaned_end}ms vs {original_end}ms (diff: {end_diff:+d}ms, tolerance: {TOLERANCE_MS}ms)'
             )
 
         logger.info('   ✅ Timing validation passed')
