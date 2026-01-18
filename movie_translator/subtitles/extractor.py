@@ -65,6 +65,21 @@ class SubtitleExtractor:
         return False
 
     def find_english_track(self, track_info: dict[str, Any]) -> dict[str, Any] | None:
+        # First log all available subtitle tracks for debugging
+        all_tracks = track_info.get('tracks', [])
+        logger.info(f'Found {len(all_tracks)} total subtitle track(s):')
+        for i, track in enumerate(all_tracks, 1):
+            if track.get('type') == 'subtitles':
+                props = track.get('properties', {})
+                lang = props.get('language', 'und')
+                track_name = props.get('track_name', '<unnamed>')
+                codec = track.get('codec', '<unknown>')
+                track_id = track.get('id', '?')
+                forced = ' (forced)' if props.get('forced_track') else ''
+                logger.info(
+                    f'  Track {i}: ID={track_id}, Lang={lang}, Name="{track_name}", Codec={codec}{forced}'
+                )
+
         english_tracks = self._get_english_tracks(track_info)
 
         if not english_tracks:
@@ -77,7 +92,7 @@ class SubtitleExtractor:
             track_name = props.get('track_name', '<unnamed>')
             codec = track.get('codec', '<unknown>')
             track_id = track.get('id', '?')
-            logger.info(f'  Track {i}: ID={track_id}, Name="{track_name}", Codec={codec}')
+            logger.info(f'  English Track {i}: ID={track_id}, Name="{track_name}", Codec={codec}')
 
         selected = self._select_best_track(english_tracks)
 
@@ -96,8 +111,9 @@ class SubtitleExtractor:
         for track in tracks:
             if track.get('type') == 'subtitles':
                 props = track.get('properties', {})
-                lang = props.get('language', '')
-                if lang in ('eng', 'en'):
+                lang = (props.get('language') or '').lower()
+                # Include tracks with undefined language or explicitly marked as English
+                if not lang or lang in ('eng', 'en', 'und'):
                     english_tracks.append(track)
 
         return english_tracks
@@ -128,10 +144,16 @@ class SubtitleExtractor:
 
         for track in tracks:
             props = track.get('properties', {})
-            track_name = props.get('track_name', '').lower()
+            track_name = (props.get('track_name') or '').lower()
 
+            # If track name is empty or very generic, treat it as dialogue
+            if not track_name or track_name in ('default', 'ass', 'subtitle', 'subtitles'):
+                dialogue_tracks.append(track)
+                continue
+
+            # Only mark as signs if the track name explicitly indicates it
             is_signs = any(
-                re.search(rf'\b{re.escape(keyword)}s?\b', track_name)
+                re.search(rf'(?:^|\s){re.escape(keyword)}s?(?:$|\s)', track_name)
                 for keyword in NON_DIALOGUE_STYLES
             )
 

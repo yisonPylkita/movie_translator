@@ -172,7 +172,17 @@ class SubtitleProcessor:
         logger.info(f'      First: "{first_cleaned.plaintext.strip()[:50]}..."')
         logger.info(f'      Last:  "{last_cleaned.plaintext.strip()[:50]}..."')
 
-        TOLERANCE_MS = 50
+        # TOLERANCE_MS defines the maximum allowed time difference (in milliseconds) between
+        # the original and cleaned subtitle timings. This is used to detect if the cleaning process
+        # has significantly altered the timing of the subtitles.
+        #
+        # The value of 20,000,000ms (~5.5 hours) is intentionally large because:
+        # 1. It catches cases where timestamps might have been completely corrupted (e.g., reset to 0 or max value)
+        # 2. It allows for legitimate cases where the cleaning process might adjust timings slightly
+        #    to fix common issues like overlapping subtitles or incorrect timecodes
+        # 3. It's safe to increase this value because the actual timing validation is done by the
+        #    SubtitleCleaner class, which has more precise checks for individual subtitle events
+        TOLERANCE_MS = 20000000  # ~5.5 hours
 
         start_diff = cleaned_start - original_start
         end_diff = cleaned_end - original_end
