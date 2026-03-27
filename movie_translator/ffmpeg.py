@@ -62,6 +62,36 @@ def get_video_info(video_path: Path) -> dict[str, Any]:
     return json.loads(result.stdout)
 
 
+def probe_video_encoding(video_path: Path) -> dict[str, Any]:
+    """Extract video encoding parameters for re-encoding."""
+    info = get_video_info(video_path)
+
+    video_stream = next(
+        (s for s in info.get('streams', []) if s.get('codec_type') == 'video'),
+        None,
+    )
+    if not video_stream:
+        raise VideoMuxError(f'No video stream found in {video_path}')
+
+    # Parse frame rate from r_frame_rate (e.g., "24/1" or "24000/1001")
+    r_frame_rate = video_stream.get('r_frame_rate', '24/1')
+    num, den = map(int, r_frame_rate.split('/'))
+    fps = num / den
+
+    # Bitrate may be per-stream or in format-level
+    bit_rate = video_stream.get('bit_rate') or info.get('format', {}).get('bit_rate', '5000000')
+
+    return {
+        'codec_name': video_stream.get('codec_name', 'h264'),
+        'profile': video_stream.get('profile', ''),
+        'width': video_stream.get('width', 1920),
+        'height': video_stream.get('height', 1080),
+        'bit_rate': str(bit_rate),
+        'pix_fmt': video_stream.get('pix_fmt', 'yuv420p'),
+        'fps': fps,
+    }
+
+
 def mux_video_with_subtitles(
     video_path: Path,
     subtitle_files: list[SubtitleFile],
