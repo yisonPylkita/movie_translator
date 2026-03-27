@@ -8,6 +8,7 @@ from .inpainting import remove_burned_in_subtitles
 from .logging import logger
 from .ocr import extract_burned_in_subtitles, is_vision_ocr_available
 from .subtitle_fetch import SubtitleFetcher
+from .subtitle_fetch.providers.animesub import AnimeSubProvider
 from .subtitle_fetch.providers.opensubtitles import OpenSubtitlesProvider
 from .subtitles import SubtitleExtractor, SubtitleProcessor
 from .translation import translate_dialogue_lines
@@ -38,19 +39,21 @@ class TranslationPipeline:
         if not self.enable_fetch:
             return {}
 
-        api_key = os.environ.get('OPENSUBTITLES_API_KEY', '')
-        if not api_key:
-            logger.info('No OPENSUBTITLES_API_KEY set — skipping subtitle fetch')
-            return {}
-
         try:
             identity = identify_media(video_path)
         except Exception as e:
             logger.warning(f'Media identification failed: {e}')
             return {}
 
-        provider = OpenSubtitlesProvider(api_key=api_key)
-        fetcher = SubtitleFetcher([provider])
+        providers: list = [AnimeSubProvider()]
+
+        api_key = os.environ.get('OPENSUBTITLES_API_KEY', '')
+        if api_key:
+            providers.append(OpenSubtitlesProvider(api_key=api_key))
+        else:
+            logger.info('No OPENSUBTITLES_API_KEY set — using AnimeSub only')
+
+        fetcher = SubtitleFetcher(providers)
 
         try:
             return fetcher.fetch_subtitles(identity, ['eng', 'pol'], output_dir)
