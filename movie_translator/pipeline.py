@@ -6,7 +6,7 @@ from .fonts import check_embedded_fonts_support_polish
 from .identifier import identify_media
 from .inpainting import remove_burned_in_subtitles
 from .logging import logger
-from .ocr import extract_burned_in_subtitles, is_vision_ocr_available
+from .ocr import extract_burned_in_subtitles, is_vision_ocr_available, probe_for_burned_in_subtitles
 from .subtitle_fetch import SubtitleFetcher
 from .subtitle_fetch.providers.animesub import AnimeSubProvider
 from .subtitle_fetch.providers.opensubtitles import OpenSubtitlesProvider
@@ -181,10 +181,14 @@ class TranslationPipeline:
 
         eng_track = extractor.find_english_track(track_info)
         if not eng_track:
-            if is_vision_ocr_available():
-                return self._extract_burned_in_subtitles(video_path, output_dir)
-            logger.error('No English subtitle track found (OCR not available on this platform)')
-            return None
+            if not is_vision_ocr_available():
+                logger.error('No English subtitle track found (OCR not available on this platform)')
+                return None
+            # Quick probe: check if there are actually burned-in subtitles
+            if not probe_for_burned_in_subtitles(video_path):
+                logger.info('No burned-in subtitles detected — skipping OCR')
+                return None
+            return self._extract_burned_in_subtitles(video_path, output_dir)
 
         track_id = eng_track['id']
         logger.info(f'Found English track: ID {track_id}')
