@@ -25,16 +25,20 @@ class _ResultParser(HTMLParser):
         super().__init__()
         self.entries: list[dict] = []
         self._current_entry: dict | None = None
+        self._table_depth = 0  # Track nested tables
         self._in_td = False
         self._td_attrs: dict = {}
         self._td_text = ''
-        self._current_input_name: str | None = None
 
     def handle_starttag(self, tag, attrs):
         attr_dict = dict(attrs)
 
-        if tag == 'table' and attr_dict.get('class') == 'Napisy':
-            self._current_entry = {}
+        if tag == 'table':
+            if attr_dict.get('class') == 'Napisy':
+                self._current_entry = {}
+                self._table_depth = 1
+            elif self._current_entry is not None:
+                self._table_depth += 1
 
         if tag == 'td':
             self._in_td = True
@@ -62,9 +66,12 @@ class _ResultParser(HTMLParser):
                     self._current_entry['format'] = text
 
         if tag == 'table' and self._current_entry is not None:
-            if 'id' in self._current_entry and 'sh' in self._current_entry:
-                self.entries.append(self._current_entry)
-            self._current_entry = None
+            self._table_depth -= 1
+            if self._table_depth <= 0:
+                # Only close entry when outermost Napisy table closes
+                if 'id' in self._current_entry and 'sh' in self._current_entry:
+                    self.entries.append(self._current_entry)
+                self._current_entry = None
 
     def handle_data(self, data):
         if self._in_td:
@@ -148,7 +155,7 @@ class AnimeSubProvider:
 
         req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
         with urllib.request.urlopen(req, timeout=15) as resp:
-            html = resp.read().decode('utf-8', errors='replace')
+            html = resp.read().decode('iso-8859-2', errors='replace')
 
         parser = _ResultParser()
         parser.feed(html)
