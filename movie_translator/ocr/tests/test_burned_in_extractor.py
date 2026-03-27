@@ -1,5 +1,41 @@
 from movie_translator.ocr.burned_in_extractor import _build_dialogue_lines_from_ocr, _write_srt
-from movie_translator.types import DialogueLine
+from movie_translator.types import BoundingBox, DialogueLine
+
+
+class TestMapBoxToFullFrame:
+    def test_maps_crop_coordinates_to_full_frame(self):
+        from movie_translator.ocr.burned_in_extractor import _map_box_to_full_frame
+
+        # Box in middle of crop (crop_ratio=0.25, crop covers bottom 25%)
+        crop_box = BoundingBox(x=0.1, y=0.3, width=0.8, height=0.2)
+        result = _map_box_to_full_frame(crop_box, crop_ratio=0.25)
+
+        assert result.x == 0.1  # x unchanged
+        assert result.width == 0.8  # width unchanged
+        # y should map from crop-space to full-frame: 0.75 + 0.3*0.25 = 0.825
+        assert abs(result.y - 0.825) < 1e-9
+        # height scales by crop_ratio: 0.2 * 0.25 = 0.05
+        assert abs(result.height - 0.05) < 1e-9
+
+    def test_top_of_crop_maps_to_crop_start(self):
+        from movie_translator.ocr.burned_in_extractor import _map_box_to_full_frame
+
+        crop_box = BoundingBox(x=0.0, y=0.0, width=1.0, height=0.1)
+        result = _map_box_to_full_frame(crop_box, crop_ratio=0.25)
+
+        # y=0 in crop → y=0.75 in full frame (top of bottom 25%)
+        assert abs(result.y - 0.75) < 1e-9
+
+    def test_bottom_of_crop_maps_to_frame_bottom(self):
+        from movie_translator.ocr.burned_in_extractor import _map_box_to_full_frame
+
+        crop_box = BoundingBox(x=0.0, y=0.9, width=1.0, height=0.1)
+        result = _map_box_to_full_frame(crop_box, crop_ratio=0.25)
+
+        # y=0.9 in crop → 0.75 + 0.9*0.25 = 0.975
+        assert abs(result.y - 0.975) < 1e-9
+        # height: 0.1 * 0.25 = 0.025, so bottom edge at 0.975+0.025 = 1.0
+        assert abs(result.y + result.height - 1.0) < 1e-9
 
 
 class TestBuildDialogueLinesFromOcr:

@@ -2,9 +2,19 @@ import shutil
 from pathlib import Path
 
 from ..logging import logger
-from ..types import DialogueLine
+from ..types import BoundingBox, BurnedInResult, DialogueLine, OCRResult
 from .frame_extractor import extract_subtitle_region_frames
-from .vision_ocr import recognize_text
+from .vision_ocr import recognize_text_with_boxes
+
+
+def _map_box_to_full_frame(box: BoundingBox, crop_ratio: float) -> BoundingBox:
+    """Map bounding box from cropped frame coordinates to full frame coordinates."""
+    return BoundingBox(
+        x=box.x,
+        y=(1 - crop_ratio) + (box.y * crop_ratio),
+        width=box.width,
+        height=box.height * crop_ratio,
+    )
 
 
 def _build_dialogue_lines_from_ocr(
@@ -17,13 +27,11 @@ def _build_dialogue_lines_from_ocr(
 
     for timestamp_ms, text in frame_texts:
         if text != prev_text:
-            # Previous subtitle ended — save it if non-garbage
             if prev_text and len(prev_text) > 1:
                 lines.append(DialogueLine(start_ms, timestamp_ms, prev_text))
             start_ms = timestamp_ms
             prev_text = text
 
-    # Handle last subtitle
     if prev_text and len(prev_text) > 1:
         last_ts = frame_texts[-1][0] if frame_texts else start_ms
         lines.append(DialogueLine(start_ms, last_ts + 1000, prev_text))
@@ -54,16 +62,11 @@ def extract_burned_in_subtitles(
     output_dir: Path,
     crop_ratio: float = 0.25,
     fps: int = 1,
-) -> Path | None:
-    """Extract burned-in subtitles by OCR-ing every frame and deduplicating by text.
-
-    Uses 1fps by default — fast enough with Apple Vision's Neural Engine (~44ms/frame)
-    and avoids false positives from pixel-based change detection on animated content.
-    """
+) -> BurnedInResult | None:
+    """Extract burned-in subtitles via OCR, returning SRT path and per-frame bounding boxes."""
     frames_dir = output_dir / '_ocr_frames'
 
     try:
-        # Step 1: Extract cropped frames
         frames = extract_subtitle_region_frames(
             video_path, frames_dir, fps=fps, crop_ratio=crop_ratio
         )
@@ -71,16 +74,22 @@ def extract_burned_in_subtitles(
             logger.error('No frames extracted from video')
             return None
 
-        # Step 2: OCR every frame
         logger.info(f'Running OCR on {len(frames)} frames...')
         frame_texts: list[tuple[int, str]] = []
+        ocr_results: list[OCRResult] = []
+
         for i, (frame_path, timestamp_ms) in enumerate(frames):
-            text = recognize_text(frame_path).strip()
+            text_boxes = recognize_text_with_boxes(frame_path)
+            text = '\n'.join(t for t, _ in text_boxes).strip()
             frame_texts.append((timestamp_ms, text))
+
+            # Map bounding boxes from crop-space to full-frame coordinates
+            full_frame_boxes = [_map_box_to_full_frame(box, crop_ratio) for _, box in text_boxes]
+            ocr_results.append(OCRResult(timestamp_ms, text, full_frame_boxes))
+
             if (i + 1) % 100 == 0:
                 logger.info(f'  OCR progress: {i + 1}/{len(frames)}')
 
-        # Step 3: Build dialogue lines via text-based deduplication
         lines = _build_dialogue_lines_from_ocr(frame_texts)
         if not lines:
             logger.warning('OCR produced no usable subtitle lines')
@@ -88,13 +97,11 @@ def extract_burned_in_subtitles(
 
         logger.info(f'Extracted {len(lines)} subtitle lines via OCR')
 
-        # Step 4: Write SRT
         srt_path = output_dir / f'{video_path.stem}_ocr.srt'
         _write_srt(lines, srt_path)
 
-        return srt_path
+        return BurnedInResult(srt_path, ocr_results)
 
     finally:
-        # Clean up frame images
         if frames_dir.exists():
             shutil.rmtree(frames_dir)
