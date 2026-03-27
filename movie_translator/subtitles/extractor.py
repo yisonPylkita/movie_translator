@@ -76,7 +76,7 @@ class SubtitleExtractor:
                 codec = track.get('codec', '<unknown>')
                 track_id = track.get('id', '?')
                 forced = ' (forced)' if props.get('forced_track') else ''
-                logger.info(
+                logger.debug(
                     f'  Track {i}: ID={track_id}, Lang={lang}, Name="{track_name}", Codec={codec}{forced}'
                 )
 
@@ -92,7 +92,7 @@ class SubtitleExtractor:
             track_name = props.get('track_name', '<unnamed>')
             codec = track.get('codec', '<unknown>')
             track_id = track.get('id', '?')
-            logger.info(f'  English Track {i}: ID={track_id}, Name="{track_name}", Codec={codec}')
+            logger.debug(f'  English Track {i}: ID={track_id}, Name="{track_name}", Codec={codec}')
 
         selected = self._select_best_track(english_tracks)
 
@@ -100,7 +100,7 @@ class SubtitleExtractor:
             props = selected.get('properties', {})
             track_name = props.get('track_name', '<unnamed>')
             track_id = selected.get('id', '?')
-            logger.info(f'Selected track: ID={track_id}, Name="{track_name}"')
+            logger.debug(f'Selected track: ID={track_id}, Name="{track_name}"')
 
         return selected
 
@@ -121,7 +121,7 @@ class SubtitleExtractor:
     def _select_best_track(self, english_tracks: list[dict]) -> dict | None:
         dialogue_tracks, signs_tracks = self._categorize_tracks(english_tracks)
 
-        logger.info(
+        logger.debug(
             f'Categorized: {len(dialogue_tracks)} dialogue track(s), {len(signs_tracks)} signs/songs track(s)'
         )
 

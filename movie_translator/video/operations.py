@@ -49,7 +49,7 @@ class VideoOperations:
 
         logger.info(f'   - Found {len(subtitle_tracks)} subtitle tracks:')
         for track in subtitle_tracks:
-            logger.info(f'     * Track {track["index"]}: {track["title"]} ({track["language"]})')
+            logger.debug(f'     * Track {track["index"]}: {track["title"]} ({track["language"]})')
 
         self._validate_track_order(subtitle_tracks)
 

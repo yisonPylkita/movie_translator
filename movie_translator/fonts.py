@@ -121,7 +121,7 @@ def check_embedded_fonts_support_polish(video_path: Path, ass_path: Path) -> boo
                     font_name_lower in ass_font or ass_font in font_name_lower
                     for ass_font in ass_font_names
                 ):
-                    logger.info(f'   - Font "{font_filename}" supports Polish characters')
+                    logger.debug(f'   - Font "{font_filename}" supports Polish characters')
 
         if fonts_supporting_polish > 0:
             logger.info(

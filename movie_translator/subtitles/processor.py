@@ -34,7 +34,7 @@ class SubtitleProcessor:
         except Exception as e:
             raise SubtitleProcessingError(f'Failed to parse subtitle file: {e}') from e
 
-        logger.info(f'   - Loaded {len(subs)} total events')
+        logger.debug(f'   - Loaded {len(subs)} total events')
 
         unique_subs = SubtitleProcessor._deduplicate_events(subs)
         dialogue_lines = SubtitleProcessor._filter_dialogue(unique_subs)
@@ -84,7 +84,7 @@ class SubtitleProcessor:
         except Exception as e:
             raise SubtitleProcessingError(f'Failed to save subtitle file: {e}') from e
 
-        logger.info(f'   - Saved {len(new_subs)} events')
+        logger.debug(f'   - Saved {len(new_subs)} events')
 
     @staticmethod
     def create_english_subtitles(
@@ -95,7 +95,7 @@ class SubtitleProcessor:
         """Create clean English subtitle file with dialogue only."""
         logger.info(f'🔨 Creating clean English ASS: {output_path.name}')
         SubtitleProcessor.create_subtitle_file(original_file, dialogue_lines, output_path)
-        logger.info('   - Removed all non-dialogue events')
+        logger.debug('   - Removed all non-dialogue events')
 
     @staticmethod
     def create_polish_subtitles(
@@ -127,7 +127,7 @@ class SubtitleProcessor:
         original_events = [e for e in original_subs if e.text.strip()]
         cleaned_events = [e for e in cleaned_subs if e.text.strip()]
 
-        logger.info(f'   📊 Validation: Original file has {len(original_events)} non-empty events')
+        logger.debug(f'   📊 Validation: Original file has {len(original_events)} non-empty events')
 
         original_dialogue = [
             e
@@ -135,7 +135,7 @@ class SubtitleProcessor:
             if not any(kw in getattr(e, 'style', 'Default').lower() for kw in NON_DIALOGUE_STYLES)
         ]
         non_dialogue_count = len(original_events) - len(original_dialogue)
-        logger.info(
+        logger.debug(
             f'   📊 Validation: {len(original_dialogue)} dialogue, {non_dialogue_count} non-dialogue (signs/songs/effects)'
         )
 
@@ -149,16 +149,16 @@ class SubtitleProcessor:
 
         first_dialogue = min(original_dialogue, key=lambda e: e.start)
         last_dialogue = max(original_dialogue, key=lambda e: e.end)
-        logger.info(
+        logger.debug(
             f'   📊 Original dialogue range: {original_start}ms - {original_end}ms ({original_duration_sec:.1f}s)'
         )
-        logger.info(f'      First: "{first_dialogue.plaintext.strip()[:50]}..."')
-        logger.info(f'      Last:  "{last_dialogue.plaintext.strip()[:50]}..."')
+        logger.debug(f'      First: "{first_dialogue.plaintext.strip()[:50]}..."')
+        logger.debug(f'      Last:  "{last_dialogue.plaintext.strip()[:50]}..."')
 
         if not cleaned_events:
             raise SubtitleProcessingError('Cleaned subtitle file has no events')
 
-        logger.info(f'   📊 Validation: Cleaned file has {len(cleaned_events)} dialogue events')
+        logger.debug(f'   📊 Validation: Cleaned file has {len(cleaned_events)} dialogue events')
 
         cleaned_start = min(e.start for e in cleaned_events)
         cleaned_end = max(e.end for e in cleaned_events)
@@ -166,22 +166,22 @@ class SubtitleProcessor:
 
         first_cleaned = min(cleaned_events, key=lambda e: e.start)
         last_cleaned = max(cleaned_events, key=lambda e: e.end)
-        logger.info(
+        logger.debug(
             f'   📊 Cleaned dialogue range: {cleaned_start}ms - {cleaned_end}ms ({cleaned_duration_sec:.1f}s)'
         )
-        logger.info(f'      First: "{first_cleaned.plaintext.strip()[:50]}..."')
-        logger.info(f'      Last:  "{last_cleaned.plaintext.strip()[:50]}..."')
+        logger.debug(f'      First: "{first_cleaned.plaintext.strip()[:50]}..."')
+        logger.debug(f'      Last:  "{last_cleaned.plaintext.strip()[:50]}..."')
 
         TOLERANCE_MS = 50
 
         start_diff = cleaned_start - original_start
         end_diff = cleaned_end - original_end
 
-        logger.info('   📊 Timing differences:')
-        logger.info(
+        logger.debug('   📊 Timing differences:')
+        logger.debug(
             f'      Start: {start_diff:+d}ms ("{"within" if abs(start_diff) <= TOLERANCE_MS else "EXCEEDS"} {TOLERANCE_MS}ms tolerance")'
         )
-        logger.info(
+        logger.debug(
             f'      End:   {end_diff:+d}ms ("{"within" if abs(end_diff) <= TOLERANCE_MS else "EXCEEDS"} {TOLERANCE_MS}ms tolerance")'
         )
 
@@ -259,7 +259,7 @@ class SubtitleProcessor:
         deduped_count = len(unique_subs)
         if deduped_count < original_count:
             removed = original_count - deduped_count
-            logger.info(
+            logger.debug(
                 f'   - Deduplicated: {original_count} → {deduped_count} entries '
                 f'(removed {removed} duplicate effect layers)'
             )

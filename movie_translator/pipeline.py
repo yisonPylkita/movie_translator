@@ -23,17 +23,22 @@ class TranslationPipeline:
         batch_size: int = 16,
         model: str = 'allegro',
         enable_fetch: bool = True,
+        tracker=None,
     ):
         self.device = device
         self.batch_size = batch_size
         self.model = model
         self.enable_fetch = enable_fetch
+        self.tracker = tracker
         self._extractor = None
         self._video_ops = None
         self._ocr_results: list[OCRResult] | None = None
 
+    def _stage(self, name: str, info: str = ''):
+        if self.tracker:
+            self.tracker.set_stage(name, info)
+
     def _try_fetch_subtitles(self, video_path: Path, output_dir: Path) -> dict[str, Path]:
-        """Try to fetch Polish and English subtitles from online databases."""
         if not self.enable_fetch:
             return {}
 
@@ -48,8 +53,6 @@ class TranslationPipeline:
         api_key = os.environ.get('OPENSUBTITLES_API_KEY', '')
         if api_key:
             providers.append(OpenSubtitlesProvider(api_key=api_key))
-        else:
-            logger.info('No OPENSUBTITLES_API_KEY set — using AnimeSub only')
 
         fetcher = SubtitleFetcher(providers)
 
@@ -60,37 +63,49 @@ class TranslationPipeline:
             return {}
 
     def process_video_file(self, video_path: Path, temp_dir: Path, dry_run: bool = False) -> bool:
-        logger.info(f'Processing: {video_path.name}')
         self._ocr_results = None
 
         try:
-            # Step 1: Try fetching subtitles from online databases
+            # Step 1: Identify media
+            self._stage('identify')
+            logger.info(f'Identifying: {video_path.name}')
+
+            # Step 2: Fetch subtitles
+            self._stage('fetch')
             fetched = self._try_fetch_subtitles(video_path, temp_dir)
             fetched_eng = fetched.get('eng')
             fetched_pol = fetched.get('pol')
 
-            # Step 2: Determine English subtitle source
+            if fetched_pol:
+                self._stage('fetch', 'Polish from AnimeSub')
+                logger.info('Fetched Polish subtitles')
+            elif fetched_eng:
+                self._stage('fetch', 'English only')
+                logger.info('Fetched English subtitles')
+            else:
+                self._stage('fetch', 'none found')
+
+            # Step 3: Extract embedded subtitles (if needed)
+            self._stage('extract')
             if fetched_eng:
-                logger.info(f'Using fetched English subtitles: {fetched_eng.name}')
                 extracted_ass = fetched_eng
             else:
                 extracted_ass = self._extract_subtitles(video_path, temp_dir)
                 if not extracted_ass:
                     return False
 
-            # Step 3: Determine Polish subtitle source
+            # Step 4: Translate (if needed)
             if fetched_pol:
-                logger.info(f'Using fetched Polish subtitles: {fetched_pol.name}')
+                logger.info('Using fetched Polish — skipping translation')
                 polish_ass = fetched_pol
-                # Still need English dialogue lines for the English track
                 dialogue_lines = SubtitleProcessor.extract_dialogue_lines(extracted_ass)
                 if not dialogue_lines:
-                    logger.error('No dialogue lines found in English subtitles')
+                    logger.error('No dialogue lines found')
                     return False
-                translated_dialogue = None  # Not needed — we have fetched Polish
+                translated_dialogue = None
+                self._stage('translate', 'skipped')
             else:
-                # Need to translate: parse English dialogue and translate
-                logger.info('Parsing dialogue...')
+                self._stage('translate')
                 dialogue_lines = SubtitleProcessor.extract_dialogue_lines(extracted_ass)
                 if not dialogue_lines:
                     logger.error('No dialogue lines found')
@@ -107,12 +122,12 @@ class TranslationPipeline:
                 except Exception as e:
                     logger.error(f'Translation failed: {e}')
                     return False
-                polish_ass = None  # Will be created below
+                polish_ass = None
 
-            # Step 4: Create subtitle files
+            # Step 5: Create subtitle files
+            self._stage('create')
             fonts_support_polish = check_embedded_fonts_support_polish(video_path, extracted_ass)
 
-            logger.info('Creating subtitle files...')
             clean_english_ass = temp_dir / f'{video_path.stem}_english_clean.ass'
             SubtitleProcessor.create_english_subtitles(
                 extracted_ass, dialogue_lines, clean_english_ass
@@ -120,28 +135,24 @@ class TranslationPipeline:
             SubtitleProcessor.validate_cleaned_subtitles(extracted_ass, clean_english_ass)
 
             if polish_ass is None:
-                # Create Polish from translation
                 polish_ass = temp_dir / f'{video_path.stem}_polish.ass'
                 replace_chars = not fonts_support_polish
                 SubtitleProcessor.create_polish_subtitles(
                     extracted_ass, translated_dialogue, polish_ass, replace_chars
                 )
 
-            # Step 5: Inpaint burned-in subtitles if detected
+            # Step 5.5: Inpaint burned-in subtitles if detected
             source_video = video_path
             if self._ocr_results:
-                logger.info('Removing burned-in subtitles from video...')
+                logger.info('Removing burned-in subtitles...')
                 inpainted_video = temp_dir / f'{video_path.stem}_inpainted{video_path.suffix}'
                 remove_burned_in_subtitles(
-                    video_path,
-                    inpainted_video,
-                    self._ocr_results,
-                    self.device,
+                    video_path, inpainted_video, self._ocr_results, self.device
                 )
                 source_video = inpainted_video
 
-            # Step 6: Create final video
-            logger.info('Creating video...')
+            # Step 6: Mux final video
+            self._stage('mux')
             temp_video = temp_dir / f'{video_path.stem}_temp{video_path.suffix}'
             video_ops = self._get_video_ops()
             video_ops.create_clean_video(source_video, clean_english_ass, polish_ass, temp_video)
@@ -150,7 +161,6 @@ class TranslationPipeline:
             if not dry_run:
                 self._replace_original(video_path, temp_video)
 
-            logger.info(f'Completed: {video_path.name}')
             return True
 
         except Exception as e:
@@ -158,20 +168,16 @@ class TranslationPipeline:
             return False
 
     def _get_extractor(self) -> SubtitleExtractor:
-        """Lazy initialization of subtitle extractor."""
         if self._extractor is None:
             self._extractor = SubtitleExtractor()
         return self._extractor
 
     def _get_video_ops(self) -> VideoOperations:
-        """Lazy initialization of video operations."""
         if self._video_ops is None:
             self._video_ops = VideoOperations()
         return self._video_ops
 
     def _extract_subtitles(self, video_path: Path, output_dir: Path) -> Path | None:
-        logger.info('Extracting subtitles...')
-
         extractor = self._get_extractor()
 
         track_info = extractor.get_track_info(video_path)
@@ -182,16 +188,16 @@ class TranslationPipeline:
         eng_track = extractor.find_english_track(track_info)
         if not eng_track:
             if not is_vision_ocr_available():
-                logger.error('No English subtitle track found (OCR not available on this platform)')
+                logger.error('No English subtitle track found (OCR not available)')
                 return None
-            # Quick probe: check if there are actually burned-in subtitles
             if not probe_for_burned_in_subtitles(video_path):
                 logger.info('No burned-in subtitles detected — skipping OCR')
                 return None
             return self._extract_burned_in_subtitles(video_path, output_dir)
 
         track_id = eng_track['id']
-        logger.info(f'Found English track: ID {track_id}')
+        codec = eng_track.get('codec_name', '?')
+        logger.info(f'English track: {codec} (ID {track_id})')
 
         subtitle_ext = extractor.get_subtitle_extension(eng_track)
         extracted_sub = output_dir / f'{video_path.stem}_extracted{subtitle_ext}'
@@ -201,7 +207,7 @@ class TranslationPipeline:
         return extracted_sub
 
     def _extract_burned_in_subtitles(self, video_path: Path, output_dir: Path) -> Path | None:
-        logger.info('No subtitle tracks found — attempting burned-in subtitle OCR...')
+        logger.info('Attempting burned-in subtitle OCR...')
         result = extract_burned_in_subtitles(video_path, output_dir)
         if result is None:
             return None
@@ -209,8 +215,6 @@ class TranslationPipeline:
         return result.srt_path
 
     def _replace_original(self, video_path: Path, temp_video: Path) -> None:
-        logger.info('Replacing original...')
-
         backup_path = video_path.with_suffix(video_path.suffix + '.backup')
         shutil.copy2(video_path, backup_path)
 
