@@ -6,6 +6,7 @@ Search by anime title, download as ZIP, extract subtitle files.
 
 import http.cookiejar
 import io
+import re
 import urllib.parse
 import urllib.request
 import zipfile
@@ -17,6 +18,19 @@ from ..types import SubtitleMatch
 
 BASE_URL = 'http://animesub.info'
 USER_AGENT = 'Mozilla/5.0 (compatible; MovieTranslator/1.0)'
+
+
+def _entry_matches_episode(title: str, episode: int) -> bool:
+    """Check if an AnimeSub result title matches a specific episode number.
+
+    Matches patterns like "ep01", "ep1", "ep001", "episode 1", "E01".
+    """
+    # Extract all episode-like numbers from the title
+    patterns = re.findall(r'(?:ep|episode\s*|e)(\d+)', title.lower())
+    if patterns:
+        return any(int(n) == episode for n in patterns)
+    # No episode pattern found — might be a movie or special, don't match
+    return False
 
 
 class _ResultParser(HTMLParser):
@@ -103,6 +117,7 @@ class AnimeSubProvider:
         if not title:
             return []
 
+        episode = identity.episode
         matches: list[SubtitleMatch] = []
 
         # Try English title first, then original
@@ -110,6 +125,14 @@ class AnimeSubProvider:
             try:
                 entries = self._search_page(title, title_type)
                 for entry in entries:
+                    entry_title = entry.get('title', '')
+
+                    # Episode matching: if we know the episode number, only accept
+                    # results that contain it (e.g., "ep01", "ep1", "episode 1")
+                    if episode is not None:
+                        if not _entry_matches_episode(entry_title, episode):
+                            continue
+
                     fmt = entry.get('format', '').lower()
                     ext = 'ass' if 'ssa' in fmt or 'ass' in fmt else 'srt'
                     matches.append(
@@ -117,7 +140,7 @@ class AnimeSubProvider:
                             language='pol',
                             source=self.name,
                             subtitle_id=f'{entry["id"]}:{entry["sh"]}',
-                            release_name=entry.get('title', ''),
+                            release_name=entry_title,
                             format=ext,
                             score=0.6,  # Lower than OpenSubtitles hash/query matches
                             hash_match=False,

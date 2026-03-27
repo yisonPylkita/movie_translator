@@ -137,7 +137,7 @@ class TestAnimeSubProvider:
             provider,
             '_search_page',
             return_value=[
-                {'id': '1', 'sh': 'x', 'title': 'Test', 'format': 'SubRip'},
+                {'id': '1', 'sh': 'x', 'title': 'Test ep01', 'format': 'SubRip'},
             ],
         ):
             matches = provider.search(_make_identity(), ['pol'])
