@@ -4,6 +4,7 @@ Scrapes animesub.info (a Polish fansubbing community) for subtitle files.
 Search by anime title, download as ZIP, extract subtitle files.
 """
 
+import http.cookiejar
 import io
 import urllib.parse
 import urllib.request
@@ -81,6 +82,13 @@ class _ResultParser(HTMLParser):
 class AnimeSubProvider:
     """animesub.info subtitle provider (Polish anime subtitles)."""
 
+    def __init__(self):
+        # Cookie jar shared across search and download to maintain session
+        self._cookie_jar = http.cookiejar.CookieJar()
+        self._opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(self._cookie_jar)
+        )
+
     @property
     def name(self) -> str:
         return 'animesub'
@@ -133,7 +141,7 @@ class AnimeSubProvider:
             method='POST',
         )
 
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with self._opener.open(req, timeout=30) as resp:
             content_type = resp.headers.get('Content-Type', '')
             zip_bytes = resp.read()
 
@@ -163,7 +171,7 @@ class AnimeSubProvider:
         url = f'{BASE_URL}/szukaj.php?szukane={query}&pTitle={title_type}&od={page}'
 
         req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with self._opener.open(req, timeout=15) as resp:
             html = resp.read().decode('iso-8859-2', errors='replace')
 
         parser = _ResultParser()

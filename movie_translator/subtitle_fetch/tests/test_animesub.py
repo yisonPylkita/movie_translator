@@ -164,19 +164,19 @@ class TestAnimeSubProvider:
 
         output = tmp_path / 'subtitle.ass'
 
-        # Mock the HTTP request to return our ZIP
+        # Mock the opener to return our ZIP
         from unittest.mock import MagicMock
 
         mock_resp = MagicMock()
         mock_resp.read.return_value = zip_bytes
+        mock_resp.headers = {'Content-Type': 'application/zip'}
         mock_resp.__enter__ = lambda s: s
         mock_resp.__exit__ = MagicMock(return_value=False)
 
-        with patch(
-            'movie_translator.subtitle_fetch.providers.animesub.urllib.request.urlopen',
-            return_value=mock_resp,
-        ):
-            result = AnimeSubProvider().download(match, output)
+        provider = AnimeSubProvider()
+        provider._opener = MagicMock()
+        provider._opener.open.return_value = mock_resp
+        result = provider.download(match, output)
 
         assert result == output
         assert output.exists()
