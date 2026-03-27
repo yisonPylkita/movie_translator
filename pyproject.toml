@@ -33,7 +33,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ocr = ["opencv-python~=4.12", "paddleocr~=3.3", "paddlepaddle~=3.2"]
+vision-ocr = [
+    "pyobjc-framework-Vision>=11.0; sys_platform == 'darwin'",
+    "pyobjc-framework-Quartz>=11.0; sys_platform == 'darwin'",
+    "numpy>=1.26",
+    "Pillow>=10.0",
+]
 
 [project.scripts]
 movie-translator = "movie_translator.main:main"
@@ -67,6 +72,10 @@ quote-style = "single"
 testpaths = ["tests", "movie_translator"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests requiring FFmpeg",
+]
 
 [tool.ty.environment]
 python-version = "3.14"
