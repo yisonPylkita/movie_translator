@@ -1,0 +1,122 @@
+import subprocess
+
+import pytest
+
+from movie_translator.ffmpeg import get_ffmpeg, probe_video_encoding
+from movie_translator.inpainting.video_processor import (
+    _build_subtitle_lookup,
+    remove_burned_in_subtitles,
+)
+from movie_translator.types import BoundingBox, OCRResult
+
+
+class TestBuildSubtitleLookup:
+    def test_maps_ocr_result_to_frame_range(self):
+        box = BoundingBox(x=0.1, y=0.8, width=0.8, height=0.1)
+        results = [OCRResult(timestamp_ms=1000, text='Hello', boxes=[box])]
+
+        lookup = _build_subtitle_lookup(results, fps=24.0)
+
+        # 1000ms at 24fps = frame 24. Should cover frames 24-47 (one second)
+        assert 24 in lookup
+        assert 47 in lookup
+        assert 23 not in lookup
+        assert 48 not in lookup
+        assert lookup[24] == [box]
+
+    def test_skips_empty_text(self):
+        box = BoundingBox(x=0.1, y=0.8, width=0.8, height=0.1)
+        results = [
+            OCRResult(timestamp_ms=0, text='', boxes=[]),
+            OCRResult(timestamp_ms=1000, text='Hello', boxes=[box]),
+        ]
+
+        lookup = _build_subtitle_lookup(results, fps=24.0)
+
+        assert 0 not in lookup
+        assert 23 not in lookup
+        assert 24 in lookup
+
+    def test_consecutive_results_cover_continuous_range(self):
+        box = BoundingBox(x=0.1, y=0.8, width=0.8, height=0.1)
+        results = [
+            OCRResult(timestamp_ms=0, text='Hello', boxes=[box]),
+            OCRResult(timestamp_ms=1000, text='Hello', boxes=[box]),
+        ]
+
+        lookup = _build_subtitle_lookup(results, fps=24.0)
+
+        for f in range(48):
+            assert f in lookup
+
+    def test_empty_results(self):
+        lookup = _build_subtitle_lookup([], fps=24.0)
+        assert lookup == {}
+
+    def test_skips_results_without_boxes(self):
+        results = [OCRResult(timestamp_ms=0, text='Hello', boxes=[])]
+
+        lookup = _build_subtitle_lookup(results, fps=24.0)
+
+        assert lookup == {}
+
+
+@pytest.fixture
+def video_with_subtitle_text(tmp_path):
+    """Create a 2-second video with burned-in text at the bottom."""
+    ffmpeg = get_ffmpeg()
+    output = tmp_path / 'input.mp4'
+    cmd = [
+        ffmpeg,
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=size=320x240:duration=2:rate=24:color=darkblue',
+        '-f',
+        'lavfi',
+        '-i',
+        'anullsrc=r=44100:cl=stereo',
+        '-t',
+        '2',
+        '-vf',
+        "drawtext=text='Test Subtitle':fontsize=20:fontcolor=white:x=(w-tw)/2:y=h-40",
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        str(output),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        pytest.skip(f'Could not create test video: {result.stderr}')
+    return output
+
+
+@pytest.mark.slow
+class TestRemoveBurnedInSubtitles:
+    def test_produces_output_video(self, video_with_subtitle_text, tmp_path):
+        box = BoundingBox(x=0.1, y=0.8, width=0.8, height=0.15)
+        ocr_results = [
+            OCRResult(timestamp_ms=0, text='Test Subtitle', boxes=[box]),
+            OCRResult(timestamp_ms=1000, text='Test Subtitle', boxes=[box]),
+        ]
+        output = tmp_path / 'output.mp4'
+
+        remove_burned_in_subtitles(
+            video_with_subtitle_text,
+            output,
+            ocr_results,
+            device='cpu',
+        )
+
+        assert output.exists()
+        assert output.stat().st_size > 0
+
+        info = probe_video_encoding(output)
+        assert info['width'] == 320
+        assert info['height'] == 240
