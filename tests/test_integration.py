@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-from movie_translator.main import find_mkv_files_with_temp_dirs
+from movie_translator.main import find_video_files_with_temp_dirs
 from movie_translator.pipeline import TranslationPipeline
 from movie_translator.types import DialogueLine
 
@@ -109,18 +109,44 @@ def test_full_pipeline_fails_with_nonexistent_file(tmp_output_dir):
     assert result is False
 
 
-class TestFindMkvFiles:
+class TestFindVideoFiles:
     def test_finds_mkv_in_root_directory(self, tmp_path):
         mkv1 = tmp_path / 'video1.mkv'
         mkv2 = tmp_path / 'video2.mkv'
         mkv1.touch()
         mkv2.touch()
 
-        results = find_mkv_files_with_temp_dirs(tmp_path)
+        results = find_video_files_with_temp_dirs(tmp_path)
 
         assert len(results) == 2
         assert results[0][0] == mkv1
         assert results[1][0] == mkv2
+        assert results[0][1] == tmp_path / '.translate_temp'
+        assert (tmp_path / '.translate_temp').exists()
+
+    def test_finds_mp4_in_root_directory(self, tmp_path):
+        mp4 = tmp_path / 'video.mp4'
+        mp4.touch()
+
+        results = find_video_files_with_temp_dirs(tmp_path)
+
+        assert len(results) == 1
+        assert results[0][0] == mp4
+        assert results[0][1] == tmp_path / '.translate_temp'
+        assert (tmp_path / '.translate_temp').exists()
+
+    def test_finds_mixed_formats_in_root_directory(self, tmp_path):
+        mkv = tmp_path / 'video.mkv'
+        mp4 = tmp_path / 'video.mp4'
+        mkv.touch()
+        mp4.touch()
+
+        results = find_video_files_with_temp_dirs(tmp_path)
+
+        assert len(results) == 2
+        paths = [r[0] for r in results]
+        assert mkv in paths
+        assert mp4 in paths
         assert results[0][1] == tmp_path / '.translate_temp'
         assert (tmp_path / '.translate_temp').exists()
 
@@ -134,7 +160,7 @@ class TestFindMkvFiles:
         (season1 / 'ep02.mkv').touch()
         (season2 / 'ep01.mkv').touch()
 
-        results = find_mkv_files_with_temp_dirs(tmp_path)
+        results = find_video_files_with_temp_dirs(tmp_path)
 
         assert len(results) == 3
         assert results[0][1] == season1 / '.translate_temp'
@@ -142,10 +168,22 @@ class TestFindMkvFiles:
         assert (season1 / '.translate_temp').exists()
         assert (season2 / '.translate_temp').exists()
 
-    def test_returns_empty_for_no_mkv_files(self, tmp_path):
-        (tmp_path / 'video.mp4').touch()
+    def test_finds_mp4_in_subdirectories(self, tmp_path):
+        subdir = tmp_path / 'Season 1'
+        subdir.mkdir()
+        (subdir / 'ep01.mp4').touch()
 
-        results = find_mkv_files_with_temp_dirs(tmp_path)
+        results = find_video_files_with_temp_dirs(tmp_path)
+
+        assert len(results) == 1
+        assert results[0][0] == subdir / 'ep01.mp4'
+        assert results[0][1] == subdir / '.translate_temp'
+        assert (subdir / '.translate_temp').exists()
+
+    def test_returns_empty_for_no_video_files(self, tmp_path):
+        (tmp_path / 'document.txt').touch()
+
+        results = find_video_files_with_temp_dirs(tmp_path)
 
         assert results == []
 
@@ -154,7 +192,7 @@ class TestFindMkvFiles:
         hidden.mkdir()
         (hidden / 'video.mkv').touch()
 
-        results = find_mkv_files_with_temp_dirs(tmp_path)
+        results = find_video_files_with_temp_dirs(tmp_path)
 
         assert results == []
 
@@ -164,7 +202,7 @@ class TestFindMkvFiles:
         subdir.mkdir()
         (subdir / 'sub.mkv').touch()
 
-        results = find_mkv_files_with_temp_dirs(tmp_path)
+        results = find_video_files_with_temp_dirs(tmp_path)
 
         assert len(results) == 1
         assert results[0][0].name == 'root.mkv'
