@@ -2,10 +2,12 @@ import shutil
 from pathlib import Path
 
 from .fonts import check_embedded_fonts_support_polish
+from .inpainting import remove_burned_in_subtitles
 from .logging import logger
 from .ocr import extract_burned_in_subtitles, is_vision_ocr_available
 from .subtitles import SubtitleExtractor, SubtitleProcessor
 from .translation import translate_dialogue_lines
+from .types import OCRResult
 from .video import VideoOperations
 
 
@@ -23,9 +25,11 @@ class TranslationPipeline:
         self.enable_ocr = enable_ocr
         self._extractor = None
         self._video_ops = None
+        self._ocr_results: list[OCRResult] | None = None
 
     def process_video_file(self, video_path: Path, temp_dir: Path, dry_run: bool = False) -> bool:
         logger.info(f'Processing: {video_path.name}')
+        self._ocr_results = None
 
         try:
             extracted_ass = self._extract_subtitles(video_path, temp_dir)
@@ -66,10 +70,23 @@ class TranslationPipeline:
                 extracted_ass, translated_dialogue, polish_ass, replace_chars
             )
 
+            # If burned-in subtitles were detected, inpaint them out first
+            source_video = video_path
+            if self._ocr_results:
+                logger.info('Removing burned-in subtitles from video...')
+                inpainted_video = temp_dir / f'{video_path.stem}_inpainted{video_path.suffix}'
+                remove_burned_in_subtitles(
+                    video_path,
+                    inpainted_video,
+                    self._ocr_results,
+                    self.device,
+                )
+                source_video = inpainted_video
+
             logger.info('Creating video...')
             temp_video = temp_dir / f'{video_path.stem}_temp{video_path.suffix}'
             video_ops = self._get_video_ops()
-            video_ops.create_clean_video(video_path, clean_english_ass, polish_ass, temp_video)
+            video_ops.create_clean_video(source_video, clean_english_ass, polish_ass, temp_video)
             video_ops.verify_result(temp_video)
 
             if not dry_run:
@@ -131,7 +148,11 @@ class TranslationPipeline:
 
     def _extract_burned_in_subtitles(self, video_path: Path, output_dir: Path) -> Path | None:
         logger.info('No subtitle tracks found — attempting burned-in subtitle OCR...')
-        return extract_burned_in_subtitles(video_path, output_dir)
+        result = extract_burned_in_subtitles(video_path, output_dir)
+        if result is None:
+            return None
+        self._ocr_results = result.ocr_results
+        return result.srt_path
 
     def _replace_original(self, video_path: Path, temp_video: Path) -> None:
         logger.info('Replacing original...')
