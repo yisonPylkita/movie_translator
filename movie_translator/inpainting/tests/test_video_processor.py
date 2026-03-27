@@ -5,6 +5,8 @@ import pytest
 from movie_translator.ffmpeg import get_ffmpeg, probe_video_encoding
 from movie_translator.inpainting.video_processor import (
     _build_subtitle_lookup,
+    _compute_crop_region,
+    _remap_boxes_to_crop,
     remove_burned_in_subtitles,
 )
 from movie_translator.types import BoundingBox, OCRResult
@@ -59,6 +61,51 @@ class TestBuildSubtitleLookup:
         lookup = _build_subtitle_lookup(results, fps=24.0)
 
         assert lookup == {}
+
+
+class TestComputeCropRegion:
+    def test_crops_around_subtitle_region(self):
+        boxes = [BoundingBox(x=0.1, y=0.8, width=0.8, height=0.1)]
+        x1, y1, x2, y2 = _compute_crop_region(boxes, 1920, 1080, padding_px=40)
+
+        assert x1 == 0
+        assert x2 == 1920
+        # y1 should be box top (0.8*1080=864) minus padding (40) = 824
+        assert y1 == 824
+        # y2 should be box bottom (0.9*1080=972) plus padding (40) = 1012
+        assert y2 == 1012
+
+    def test_clamps_to_frame_bounds(self):
+        boxes = [BoundingBox(x=0.0, y=0.95, width=1.0, height=0.05)]
+        x1, y1, x2, y2 = _compute_crop_region(boxes, 100, 100, padding_px=40)
+
+        assert y1 >= 0
+        assert y2 <= 100
+
+    def test_multiple_boxes_covers_all(self):
+        boxes = [
+            BoundingBox(x=0.1, y=0.7, width=0.3, height=0.05),
+            BoundingBox(x=0.5, y=0.9, width=0.3, height=0.05),
+        ]
+        x1, y1, x2, y2 = _compute_crop_region(boxes, 1000, 1000, padding_px=0)
+
+        # Should span from y=0.7 to y=0.95
+        assert y1 == 700
+        assert y2 == 950
+
+
+class TestRemapBoxesToCrop:
+    def test_remaps_to_crop_local_coords(self):
+        boxes = [BoundingBox(x=0.1, y=0.8, width=0.8, height=0.1)]
+        # Crop covers y=800..1000 in a 1000x1000 frame
+        remapped = _remap_boxes_to_crop(boxes, 0, 800, 1000, 200, 1000, 1000)
+
+        assert len(remapped) == 1
+        box = remapped[0]
+        assert abs(box.x - 0.1) < 1e-9
+        assert abs(box.y - 0.0) < 1e-9  # 800-800=0 in crop
+        assert abs(box.width - 0.8) < 1e-9
+        assert abs(box.height - 0.5) < 1e-9  # 100px / 200px crop height
 
 
 @pytest.fixture
