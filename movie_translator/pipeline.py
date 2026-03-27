@@ -3,7 +3,7 @@ from pathlib import Path
 
 from .fonts import check_embedded_fonts_support_polish
 from .logging import logger
-from .ocr import SubtitleOCR
+from .ocr import extract_burned_in_subtitles, is_vision_ocr_available
 from .subtitles import SubtitleExtractor, SubtitleProcessor
 from .translation import translate_dialogue_lines
 from .video import VideoOperations
@@ -25,7 +25,6 @@ class TranslationPipeline:
         self.ocr_gpu = ocr_gpu
         self._extractor = None
         self._video_ops = None
-        self._ocr = None
 
     def process_video_file(self, video_path: Path, temp_dir: Path, dry_run: bool = False) -> bool:
         logger.info(f'Processing: {video_path.name}')
@@ -97,12 +96,6 @@ class TranslationPipeline:
             self._video_ops = VideoOperations()
         return self._video_ops
 
-    def _get_ocr(self) -> SubtitleOCR:
-        """Lazy initialization of OCR processor."""
-        if self._ocr is None:
-            self._ocr = SubtitleOCR(use_gpu=self.ocr_gpu)
-        return self._ocr
-
     def _extract_subtitles(self, video_path: Path, output_dir: Path) -> Path | None:
         logger.info('Extracting subtitles...')
 
@@ -115,34 +108,32 @@ class TranslationPipeline:
 
         eng_track = extractor.find_english_track(track_info)
         if not eng_track:
+            if self._can_try_burned_in_ocr():
+                return self._extract_burned_in_subtitles(video_path, output_dir)
             logger.error('No English subtitle track found')
             return None
 
         track_id = eng_track['id']
         logger.info(f'Found English track: ID {track_id}')
 
-        if eng_track.get('requires_ocr', False):
-            return self._process_ocr_subtitles(video_path, track_id, output_dir)
-
         subtitle_ext = extractor.get_subtitle_extension(eng_track)
-        extracted_ass = output_dir / f'{video_path.stem}_extracted{subtitle_ext}'
+        extracted_sub = output_dir / f'{video_path.stem}_extracted{subtitle_ext}'
         subtitle_index = eng_track.get('subtitle_index', 0)
-        extractor.extract_subtitle(video_path, track_id, extracted_ass, subtitle_index)
+        extractor.extract_subtitle(video_path, track_id, extracted_sub, subtitle_index)
 
-        return extracted_ass
+        return extracted_sub
 
-    def _process_ocr_subtitles(
-        self, video_path: Path, track_id: int, output_dir: Path
-    ) -> Path | None:
-        logger.info('Processing OCR subtitles...')
+    def _can_try_burned_in_ocr(self) -> bool:
+        if not self.enable_ocr:
+            return False
+        if not is_vision_ocr_available():
+            logger.warning('Apple Vision OCR not available on this platform')
+            return False
+        return True
 
-        ocr = self._get_ocr()
-        extracted_srt = ocr.process_image_based_subtitles(video_path, track_id, output_dir)
-        if not extracted_srt:
-            logger.error('OCR processing failed')
-            return None
-
-        return extracted_srt
+    def _extract_burned_in_subtitles(self, video_path: Path, output_dir: Path) -> Path | None:
+        logger.info('No subtitle tracks found — attempting burned-in subtitle OCR...')
+        return extract_burned_in_subtitles(video_path, output_dir)
 
     def _replace_original(self, video_path: Path, temp_video: Path) -> None:
         logger.info('Replacing original...')

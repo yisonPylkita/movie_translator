@@ -153,7 +153,7 @@ class SubtitleExtractor:
 
             # Only mark as signs if the track name explicitly indicates it
             is_signs = any(
-                re.search(rf'(?:^|\s){re.escape(keyword)}s?(?:$|\s)', track_name)
+                re.search(rf'\b{re.escape(keyword)}s?\b', track_name)
                 for keyword in NON_DIALOGUE_STYLES
             )
 
@@ -225,30 +225,11 @@ class SubtitleExtractor:
         return text_tracks, image_tracks
 
     def _handle_image_tracks(self, image_tracks: list[dict], total_count: int) -> dict | None:
-        if not self.enable_ocr:
-            logger.warning(
-                f'Found {total_count} English tracks, but only image-based dialogue tracks available'
-            )
-            logger.info('Enable OCR with --enable-ocr flag')
-            return None
-
-        from ..ocr import SubtitleOCR
-
-        ocr_check = SubtitleOCR()
-
-        if ocr_check.check_availability():
-            logger.info(
-                f'Found {total_count} English tracks, will process image-based dialogue with OCR'
-            )
-            image_tracks[0]['requires_ocr'] = True
-            ocr_check.cleanup()
-            return image_tracks[0]
-
         logger.warning(
             f'Found {total_count} English tracks, but only image-based dialogue tracks available'
         )
-        logger.info('Install OCR support with: uv add opencv-python paddleocr')
-        ocr_check.cleanup()
+        logger.info('Image-based subtitle track OCR (PGS/DVD) is not supported')
+        logger.info('If the video has burned-in subtitles, use --enable-ocr flag')
         return None
 
     def get_subtitle_extension(self, track: dict[str, Any]) -> str:
