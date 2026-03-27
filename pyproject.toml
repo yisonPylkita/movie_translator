@@ -35,6 +35,8 @@ dependencies = [
     "numpy>=1.26",
     "Pillow>=10.0",
     "simple-lama-inpainting>=0.1.0",
+    "opencv-python-headless>=4.8",
+    "guessit>=3.8",
 ]
 
 [project.scripts]
