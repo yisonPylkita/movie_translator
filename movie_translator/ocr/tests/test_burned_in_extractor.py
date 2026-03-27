@@ -1,87 +1,88 @@
-from pathlib import Path
-
-from movie_translator.ocr.burned_in_extractor import _build_dialogue_lines, _write_srt
-from movie_translator.ocr.change_detector import SubtitleTransition
+from movie_translator.ocr.burned_in_extractor import _build_dialogue_lines_from_ocr, _write_srt
 from movie_translator.types import DialogueLine
 
 
-class TestBuildDialogueLines:
-    def test_simple_appeared_disappeared_pair(self):
-        transitions = [
-            SubtitleTransition(1000, Path('f1.jpg'), 'appeared'),
-            SubtitleTransition(3000, Path('f2.jpg'), 'disappeared'),
+class TestBuildDialogueLinesFromOcr:
+    def test_simple_text_then_blank(self):
+        frame_texts = [
+            (1000, 'Hello world'),
+            (2000, 'Hello world'),
+            (3000, ''),
         ]
-        ocr_results = {Path('f1.jpg'): 'Hello world'}
 
-        lines = _build_dialogue_lines(transitions, ocr_results)
+        lines = _build_dialogue_lines_from_ocr(frame_texts)
 
         assert len(lines) == 1
         assert lines[0] == DialogueLine(1000, 3000, 'Hello world')
 
-    def test_consecutive_appeared_events(self):
-        transitions = [
-            SubtitleTransition(1000, Path('f1.jpg'), 'appeared'),
-            SubtitleTransition(3000, Path('f2.jpg'), 'appeared'),
-            SubtitleTransition(5000, Path('f3.jpg'), 'disappeared'),
+    def test_consecutive_different_texts(self):
+        frame_texts = [
+            (1000, 'First line'),
+            (2000, 'First line'),
+            (3000, 'Second line'),
+            (4000, 'Second line'),
+            (5000, ''),
         ]
-        ocr_results = {
-            Path('f1.jpg'): 'First line',
-            Path('f2.jpg'): 'Second line',
-        }
 
-        lines = _build_dialogue_lines(transitions, ocr_results)
+        lines = _build_dialogue_lines_from_ocr(frame_texts)
 
         assert len(lines) == 2
         assert lines[0] == DialogueLine(1000, 3000, 'First line')
         assert lines[1] == DialogueLine(3000, 5000, 'Second line')
 
-    def test_filters_empty_ocr_results(self):
-        transitions = [
-            SubtitleTransition(1000, Path('f1.jpg'), 'appeared'),
-            SubtitleTransition(3000, Path('f2.jpg'), 'appeared'),
-            SubtitleTransition(5000, Path('f3.jpg'), 'disappeared'),
+    def test_filters_empty_text(self):
+        frame_texts = [
+            (1000, ''),
+            (2000, ''),
+            (3000, 'Real text'),
+            (4000, 'Real text'),
+            (5000, ''),
         ]
-        ocr_results = {
-            Path('f1.jpg'): '',
-            Path('f2.jpg'): 'Real text',
-        }
 
-        lines = _build_dialogue_lines(transitions, ocr_results)
+        lines = _build_dialogue_lines_from_ocr(frame_texts)
 
         assert len(lines) == 1
         assert lines[0].text == 'Real text'
 
     def test_filters_single_character_garbage(self):
-        transitions = [
-            SubtitleTransition(1000, Path('f1.jpg'), 'appeared'),
-            SubtitleTransition(3000, Path('f2.jpg'), 'disappeared'),
+        frame_texts = [
+            (1000, 'x'),
+            (2000, ''),
         ]
-        ocr_results = {Path('f1.jpg'): 'x'}
 
-        lines = _build_dialogue_lines(transitions, ocr_results)
+        lines = _build_dialogue_lines_from_ocr(frame_texts)
 
         assert len(lines) == 0
 
     def test_deduplicates_consecutive_identical_text(self):
-        transitions = [
-            SubtitleTransition(1000, Path('f1.jpg'), 'appeared'),
-            SubtitleTransition(2000, Path('f2.jpg'), 'appeared'),
-            SubtitleTransition(5000, Path('f3.jpg'), 'disappeared'),
+        frame_texts = [
+            (1000, 'Same text'),
+            (2000, 'Same text'),
+            (3000, 'Same text'),
+            (4000, 'Same text'),
+            (5000, ''),
         ]
-        ocr_results = {
-            Path('f1.jpg'): 'Same text',
-            Path('f2.jpg'): 'Same text',
-        }
 
-        lines = _build_dialogue_lines(transitions, ocr_results)
+        lines = _build_dialogue_lines_from_ocr(frame_texts)
 
         assert len(lines) == 1
         assert lines[0] == DialogueLine(1000, 5000, 'Same text')
 
-    def test_empty_transitions(self):
-        lines = _build_dialogue_lines([], {})
+    def test_empty_input(self):
+        lines = _build_dialogue_lines_from_ocr([])
 
         assert lines == []
+
+    def test_last_subtitle_gets_extra_second(self):
+        frame_texts = [
+            (1000, 'Last line'),
+            (2000, 'Last line'),
+        ]
+
+        lines = _build_dialogue_lines_from_ocr(frame_texts)
+
+        assert len(lines) == 1
+        assert lines[0] == DialogueLine(1000, 3000, 'Last line')
 
 
 class TestWriteSrt:
