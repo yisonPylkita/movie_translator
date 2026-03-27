@@ -1,11 +1,11 @@
 import argparse
+import logging
 import sys
 from pathlib import Path
 
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
-
 from .logging import console, logger, set_verbose
 from .pipeline import TranslationPipeline
+from .progress import ProgressTracker
 from .subtitles import SubtitleExtractor
 
 
@@ -148,32 +148,22 @@ def main():
         sys.exit(1)
 
     total_files = len(video_files_with_temps)
-    console.print(f'[bold]🎬 Movie Translator[/bold] - {total_files} file(s)')
+
     if args.dry_run:
         console.print('[yellow]Dry run mode - originals will not be modified[/yellow]')
 
-    pipeline = TranslationPipeline(
-        device=args.device,
-        batch_size=args.batch_size,
-        model=args.model,
-        enable_fetch=not args.no_fetch,
-    )
+    # Suppress noisy library warnings
+    logging.getLogger('transformers').setLevel(logging.ERROR)
 
     extractor = SubtitleExtractor()
-    results: list[tuple[str, str]] = []
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn('[progress.description]{task.description}'),
-        BarColumn(),
-        TextColumn('[progress.percentage]{task.percentage:>3.0f}%'),
-        TimeElapsedColumn(),
-        console=console,
-        transient=not args.verbose,
-    ) as progress:
-        overall_task = progress.add_task(
-            f'[cyan]Processing {total_files} files...',
-            total=total_files,
+    with ProgressTracker(total_files, console=console) as tracker:
+        pipeline = TranslationPipeline(
+            device=args.device,
+            batch_size=args.batch_size,
+            model=args.model,
+            enable_fetch=not args.no_fetch,
+            tracker=tracker,
         )
 
         for video_path, temp_dir in video_files_with_temps:
@@ -183,26 +173,18 @@ def main():
                 else video_path.name
             )
 
-            progress.update(overall_task, description=f'[cyan]{relative_name}')
+            tracker.start_file(relative_name)
 
             try:
                 if extractor.has_polish_subtitles(video_path):
-                    results.append((relative_name, 'skipped'))
+                    tracker.complete_file('skipped')
                 elif pipeline.process_video_file(video_path, temp_dir, dry_run=args.dry_run):
-                    results.append((relative_name, 'success'))
+                    tracker.complete_file('success')
                 else:
-                    results.append((relative_name, 'failed'))
+                    tracker.complete_file('failed')
             except Exception as e:
-                logger.error(f'Unexpected error processing {relative_name}: {e}')
-                results.append((relative_name, 'failed'))
-
-            progress.advance(overall_task)
-
-    show_summary(results, dry_run=args.dry_run)
-
-    failed = sum(1 for _, status in results if status == 'failed')
-    if failed > 0:
-        sys.exit(1)
+                logger.error(f'Unexpected error: {e}')
+                tracker.complete_file('failed')
 
 
 if __name__ == '__main__':
