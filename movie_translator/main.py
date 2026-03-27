@@ -4,7 +4,7 @@ from pathlib import Path
 
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
-from .logging import console, set_verbose
+from .logging import console, logger, set_verbose
 from .pipeline import TranslationPipeline
 from .subtitles import SubtitleExtractor
 
@@ -185,11 +185,15 @@ def main():
 
             progress.update(overall_task, description=f'[cyan]{relative_name}')
 
-            if extractor.has_polish_subtitles(video_path):
-                results.append((relative_name, 'skipped'))
-            elif pipeline.process_video_file(video_path, temp_dir, dry_run=args.dry_run):
-                results.append((relative_name, 'success'))
-            else:
+            try:
+                if extractor.has_polish_subtitles(video_path):
+                    results.append((relative_name, 'skipped'))
+                elif pipeline.process_video_file(video_path, temp_dir, dry_run=args.dry_run):
+                    results.append((relative_name, 'success'))
+                else:
+                    results.append((relative_name, 'failed'))
+            except Exception as e:
+                logger.error(f'Unexpected error processing {relative_name}: {e}')
                 results.append((relative_name, 'failed'))
 
             progress.advance(overall_task)
