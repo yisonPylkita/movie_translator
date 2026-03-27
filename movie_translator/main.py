@@ -64,6 +64,11 @@ def parse_args() -> argparse.Namespace:
         help='Extract burned-in subtitles via Apple Vision OCR (macOS only)',
     )
     parser.add_argument(
+        '--no-fetch',
+        action='store_true',
+        help='Disable online subtitle fetching (use only local extraction/OCR)',
+    )
+    parser.add_argument(
         '--dry-run',
         action='store_true',
         help='Process files but do not replace originals (keeps output in temp directory)',
@@ -157,6 +162,7 @@ def main():
         batch_size=args.batch_size,
         model=args.model,
         enable_ocr=args.enable_ocr,
+        enable_fetch=not args.no_fetch,
     )
 
     extractor = SubtitleExtractor()
