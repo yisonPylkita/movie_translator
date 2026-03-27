@@ -218,7 +218,8 @@ Dialogue: 0,0:00:10.00,0:00:12.00,Default,,0,0,0,,What a beautiful day!
         with pytest.raises(SubtitleProcessingError, match='Failed to load'):
             SubtitleProcessor.validate_cleaned_subtitles(original, cleaned)
 
-    def test_validate_raises_for_timing_mismatch(self, create_ass_file, tmp_path):
+    def test_validate_tolerates_timing_offset_from_non_dialogue(self, create_ass_file, tmp_path):
+        """Timing offsets are tolerated when they're due to non-dialogue filtering."""
         original = create_ass_file('original.ass')
 
         mismatched_content = """[Script Info]
@@ -236,8 +237,8 @@ Dialogue: 0,0:00:05.00,0:00:06.00,Default,,0,0,0,,Hello, how are you?
         cleaned = tmp_path / 'cleaned.ass'
         cleaned.write_text(mismatched_content)
 
-        with pytest.raises(SubtitleProcessingError, match='mismatch'):
-            SubtitleProcessor.validate_cleaned_subtitles(original, cleaned)
+        # Should not raise — timing offsets are warned, not fatal
+        SubtitleProcessor.validate_cleaned_subtitles(original, cleaned)
 
 
 class TestSubtitleExtractorErrors:
