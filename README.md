@@ -69,7 +69,7 @@ just run ~/Downloads/movies --device cpu
 just run ~/Downloads/movies --verbose
 
 # Show all options
-just run -- --help
+uv run movie-translator --help
 ```
 
 ### 4. Burned-In Subtitle OCR (macOS only)
@@ -77,10 +77,6 @@ just run -- --help
 For videos with subtitles baked into the video frames (no subtitle tracks), use OCR extraction:
 
 ```bash
-# Install OCR dependencies
-uv sync --extra vision-ocr
-
-# Process videos with burned-in subtitles
 just run ~/Downloads/movies --enable-ocr
 ```
 

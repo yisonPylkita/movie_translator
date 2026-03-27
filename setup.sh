@@ -5,7 +5,7 @@ set -e
 echo "🎬 Setting up Movie Translator..."
 
 # Install system dependencies
-brew bundle --no-lock
+brew bundle
 
 # Enable direnv for this directory
 direnv allow
@@ -31,6 +31,3 @@ echo "  just run ~/Downloads/movies               # translate MKV/MP4 files"
 echo "  just run ~/Downloads/movies --dry-run      # preview without modifying"
 echo "  just run ~/Downloads/movies --enable-ocr   # OCR burned-in subtitles"
 echo "  just --list                                # see all dev commands"
-echo ""
-echo "For burned-in subtitle OCR (macOS only):"
-echo "  uv sync --extra vision-ocr"

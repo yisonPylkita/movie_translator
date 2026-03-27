@@ -22,8 +22,8 @@ test *args:
 ci: check test
 
 # Run movie-translator CLI
-run *args:
-    uv run movie-translator {{ args }}
+run dir *args:
+    uv run movie-translator "{{ dir }}" {{ args }}
 
 # Install git pre-commit hook
 install-hooks:
