@@ -52,3 +52,15 @@ class TestVideoOperations:
         ops = VideoOperations()
         with pytest.raises(VideoOperationError, match='not found'):
             ops.verify_result(Path('/nonexistent/video.mkv'))
+
+    def test_create_clean_video_mp4_output(self, create_test_mkv, create_ass_file, tmp_path):
+        mkv_file = create_test_mkv()
+        english_ass = create_ass_file('english.ass')
+        polish_ass = create_ass_file('polish.ass')
+        output_path = tmp_path / 'output.mp4'
+
+        ops = VideoOperations()
+        ops.create_clean_video(mkv_file, english_ass, polish_ass, output_path)
+
+        assert output_path.exists()
+        assert output_path.stat().st_size > 0

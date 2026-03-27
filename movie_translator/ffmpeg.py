@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from functools import lru_cache
 from pathlib import Path
@@ -15,7 +16,24 @@ class VideoMuxError(Exception):
 
 @lru_cache(maxsize=1)
 def get_ffmpeg_paths() -> tuple[str, str]:
-    return static_ffmpeg.run.get_or_fetch_platform_executables_else_raise()
+    # First try to use system FFmpeg (for proper arm64 support on Apple Silicon)
+    ffmpeg_path = '/opt/homebrew/bin/ffmpeg' if os.path.exists('/opt/homebrew/bin/ffmpeg') else None
+    ffprobe_path = (
+        '/opt/homebrew/bin/ffprobe' if os.path.exists('/opt/homebrew/bin/ffprobe') else None
+    )
+
+    # Fallback to static_ffmpeg if system FFmpeg is not available
+    if not ffmpeg_path or not ffprobe_path:
+        try:
+            ffmpeg_path, ffprobe_path = (
+                static_ffmpeg.run.get_or_fetch_platform_executables_else_raise()
+            )
+        except Exception as err:
+            raise VideoMuxError(
+                "FFmpeg not found. Please install FFmpeg with 'brew install ffmpeg' or run ./setup.sh"
+            ) from err
+
+    return ffmpeg_path, ffprobe_path
 
 
 def get_ffmpeg() -> str:
@@ -76,7 +94,9 @@ def mux_video_with_subtitles(
 
     cmd.extend(['-c:v', 'copy'])
     cmd.extend(['-c:a', 'copy'])
-    cmd.extend(['-c:s', 'ass'])
+    # Select subtitle codec based on output container
+    subtitle_codec = 'mov_text' if output_path.suffix.lower() == '.mp4' else 'ass'
+    cmd.extend(['-c:s', subtitle_codec])
 
     for i, sub in enumerate(subtitle_files):
         cmd.extend([f'-metadata:s:s:{i}', f'language={sub.language}'])
