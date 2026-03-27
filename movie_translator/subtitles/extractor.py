@@ -16,8 +16,8 @@ class SubtitleExtractor:
     TEXT_CODECS = ('ass', 'ssa', 'subrip', 'srt', 'webvtt', 'mov_text')
     IMAGE_CODECS = ('hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle')
 
-    def __init__(self, enable_ocr: bool = False):
-        self.enable_ocr = enable_ocr
+    def __init__(self):
+        pass
 
     def get_track_info(self, video_path: Path) -> dict[str, Any]:
         if not video_path.exists():

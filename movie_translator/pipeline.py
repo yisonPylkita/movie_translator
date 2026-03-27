@@ -22,13 +22,11 @@ class TranslationPipeline:
         device: str = 'mps',
         batch_size: int = 16,
         model: str = 'allegro',
-        enable_ocr: bool = False,
         enable_fetch: bool = True,
     ):
         self.device = device
         self.batch_size = batch_size
         self.model = model
-        self.enable_ocr = enable_ocr
         self.enable_fetch = enable_fetch
         self._extractor = None
         self._video_ops = None
@@ -162,7 +160,7 @@ class TranslationPipeline:
     def _get_extractor(self) -> SubtitleExtractor:
         """Lazy initialization of subtitle extractor."""
         if self._extractor is None:
-            self._extractor = SubtitleExtractor(enable_ocr=self.enable_ocr)
+            self._extractor = SubtitleExtractor()
         return self._extractor
 
     def _get_video_ops(self) -> VideoOperations:
@@ -183,9 +181,9 @@ class TranslationPipeline:
 
         eng_track = extractor.find_english_track(track_info)
         if not eng_track:
-            if self._can_try_burned_in_ocr():
+            if is_vision_ocr_available():
                 return self._extract_burned_in_subtitles(video_path, output_dir)
-            logger.error('No English subtitle track found')
+            logger.error('No English subtitle track found (OCR not available on this platform)')
             return None
 
         track_id = eng_track['id']
@@ -197,14 +195,6 @@ class TranslationPipeline:
         extractor.extract_subtitle(video_path, track_id, extracted_sub, subtitle_index)
 
         return extracted_sub
-
-    def _can_try_burned_in_ocr(self) -> bool:
-        if not self.enable_ocr:
-            return False
-        if not is_vision_ocr_available():
-            logger.warning('Apple Vision OCR not available on this platform')
-            return False
-        return True
 
     def _extract_burned_in_subtitles(self, video_path: Path, output_dir: Path) -> Path | None:
         logger.info('No subtitle tracks found — attempting burned-in subtitle OCR...')

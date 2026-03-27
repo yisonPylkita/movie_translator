@@ -59,11 +59,6 @@ def parse_args() -> argparse.Namespace:
         help='Translation model to use (default: allegro)',
     )
     parser.add_argument(
-        '--enable-ocr',
-        action='store_true',
-        help='Extract burned-in subtitles via Apple Vision OCR (macOS only)',
-    )
-    parser.add_argument(
         '--no-fetch',
         action='store_true',
         help='Disable online subtitle fetching (use only local extraction/OCR)',
@@ -161,7 +156,6 @@ def main():
         device=args.device,
         batch_size=args.batch_size,
         model=args.model,
-        enable_ocr=args.enable_ocr,
         enable_fetch=not args.no_fetch,
     )
 
