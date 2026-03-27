@@ -1,59 +1,101 @@
-# Movie Translator 🎬
+# Movie Translator
 
 [![Tests](https://github.com/yisonPylkita/movie_translator/actions/workflows/tests.yml/badge.svg)](https://github.com/yisonPylkita/movie_translator/actions/workflows/tests.yml)
 
-**AI subtitle translator** for English→Polish translation. Works on macOS and Linux.
+**AI subtitle translator** for English to Polish translation. Runs entirely locally on your machine.
 
-## Features
+## What It Does
 
-- **💻 Cross-Platform** - Works on macOS and Linux
-- **🍎 MPS Acceleration** - Optimized for Apple Silicon
-- **🤖 AI Translation** - Runs locally using pre-verified translation models
-- **🎯 Smart Filtering** - Extracts dialogue only (skips signs/songs)
-- **📦 Zero System Dependencies** - FFmpeg bundled via Python, no Homebrew needed
+Takes video files (MKV or MP4) with English subtitles and produces new video files with both Polish (AI-translated) and English subtitle tracks. Polish is set as the default track.
+
+Supports two subtitle sources:
+- **Subtitle tracks** (ASS, SRT) embedded in MKV/MP4 files
+- **Burned-in subtitles** (hardcoded into video frames) via Apple Vision OCR (macOS only)
 
 ## Requirements
 
-- **macOS** or **Linux**
+- **macOS** (recommended) or **Linux**
 - **[uv](https://docs.astral.sh/uv/)** - Python package manager
 - That's it! FFmpeg is bundled automatically.
 
+For burned-in subtitle OCR, macOS with Apple Silicon is required (uses the Neural Engine).
+
 ## Quick Start
 
-### Setup (One-time)
+### 1. Setup
 
 ```bash
-# Option 1: Use the setup script
+# Clone and enter the repo
+git clone https://github.com/yisonPylkita/movie_translator.git
+cd movie_translator
+
+# Option A: Automated setup (macOS only - installs direnv, just, git-lfs via Homebrew)
 ./setup.sh
 
-# Option 2: Manual setup with uv
-uv sync
+# Option B: Manual setup
+uv sync              # Install Python dependencies
+git lfs install      # Enable Git LFS
+git lfs pull         # Download the translation model (~446MB)
 ```
 
-### Usage
+### 2. Translate Videos
 
 ```bash
-# Translate video files in a directory
-./run.sh ~/Downloads/movies
+# Translate all MKV/MP4 files in a directory
+just run ~/Downloads/movies
 
-# Adjust batch size for memory/speed tradeoff
-./run.sh ~/Downloads/movies --batch-size 8
-
-# Use CPU instead of MPS
-./run.sh ~/Downloads/movies --device cpu
-
-# Show all options
-./run.sh --help
+# Or without just:
+uv run movie-translator ~/Downloads/movies
 ```
 
-### With OCR Support (Optional)
+The tool will:
+1. Find all `.mkv` and `.mp4` files in the directory (and one level of subdirectories)
+2. Skip files that already have Polish subtitles
+3. Extract English subtitles, translate to Polish, and mux both tracks back into the video
+
+### 3. Common Options
+
+```bash
+# Preview without modifying originals (output goes to .translate_temp/)
+just run ~/Downloads/movies --dry-run
+
+# Adjust batch size for memory/speed tradeoff
+just run ~/Downloads/movies --batch-size 8
+
+# Use CPU instead of Apple Silicon GPU
+just run ~/Downloads/movies --device cpu
+
+# Verbose logging
+just run ~/Downloads/movies --verbose
+
+# Show all options
+just run -- --help
+```
+
+### 4. Burned-In Subtitle OCR (macOS only)
+
+For videos with subtitles baked into the video frames (no subtitle tracks), use OCR extraction:
 
 ```bash
 # Install OCR dependencies
-uv sync --extra ocr
+uv sync --extra vision-ocr
 
-# Process image-based subtitles
-./run.sh ~/Downloads/movies --enable-ocr
+# Process videos with burned-in subtitles
+just run ~/Downloads/movies --enable-ocr
+```
+
+This uses Apple's Vision framework on the Neural Engine. It extracts frames at 1fps, OCRs the subtitle region (bottom 25% of the frame), and produces an SRT file that feeds into the translation pipeline. Typical speed: ~80 seconds for a 30-minute video.
+
+## How It Works
+
+```
+Video file (MKV/MP4)
+  -> Extract English subtitles (from tracks or via OCR)
+  -> Filter dialogue (skip signs/songs/effects)
+  -> Translate to Polish (Allegro BiDi model, runs on MPS/CPU)
+  -> Check if embedded fonts support Polish characters
+  -> Create Polish + clean English subtitle files
+  -> Mux both tracks into the video (Polish as default)
 ```
 
 ## Development
@@ -62,217 +104,31 @@ uv sync --extra ocr
 # Install dev dependencies
 uv sync --group dev
 
-# Run linter
-uv run ruff check .
+# Run all checks and tests (CI equivalent)
+just ci
 
-# Run type checker
-uv run ty check
+# Individual commands
+just lint       # Auto-fix linting and formatting
+just check      # Check without modifying files (lint + format + type check)
+just test       # Run tests
+just run        # Run the CLI
+```
 
-# Run formatter
-uv run ruff format .
+### Project Structure
 
-# Run tests
-uv run pytest -v
+```
+movie_translator/
+  main.py              # CLI entry point, file discovery
+  pipeline.py          # Translation orchestration
+  ffmpeg.py            # FFmpeg/FFprobe wrapper
+  types.py             # Core data types (DialogueLine, SubtitleFile)
+  fonts.py             # Font analysis for Polish character support
+  subtitles/           # Subtitle extraction and processing
+  translation/         # AI translation (Allegro BiDi model)
+  video/               # Video muxing and verification
+  ocr/                 # Burned-in subtitle OCR (Apple Vision)
 ```
 
 ## License
 
 MIT License - see LICENSE file for details.
-
-
-❯ ./run.sh ~/Downloads/test_movies --verbose
-🎬 Movie Translator
-
-DEBUG    Attempting to acquire lock 4462506880 on /Users/arlen/h_dev/movie_translator/.venv/lib/python3.14/site-packages/static_ffmpeg/lock.file                                                          
-DEBUG    Lock 4462506880 acquired on /Users/arlen/h_dev/movie_translator/.venv/lib/python3.14/site-packages/static_ffmpeg/lock.file                                                                       
-DEBUG    Attempting to release lock 4462506880 on /Users/arlen/h_dev/movie_translator/.venv/lib/python3.14/site-packages/static_ffmpeg/lock.file                                                          
-DEBUG    Lock 4462506880 released on /Users/arlen/h_dev/movie_translator/.venv/lib/python3.14/site-packages/static_ffmpeg/lock.file                                                                       
-🎬 Movie Translator - 1 file(s)
-INFO     Processing: Jujutsu Kaisen - 001 - Ryoumen Sukuna.mkv                                                                                                                                            
-INFO     Extracting subtitles...                                                                                                                                                                          
-INFO     Found 2 English subtitle track(s):                                                                                                                                                               
-INFO       Track 1: ID=3, Name="Signs & Songs", Codec=ass                                                                                                                                                 
-INFO       Track 2: ID=4, Name="Full Subtitles", Codec=ass                                                                                                                                                
-INFO     Categorized: 1 dialogue track(s), 1 signs/songs track(s)                                                                                                                                         
-INFO     Selected track: ID=4, Name="Full Subtitles"                                                                                                                                                      
-INFO     Found English track: ID 4                                                                                                                                                                        
-INFO     Extracting subtitle track 4...                                                                                                                                                                   
-INFO     Extraction successful: Jujutsu Kaisen - 001 - Ryoumen Sukuna_extracted.ass                                                                                                                       
-INFO     Parsing dialogue...                                                                                                                                                                              
-INFO     📖 Reading Jujutsu Kaisen - 001 - Ryoumen Sukuna_extracted.ass...                                                                                                                                
-DEBUG    at line 1: section heading [Script Info]                                                                                                                                                         
-DEBUG    at line 18: section heading [Aegisub Project Garbage]                                                                                                                                            
-DEBUG    at line 29: section heading [V4+ Styles]                                                                                                                                                         
-DEBUG    at line 37: section heading [Events]                                                                                                                                                             
-DEBUG    at line 1075: section heading [Aegisub Extradata]                                                                                                                                                
-INFO        - Loaded 1034 total events                                                                                                                                                                    
-INFO        - Deduplicated: 1034 → 624 entries (removed 410 duplicate effect layers)                                                                                                                      
-INFO        - Extracted 392 dialogue lines                                                                                                                                                                
-INFO        - Skipped 232 non-dialogue events                                                                                                                                                             
-INFO     Translating 392 lines...                                                                                                                                                                         
-INFO     Initializing translator on mps                                                                                                                                                                   
-INFO     Translation enhancements enabled (idioms, short phrases, cleanup)                                                                                                                                
-INFO     Loading model...                                                                                                                                                                                 
-/Users/arlen/h_dev/movie_translator/.venv/lib/python3.14/site-packages/transformers/models/marian/tokenization_marian.py:175: UserWarning: Recommended: pip install sacremoses.
-  warnings.warn("Recommended: pip install sacremoses.")
-⠴ Jujutsu Kaisen - 001 - Ryoumen Sukuna.mkv ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   0% 0:00:00`torch_dtype` is deprecated! Use `dtype` instead!
-⠸ Jujutsu Kaisen - 001 - Ryoumen Sukuna.mkv ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━   0% 0:00:02
-DEBUG    Short input at index 0: "Yes." (4 chars) - translation quality may vary                                                                                                                          
-DEBUG    Short input at index 5: "Huh?" (4 chars) - translation quality may vary                                                                                                                          
-DEBUG    Short input at index 5: "Wha—" (4 chars) - translation quality may vary                                                                                                                          
-DEBUG    Short input at index 9: "Huh?" (4 chars) - translation quality may vary                                                                                                                          
-DEBUG    Short input at index 13: "Yay!" (4 chars) - translation quality may vary                                                                                                                         
-DEBUG    Short input at index 10: "Hm?" (3 chars) - translation quality may vary                                                                                                                          
-DEBUG    Short input at index 7: "Huh?" (4 chars) - translation quality may vary                                                                                                                          
-DEBUG    Short input at index 4: "Run!" (4 chars) - translation quality may vary                                                                                                                          
-DEBUG    Short input at index 6: "Nue!" (4 chars) - translation quality may vary                                                                                                                          
-INFO     Preprocessing Statistics:                                                                                                                                                                        
-           Total lines processed: 392                                                                                                                                                                     
-           Single-word matches: 5                                                                                                                                                                         
-           Multi-word matches: 0                                                                                                                                                                          
-           Idiom replacements: 0                                                                                                                                                                          
-           Direct translation rate: 1.3% (skipped model)                                                                                                                                                  
-INFO     🧹 Cleaning up AI Translator...                                                                                                                                                                  
-DEBUG    at line 1: section heading [Script Info]                                                                                                                                                         
-DEBUG    at line 18: section heading [Aegisub Project Garbage]                                                                                                                                            
-DEBUG    at line 29: section heading [V4+ Styles]                                                                                                                                                         
-DEBUG    at line 37: section heading [Events]                                                                                                                                                             
-DEBUG    at line 1075: section heading [Aegisub Extradata]                                                                                                                                                
-INFO        - Found 16 embedded font(s), checking Polish character support...                                                                                                                             
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'CFF ' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'CFF ' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'CFF ' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'CFF ' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'CFF ' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'CFF ' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-DEBUG    Reading 'cmap' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'cmap' table                                                                                                                                                                         
-DEBUG    Reading 'post' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'post' table                                                                                                                                                                         
-DEBUG    Reading 'maxp' table from disk                                                                                                                                                                   
-DEBUG    Decompiling 'maxp' table                                                                                                                                                                         
-INFO        - 4/16 embedded font(s) support Polish characters                                                                                                                                             
-INFO     Creating subtitle files...                                                                                                                                                                       
-INFO     🔨 Creating clean English ASS: Jujutsu Kaisen - 001 - Ryoumen Sukuna_english_clean.ass                                                                                                           
-DEBUG    at line 1: section heading [Script Info]                                                                                                                                                         
-DEBUG    at line 18: section heading [Aegisub Project Garbage]                                                                                                                                            
-DEBUG    at line 29: section heading [V4+ Styles]                                                                                                                                                         
-DEBUG    at line 37: section heading [Events]                                                                                                                                                             
-DEBUG    at line 1075: section heading [Aegisub Extradata]                                                                                                                                                
-INFO        - Saved 392 events                                                                                                                                                                            
-INFO        - Removed all non-dialogue events                                                                                                                                                             
-DEBUG    at line 1: section heading [Script Info]                                                                                                                                                         
-DEBUG    at line 18: section heading [Aegisub Project Garbage]                                                                                                                                            
-DEBUG    at line 29: section heading [V4+ Styles]                                                                                                                                                         
-DEBUG    at line 37: section heading [Events]                                                                                                                                                             
-DEBUG    at line 1075: section heading [Aegisub Extradata]                                                                                                                                                
-DEBUG    at line 1: section heading [Script Info]                                                                                                                                                         
-DEBUG    at line 18: section heading [V4+ Styles]                                                                                                                                                         
-DEBUG    at line 26: section heading [Events]                                                                                                                                                             
-INFO        📊 Validation: Original file has 1033 non-empty events                                                                                                                                        
-INFO        📊 Validation: 400 dialogue, 633 non-dialogue (signs/songs/effects)                                                                                                                           
-INFO        📊 Original dialogue range: 2570ms - 1425530ms (1423.0s)                                                                                                                                      
-INFO           First: "Morning...."                                                                                                                                                                       
-INFO           Last:  "..."                                                                                                                                                                               
-INFO        📊 Validation: Cleaned file has 392 dialogue events                                                                                                                                           
-INFO        📊 Cleaned dialogue range: 2570ms - 1424440ms (1421.9s)                                                                                                                                       
-INFO           First: "Morning...."                                                                                                                                                                       
-INFO           Last:  "I will exorcise you as a curse!..."                                                                                                                                                
-INFO        📊 Timing differences:                                                                                                                                                                        
-INFO           Start: +0ms ("within 50ms tolerance")                                                                                                                                                      
-INFO           End:   -1090ms ("EXCEEDS 50ms tolerance")                                                                                                                                                  
-ERROR       ❌ End time mismatch exceeds tolerance                                                                                                                                                        
-ERROR          This likely means non-dialogue content (credits/signs) exists after last dialogue                                                                                                          
-ERROR          Found 1 non-dialogue events after last dialogue:                                                                                                                                           
-ERROR             1. [Signs] "Episode 2                                                                                                                                                                   
-         For Myself..."                                                                                                                                                                                   
-ERROR    Failed: Jujutsu Kaisen - 001 - Ryoumen Sukuna.mkv - Cleaned subtitles end time mismatch: 1424440ms vs 1425530ms (diff: -1090ms, tolerance: 50ms)                                                 
-  Jujutsu Kaisen - 001 - Ryoumen Sukuna.mkv ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:12
-✗ 1 failed
-
-movie_translator on  main [!] is 📦 v1.0.0 via 🐍 v3.14.2 took 15s 
-❯ 

@@ -16,13 +16,11 @@ class TranslationPipeline:
         batch_size: int = 16,
         model: str = 'allegro',
         enable_ocr: bool = False,
-        ocr_gpu: bool = False,
     ):
         self.device = device
         self.batch_size = batch_size
         self.model = model
         self.enable_ocr = enable_ocr
-        self.ocr_gpu = ocr_gpu
         self._extractor = None
         self._video_ops = None
 

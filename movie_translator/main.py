@@ -61,12 +61,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--enable-ocr',
         action='store_true',
-        help='Enable OCR for image-based subtitles',
-    )
-    parser.add_argument(
-        '--ocr-gpu',
-        action='store_true',
-        help='Use GPU for OCR processing',
+        help='Extract burned-in subtitles via Apple Vision OCR (macOS only)',
     )
     parser.add_argument(
         '--dry-run',
@@ -162,7 +157,6 @@ def main():
         batch_size=args.batch_size,
         model=args.model,
         enable_ocr=args.enable_ocr,
-        ocr_gpu=args.ocr_gpu,
     )
 
     extractor = SubtitleExtractor()

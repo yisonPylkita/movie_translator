@@ -1,0 +1,33 @@
+# Movie Translator development tasks
+
+default:
+    @just --list
+
+# Run linter and formatter (auto-fix)
+lint:
+    uv run ruff check --fix .
+    uv run ruff format .
+
+# Run all checks without modifying files
+check:
+    uv run ruff check .
+    uv run ruff format --check .
+    uv run ty check
+
+# Run tests
+test *args:
+    uv run pytest -v {{ args }}
+
+# Run all checks and tests (CI equivalent)
+ci: check test
+
+# Run movie-translator CLI
+run *args:
+    uv run movie-translator {{ args }}
+
+# Install git pre-commit hook
+install-hooks:
+    @echo '#!/bin/sh' > .git/hooks/pre-commit
+    @echo 'uv run ruff check . && uv run ruff format --check .' >> .git/hooks/pre-commit
+    @chmod +x .git/hooks/pre-commit
+    @echo 'Pre-commit hook installed.'
