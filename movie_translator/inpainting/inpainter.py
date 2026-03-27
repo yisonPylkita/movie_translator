@@ -1,5 +1,3 @@
-import unittest.mock
-
 import torch
 from PIL import Image
 from simple_lama_inpainting import SimpleLama
@@ -11,17 +9,19 @@ def _load_simple_lama(device: torch.device) -> SimpleLama:
     """Load SimpleLama, ensuring the JIT model uses map_location=cpu.
 
     The big-lama.pt checkpoint was saved on CUDA, so torch.jit.load without
-    map_location raises NotImplementedError on CPU-only machines. We patch
-    torch.jit.load to always pass map_location=cpu before constructing the
-    SimpleLama instance, then move the model to the requested device.
+    map_location raises NotImplementedError on CPU-only machines. We temporarily
+    patch torch.jit.load to always pass map_location=cpu, then restore the original.
     """
     original_jit_load = torch.jit.load
 
     def _patched_jit_load(f, map_location=None, **kwargs):
         return original_jit_load(f, map_location=torch.device('cpu'), **kwargs)
 
-    with unittest.mock.patch('torch.jit.load', _patched_jit_load):
+    torch.jit.load = _patched_jit_load
+    try:
         instance = SimpleLama(device=torch.device('cpu'))
+    finally:
+        torch.jit.load = original_jit_load
 
     # Move to the requested device now that the model is safely loaded
     instance.model.to(device)

@@ -60,7 +60,10 @@ def remove_burned_in_subtitles(
 
     subtitle_lookup = _build_subtitle_lookup(ocr_results, fps)
     if not subtitle_lookup:
-        logger.warning('No subtitle frames to inpaint — skipping')
+        logger.warning('No subtitle frames to inpaint — copying original')
+        import shutil
+
+        shutil.copy2(video_path, output_path)
         return
 
     total_subtitle_frames = len(subtitle_lookup)
@@ -120,7 +123,7 @@ def remove_burned_in_subtitles(
     encoder = subprocess.Popen(
         encode_cmd,
         stdin=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
     )
 
     # Reader thread prevents deadlock: drains decoder stdout while main
@@ -135,7 +138,8 @@ def remove_burned_in_subtitles(
                     frame_queue.put(None)
                     break
                 frame_queue.put(data)
-        except Exception:
+        except Exception as e:
+            logger.debug(f'Reader thread error: {e}')
             frame_queue.put(None)
 
     reader_thread = threading.Thread(target=_reader, daemon=True)
@@ -155,6 +159,8 @@ def remove_burned_in_subtitles(
                 image = Image.fromarray(frame_array)
                 mask = generate_mask(subtitle_lookup[frame_idx], w, h)
                 result = inpainter.inpaint(image, mask)
+                if result.size != (w, h):
+                    result = result.resize((w, h))
                 raw = np.array(result).tobytes()
                 inpainted_count += 1
 
@@ -168,5 +174,9 @@ def remove_burned_in_subtitles(
         reader_thread.join(timeout=10)
         decoder.wait()
         encoder.wait()
+
+    if encoder.returncode != 0:
+        stderr = encoder.stderr.read().decode() if encoder.stderr else ''
+        raise RuntimeError(f'FFmpeg encoder failed (code {encoder.returncode}): {stderr}')
 
     logger.info(f'Inpainting complete: {inpainted_count}/{frame_idx} frames modified')
