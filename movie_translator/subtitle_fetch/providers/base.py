@@ -12,9 +12,7 @@ class SubtitleProvider(Protocol):
     @property
     def name(self) -> str: ...
 
-    def search(
-        self, identity: MediaIdentity, languages: list[str]
-    ) -> list[SubtitleMatch]:
+    def search(self, identity: MediaIdentity, languages: list[str]) -> list[SubtitleMatch]:
         """Search for subtitles. Returns matches sorted by score descending."""
         ...
 
