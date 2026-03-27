@@ -64,6 +64,7 @@ SAMPLE_HTML = """
 def _make_identity(**overrides):
     defaults = {
         'title': 'Naruto',
+        'parsed_title': 'Naruto',
         'year': None,
         'season': None,
         'episode': 1,

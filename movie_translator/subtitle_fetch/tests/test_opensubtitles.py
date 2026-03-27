@@ -7,6 +7,7 @@ from movie_translator.subtitle_fetch.providers.opensubtitles import OpenSubtitle
 def _make_identity(**overrides):
     defaults = {
         'title': 'Breaking Bad',
+        'parsed_title': 'Breaking Bad',
         'year': 2008,
         'season': 1,
         'episode': 3,

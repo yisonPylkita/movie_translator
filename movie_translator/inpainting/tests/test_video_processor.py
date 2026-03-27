@@ -1,11 +1,13 @@
 import subprocess
 
+import numpy as np
 import pytest
 
 from movie_translator.ffmpeg import get_ffmpeg, probe_video_encoding
 from movie_translator.inpainting.video_processor import (
     _build_subtitle_lookup,
     _compute_crop_region,
+    _detect_scene_cut,
     _remap_boxes_to_crop,
     remove_burned_in_subtitles,
 )
@@ -106,6 +108,45 @@ class TestRemapBoxesToCrop:
         assert abs(box.y - 0.0) < 1e-9  # 800-800=0 in crop
         assert abs(box.width - 0.8) < 1e-9
         assert abs(box.height - 0.5) < 1e-9  # 100px / 200px crop height
+
+
+class TestDetectSceneCut:
+    def test_identical_frames_no_scene_cut(self):
+        frame = np.full((100, 200, 3), 128, dtype=np.uint8)
+        assert _detect_scene_cut(frame, frame) is False
+
+    def test_similar_frames_no_scene_cut(self):
+        # Use varied content (like a real scene) with small noise added
+        rng = np.random.default_rng(42)
+        ref = rng.integers(0, 256, (100, 200, 3), dtype=np.uint8)
+        current = np.clip(ref.astype(np.int16) + rng.integers(-5, 6, ref.shape), 0, 255).astype(
+            np.uint8
+        )
+        assert _detect_scene_cut(current, ref) is False
+
+    def test_completely_different_frames_detects_scene_cut(self):
+        ref = np.zeros((100, 200, 3), dtype=np.uint8)
+        current = np.full((100, 200, 3), 200, dtype=np.uint8)
+        assert _detect_scene_cut(current, ref) is True
+
+    def test_only_bottom_half_differs_no_scene_cut(self):
+        """Subtitle changes in bottom half should not trigger scene cut."""
+        ref = np.full((100, 200, 3), 128, dtype=np.uint8)
+        current = ref.copy()
+        # Only change the bottom half (subtitle region)
+        current[50:, :] = 0
+        assert _detect_scene_cut(current, ref) is False
+
+    def test_high_threshold_requires_bigger_difference(self):
+        """Higher similarity threshold means more frames flagged as scene cuts."""
+        rng = np.random.default_rng(42)
+        ref = rng.integers(50, 200, (100, 200, 3), dtype=np.uint8)
+        # Slightly shifted colors — same palette, high histogram overlap
+        current = np.clip(ref.astype(np.int16) + 10, 0, 255).astype(np.uint8)
+        # Default threshold (0.4) should not detect this — histograms still overlap
+        assert _detect_scene_cut(current, ref) is False
+        # Very high threshold (0.99) should detect it — demands near-identical histograms
+        assert _detect_scene_cut(current, ref, threshold=0.99) is True
 
 
 @pytest.fixture

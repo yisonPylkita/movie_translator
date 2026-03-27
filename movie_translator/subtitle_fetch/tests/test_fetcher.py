@@ -6,6 +6,7 @@ from movie_translator.subtitle_fetch.types import SubtitleMatch
 def _make_identity():
     return MediaIdentity(
         title='Test',
+        parsed_title='Test',
         year=None,
         season=1,
         episode=1,

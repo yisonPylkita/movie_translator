@@ -31,8 +31,10 @@ def identify_media(video_path: Path) -> MediaIdentity:
 
     file_size = video_path.stat().st_size
 
-    # Merge: container overrides filename
-    title = container.get('title') or parsed.get('title') or filename
+    # Merge: container overrides filename for "title", but keep parsed title separately
+    # (parsed title is cleaner and better for text-based subtitle searches)
+    parsed_title = parsed.get('title') or filename
+    title = container.get('title') or parsed_title
     season = parsed.get('season')
     episode = parsed.get('episode')
     year = parsed.get('year')
@@ -50,6 +52,7 @@ def identify_media(video_path: Path) -> MediaIdentity:
 
     return MediaIdentity(
         title=title,
+        parsed_title=parsed_title,
         year=year,
         season=season,
         episode=episode,

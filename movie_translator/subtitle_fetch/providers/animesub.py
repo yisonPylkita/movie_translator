@@ -89,7 +89,9 @@ class AnimeSubProvider:
         if 'pol' not in languages:
             return []
 
-        title = identity.title
+        # Prefer parsed_title (from filename) over container metadata title
+        # Container titles are often polluted with release info
+        title = getattr(identity, 'parsed_title', None) or identity.title
         if not title:
             return []
 
@@ -132,7 +134,14 @@ class AnimeSubProvider:
         )
 
         with urllib.request.urlopen(req, timeout=30) as resp:
+            content_type = resp.headers.get('Content-Type', '')
             zip_bytes = resp.read()
+
+        if not zipfile.is_zipfile(io.BytesIO(zip_bytes)):
+            raise RuntimeError(
+                f'AnimeSub returned non-ZIP response (content-type: {content_type}, '
+                f'{len(zip_bytes)} bytes) for subtitle id={sub_id}'
+            )
 
         # Extract subtitle file from ZIP
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:

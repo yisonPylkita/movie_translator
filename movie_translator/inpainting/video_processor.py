@@ -11,7 +11,7 @@ from PIL import Image
 from ..ffmpeg import get_ffmpeg, probe_video_encoding
 from ..logging import logger
 from ..types import BoundingBox, OCRResult
-from .inpainter import Inpainter
+from .backends import InpaintBackend, create_backend
 from .mask_generator import generate_mask
 
 # Inpainting performance optimization: crop + downscale
@@ -104,7 +104,7 @@ def _remap_boxes_to_crop(
 def _inpaint_frame(
     image: Image.Image,
     boxes: list[BoundingBox],
-    inpainter: Inpainter,
+    inpainter: InpaintBackend,
     frame_w: int,
     frame_h: int,
 ) -> Image.Image:
@@ -152,17 +152,164 @@ def _select_encoder(encoding: dict) -> tuple[str, list[str]]:
     return 'libx264', ['-crf', '18', '-preset', 'medium']
 
 
+SCENE_CUT_THRESHOLD = 0.4
+
+
+def _detect_scene_cut(
+    current: np.ndarray,
+    reference: np.ndarray,
+    threshold: float = SCENE_CUT_THRESHOLD,
+) -> bool:
+    """Detect if a scene cut occurred between reference and current frame.
+
+    Uses color histogram comparison on the top half of the frame. This is
+    robust to character animation and camera movement (which change pixel
+    positions but preserve the overall color palette) while reliably detecting
+    actual scene cuts (which change the color distribution entirely).
+
+    Args:
+        threshold: Histogram similarity below this value triggers scene cut.
+                   Range 0.0 (completely different) to 1.0 (identical).
+                   Default 0.4 is conservative — only fires on clear scene changes.
+    """
+    top_half = current.shape[0] // 2
+    # Subsample for speed while keeping representative color distribution
+    cur_top = current[:top_half:2, ::2].reshape(-1, 3)
+    ref_top = reference[:top_half:2, ::2].reshape(-1, 3)
+
+    # Compute per-channel histogram intersection (0=no overlap, 1=identical)
+    similarity = 0.0
+    for c in range(3):
+        cur_hist, _ = np.histogram(cur_top[:, c], bins=64, range=(0, 256))
+        ref_hist, _ = np.histogram(ref_top[:, c], bins=64, range=(0, 256))
+        cur_norm = cur_hist.astype(np.float64) / (cur_hist.sum() + 1e-10)
+        ref_norm = ref_hist.astype(np.float64) / (ref_hist.sum() + 1e-10)
+        similarity += float(np.sum(np.minimum(cur_norm, ref_norm)))
+
+    similarity /= 3.0
+    return similarity < threshold
+
+
+def _make_inpaint_processor(
+    subtitle_lookup: dict[int, list[BoundingBox]],
+    inpainter: InpaintBackend,
+    w: int,
+    h: int,
+):
+    """Create a frame processor using an inpainting backend."""
+
+    def process(frame_idx: int, raw: bytes) -> tuple[bytes, bool]:
+        if frame_idx not in subtitle_lookup:
+            return raw, False
+        frame_array = np.frombuffer(raw, dtype=np.uint8).reshape(h, w, 3)
+        image = Image.fromarray(frame_array)
+        result = _inpaint_frame(image, subtitle_lookup[frame_idx], inpainter, w, h)
+        if result.size != (w, h):
+            result = result.resize((w, h))
+        return np.array(result).tobytes(), True
+
+    return process
+
+
+def _make_temporal_processor(
+    subtitle_lookup: dict[int, list[BoundingBox]],
+    w: int,
+    h: int,
+):
+    """Create a frame processor that fills subtitle regions from nearby clean frames.
+
+    For each subtitle frame, copies pixels from the most recent non-subtitle frame
+    in the masked region. Very fast (numpy array copy) with good quality when the
+    background doesn't change between the reference and subtitle frames.
+    """
+    last_clean: list[np.ndarray | None] = [None]
+
+    def process(frame_idx: int, raw: bytes) -> tuple[bytes, bool]:
+        if frame_idx not in subtitle_lookup:
+            last_clean[0] = np.frombuffer(raw, dtype=np.uint8).reshape(h, w, 3).copy()
+            return raw, False
+
+        if last_clean[0] is None:
+            return raw, False
+
+        frame_arr = np.frombuffer(raw, dtype=np.uint8).reshape(h, w, 3).copy()
+        mask = generate_mask(subtitle_lookup[frame_idx], w, h)
+        mask_arr = np.array(mask)
+        frame_arr[mask_arr > 128] = last_clean[0][mask_arr > 128]
+        return frame_arr.tobytes(), True
+
+    return process
+
+
+def _make_temporal_hybrid_processor(
+    subtitle_lookup: dict[int, list[BoundingBox]],
+    w: int,
+    h: int,
+):
+    """Temporal fill with scene-cut detection, falling back to OpenCV Telea.
+
+    Combines the speed of temporal fill (pixel copy from clean reference frame)
+    with robustness against scene cuts. When a scene change is detected between
+    the reference and current frame, falls back to OpenCV Telea inpainting
+    instead of copying stale pixels from a different scene.
+    """
+    from .backends import OpenCVTeleaBackend
+
+    last_clean: list[np.ndarray | None] = [None]
+    fallback = OpenCVTeleaBackend()
+    fallback_count = [0]
+
+    def process(frame_idx: int, raw: bytes) -> tuple[bytes, bool]:
+        if frame_idx not in subtitle_lookup:
+            last_clean[0] = np.frombuffer(raw, dtype=np.uint8).reshape(h, w, 3).copy()
+            return raw, False
+
+        if last_clean[0] is None:
+            return raw, False
+
+        frame_arr = np.frombuffer(raw, dtype=np.uint8).reshape(h, w, 3)
+
+        if _detect_scene_cut(frame_arr, last_clean[0]):
+            # Scene cut detected — use OpenCV inpainting as fallback
+            image = Image.fromarray(frame_arr)
+            result = _inpaint_frame(image, subtitle_lookup[frame_idx], fallback, w, h)
+            if result.size != (w, h):
+                result = result.resize((w, h))
+            fallback_count[0] += 1
+            if fallback_count[0] % 50 == 1:
+                logger.debug(f'  Scene cut at frame {frame_idx}, using OpenCV fallback')
+            return np.array(result).tobytes(), True
+
+        # Same scene — fast temporal fill
+        frame_arr = frame_arr.copy()
+        mask = generate_mask(subtitle_lookup[frame_idx], w, h)
+        mask_arr = np.array(mask)
+        frame_arr[mask_arr > 128] = last_clean[0][mask_arr > 128]
+        return frame_arr.tobytes(), True
+
+    return process
+
+
 def remove_burned_in_subtitles(
     video_path: Path,
     output_path: Path,
     ocr_results: list[OCRResult],
     device: str = 'cpu',
+    backend: str | InpaintBackend = 'lama',
 ) -> None:
-    """Remove burned-in subtitles from video using LaMa inpainting.
+    """Remove burned-in subtitles from video using configurable inpainting.
 
-    Decodes the video frame-by-frame via FFmpeg pipe, inpaints frames that
+    Decodes the video frame-by-frame via FFmpeg pipe, processes frames that
     have subtitle bounding boxes, and re-encodes to the output path.
     Audio is stream-copied from the original.
+
+    Args:
+        video_path: Input video file.
+        output_path: Output video file path.
+        ocr_results: OCR results with subtitle bounding boxes.
+        device: Device for ML backends ('cpu', 'mps', 'cuda').
+        backend: Backend name ('lama', 'opencv-telea', 'opencv-ns', 'temporal',
+                 'temporal-hybrid') or a pre-created InpaintBackend instance.
     """
     encoding = probe_video_encoding(video_path)
     w = encoding['width']
@@ -177,9 +324,21 @@ def remove_burned_in_subtitles(
         return
 
     total_subtitle_frames = len(subtitle_lookup)
-    logger.info(f'Inpainting {total_subtitle_frames} frames with burned-in subtitles...')
+    backend_label = backend if isinstance(backend, str) else type(backend).__name__
+    logger.info(f'Inpainting {total_subtitle_frames} frames with {backend_label}...')
 
-    inpainter = Inpainter(device=device)
+    # Create frame processor based on backend
+    if isinstance(backend, str) and backend == 'temporal':
+        process_frame = _make_temporal_processor(subtitle_lookup, w, h)
+    elif isinstance(backend, str) and backend == 'temporal-hybrid':
+        process_frame = _make_temporal_hybrid_processor(subtitle_lookup, w, h)
+    else:
+        if isinstance(backend, str):
+            inpainter = create_backend(backend, device=device)
+        else:
+            inpainter = backend
+        process_frame = _make_inpaint_processor(subtitle_lookup, inpainter, w, h)
+
     ffmpeg = get_ffmpeg()
 
     # Decoder: video → raw RGB24 frames via pipe
@@ -236,11 +395,13 @@ def remove_burned_in_subtitles(
         stderr=subprocess.PIPE,
     )
 
-    # Reader thread prevents deadlock: drains decoder stdout while main
-    # thread may be blocked writing to encoder stdin.
+    # Two reader threads prevent pipe deadlocks:
+    # 1. Drains decoder stdout into a bounded queue for the main thread
+    # 2. Drains encoder stderr so FFmpeg doesn't block on warning output
     frame_queue: queue.Queue[bytes | None] = queue.Queue(maxsize=30)
+    encoder_stderr_lines: list[str] = []
 
-    def _reader():
+    def _decoder_reader():
         try:
             while True:
                 data = decoder.stdout.read(frame_size)
@@ -249,11 +410,20 @@ def remove_burned_in_subtitles(
                     break
                 frame_queue.put(data)
         except Exception as e:
-            logger.debug(f'Reader thread error: {e}')
+            logger.debug(f'Decoder reader thread error: {e}')
             frame_queue.put(None)
 
-    reader_thread = threading.Thread(target=_reader, daemon=True)
-    reader_thread.start()
+    def _stderr_reader():
+        try:
+            for line in encoder.stderr:
+                encoder_stderr_lines.append(line.decode(errors='replace').rstrip())
+        except Exception:
+            pass
+
+    decoder_thread = threading.Thread(target=_decoder_reader, daemon=True)
+    stderr_thread = threading.Thread(target=_stderr_reader, daemon=True)
+    decoder_thread.start()
+    stderr_thread.start()
 
     frame_idx = 0
     inpainted_count = 0
@@ -264,21 +434,9 @@ def remove_burned_in_subtitles(
             if raw is None:
                 break
 
-            if frame_idx in subtitle_lookup:
-                frame_array = np.frombuffer(raw, dtype=np.uint8).reshape(h, w, 3)
-                image = Image.fromarray(frame_array)
-                result = _inpaint_frame(
-                    image,
-                    subtitle_lookup[frame_idx],
-                    inpainter,
-                    w,
-                    h,
-                )
-                if result.size != (w, h):
-                    result = result.resize((w, h))
-                raw = np.array(result).tobytes()
+            raw, was_inpainted = process_frame(frame_idx, raw)
+            if was_inpainted:
                 inpainted_count += 1
-
                 if inpainted_count % 100 == 0:
                     logger.info(f'  Inpainted {inpainted_count}/{total_subtitle_frames} frames...')
 
@@ -286,12 +444,13 @@ def remove_burned_in_subtitles(
             frame_idx += 1
     finally:
         encoder.stdin.close()
-        reader_thread.join(timeout=10)
+        decoder_thread.join(timeout=10)
+        stderr_thread.join(timeout=10)
         decoder.wait()
         encoder.wait()
 
     if encoder.returncode != 0:
-        stderr = encoder.stderr.read().decode() if encoder.stderr else ''
+        stderr = '\n'.join(encoder_stderr_lines[-20:])
         raise RuntimeError(f'FFmpeg encoder failed (code {encoder.returncode}): {stderr}')
 
     logger.info(f'Inpainting complete: {inpainted_count}/{frame_idx} frames modified')

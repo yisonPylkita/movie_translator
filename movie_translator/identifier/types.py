@@ -2,7 +2,8 @@ from typing import NamedTuple
 
 
 class MediaIdentity(NamedTuple):
-    title: str  # Best-guess title
+    title: str  # Best-guess title (container metadata preferred)
+    parsed_title: str  # Title from filename parsing (cleaner, better for text search)
     year: int | None  # Release year
     season: int | None  # Season number
     episode: int | None  # Episode number
