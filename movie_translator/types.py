@@ -30,3 +30,21 @@ class DialogueLine(NamedTuple):
     start_ms: int
     end_ms: int
     text: str
+
+
+class BoundingBox(NamedTuple):
+    x: float  # normalized 0-1, left edge
+    y: float  # normalized 0-1, top edge (top-left origin)
+    width: float  # normalized 0-1
+    height: float  # normalized 0-1
+
+
+class OCRResult(NamedTuple):
+    timestamp_ms: int
+    text: str
+    boxes: list[BoundingBox]
+
+
+class BurnedInResult(NamedTuple):
+    srt_path: Path
+    ocr_results: list[OCRResult]

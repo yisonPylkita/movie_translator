@@ -34,6 +34,7 @@ dependencies = [
     "pyobjc-framework-Quartz>=11.0; sys_platform == 'darwin'",
     "numpy>=1.26",
     "Pillow>=10.0",
+    "simple-lama-inpainting>=0.1.0",
 ]
 
 [project.scripts]
