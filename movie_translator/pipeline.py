@@ -1,8 +1,13 @@
 import os
 import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from .fonts import check_embedded_fonts_support_polish
+from .fonts import (
+    check_embedded_fonts_support_polish,
+    find_system_font_for_polish,
+    get_ass_font_names,
+)
 from .identifier import identify_media
 from .inpainting import remove_burned_in_subtitles
 from .logging import logger
@@ -15,7 +20,7 @@ from .subtitle_fetch.providers.podnapisi import PodnapisiProvider
 from .subtitle_fetch.types import SubtitleMatch
 from .subtitles import SubtitleExtractor, SubtitleProcessor
 from .translation import translate_dialogue_lines
-from .types import OCRResult
+from .types import OCRResult, SubtitleFile
 from .video import VideoOperations
 
 
@@ -135,14 +140,22 @@ class TranslationPipeline:
         candidates_dir.mkdir(parents=True, exist_ok=True)
 
         downloaded: list[tuple[SubtitleMatch, Path]] = []
-        for i, match in enumerate(all_matches):
+
+        def _download(i_match: tuple[int, SubtitleMatch]) -> tuple[SubtitleMatch, Path]:
+            i, match = i_match
             filename = f'{match.source}_{match.language}_{i}.{match.format}'
             output_path = candidates_dir / filename
-            try:
-                fetcher.download_candidate(match, output_path)
-                downloaded.append((match, output_path))
-            except Exception as e:
-                logger.warning(f'Failed to download candidate {match.subtitle_id}: {e}')
+            fetcher.download_candidate(match, output_path)
+            return match, output_path
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(_download, (i, m)): m for i, m in enumerate(all_matches)}
+            for future in as_completed(futures):
+                try:
+                    downloaded.append(future.result())
+                except Exception as e:
+                    match = futures[future]
+                    logger.warning(f'Failed to download candidate {match.subtitle_id}: {e}')
 
         if not downloaded:
             logger.warning('All candidate downloads failed')
@@ -162,15 +175,15 @@ class TranslationPipeline:
             logger.warning('No reference subtitle available — using provider scoring only')
             validated = None
 
-        # Select best per language
-        result: dict[str, Path] = {}
+        # Select best per language — returns (path, source_name) tuples
+        result: dict[str, tuple[Path, str]] = {}
 
         if validated is not None:
             if validated:
                 logger.info(f'{len(validated)} candidate(s) passed validation')
                 for match, path, score in validated:
                     if match.language not in result:
-                        result[match.language] = path
+                        result[match.language] = (path, match.source)
                         logger.info(
                             f'Best {match.language}: {match.release_name} '
                             f'(validation score: {score:.3f}, source: {match.source})'
@@ -181,7 +194,7 @@ class TranslationPipeline:
             # Fall back to provider scoring (pick best per language from downloaded)
             for match, path in downloaded:
                 if match.language not in result:
-                    result[match.language] = path
+                    result[match.language] = (path, match.source)
                     logger.info(
                         f'Best {match.language} (unvalidated): {match.release_name} '
                         f'(provider score: {match.score:.2f}, source: {match.source})'
@@ -208,8 +221,11 @@ class TranslationPipeline:
             # Step 3: Search and validate fetched subtitles
             self._stage('fetch')
             fetched = self._search_and_validate(video_path, work_dir, reference_path)
-            fetched_eng = fetched.get('eng')
-            fetched_pol = fetched.get('pol')
+            fetched_eng_result = fetched.get('eng')
+            fetched_pol_result = fetched.get('pol')
+            fetched_eng = fetched_eng_result[0] if fetched_eng_result else None
+            fetched_pol = fetched_pol_result[0] if fetched_pol_result else None
+            fetched_pol_source = fetched_pol_result[1] if fetched_pol_result else None
 
             if fetched_pol:
                 self._stage('fetch', 'Polish validated')
@@ -232,52 +248,110 @@ class TranslationPipeline:
                 if not extracted_ass:
                     return False
 
-            # Step 5: Translate (if needed)
-            if fetched_pol:
-                logger.info('Using fetched Polish — skipping translation')
-                polish_ass = fetched_pol
-                dialogue_lines = SubtitleProcessor.extract_dialogue_lines(extracted_ass)
-                if not dialogue_lines:
-                    logger.error('No dialogue lines found')
-                    return False
-                translated_dialogue = None
-                self._stage('translate', 'skipped')
-            else:
-                self._stage('translate')
-                dialogue_lines = SubtitleProcessor.extract_dialogue_lines(extracted_ass)
-                if not dialogue_lines:
-                    logger.error('No dialogue lines found')
-                    return False
+            # Step 5: Extract dialogue, then translate + check fonts in parallel
+            dialogue_lines = SubtitleProcessor.extract_dialogue_lines(extracted_ass)
+            if not dialogue_lines:
+                logger.error('No dialogue lines found')
+                return False
 
-                logger.info(f'Translating {len(dialogue_lines)} lines...')
+            self._stage('translate')
+            logger.info(f'Translating {len(dialogue_lines)} lines...')
+
+            # Font check runs concurrently with translation (I/O vs GPU)
+            def _check_fonts():
+                supports = check_embedded_fonts_support_polish(video_path, extracted_ass)
+                if supports:
+                    return supports, [], None
+                is_mkv = video_path.suffix.lower() == '.mkv'
+                if is_mkv:
+                    names = get_ass_font_names(extracted_ass)
+                    result = find_system_font_for_polish(names)
+                    if result:
+                        fp, fam = result
+                        fallback = None if any(fam.lower() == n.lower() for n in names) else fam
+                        return False, [fp], fallback
+                return False, [], None
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                font_future = pool.submit(_check_fonts)
+                translate_future = pool.submit(
+                    translate_dialogue_lines,
+                    dialogue_lines,
+                    self.device,
+                    self.batch_size,
+                    self.model,
+                )
+
+                fonts_support_polish, font_attachments, fallback_font_family = font_future.result()
+
                 try:
-                    translated_dialogue = translate_dialogue_lines(
-                        dialogue_lines, self.device, self.batch_size, self.model
-                    )
+                    translated_dialogue = translate_future.result()
                     if not translated_dialogue:
                         logger.error('Translation failed')
                         return False
                 except Exception as e:
                     logger.error(f'Translation failed: {e}')
                     return False
-                polish_ass = None
 
             # Step 6: Create subtitle files
             self._stage('create')
-            fonts_support_polish = check_embedded_fonts_support_polish(video_path, extracted_ass)
+            is_mkv = video_path.suffix.lower() == '.mkv'
+            replace_chars = False
 
+            if not fonts_support_polish:
+                if is_mkv:
+                    if font_attachments:
+                        logger.info(
+                            f'   - Will embed system font "{font_attachments[0].name}" for Polish support'
+                        )
+                    else:
+                        logger.warning(
+                            '   - No system font with Polish support found, replacing characters'
+                        )
+                        replace_chars = True
+                else:
+                    logger.info(
+                        '   - MP4 container does not support font attachments, replacing characters'
+                    )
+                    replace_chars = True
+
+            # Clean English dialogue only (no signs/songs/OP/ED)
             clean_english_ass = work_dir / f'{video_path.stem}_english_clean.ass'
             SubtitleProcessor.create_english_subtitles(
                 extracted_ass, dialogue_lines, clean_english_ass
             )
             SubtitleProcessor.validate_cleaned_subtitles(extracted_ass, clean_english_ass)
 
-            if polish_ass is None:
-                polish_ass = work_dir / f'{video_path.stem}_polish.ass'
-                replace_chars = not fonts_support_polish
-                SubtitleProcessor.create_polish_subtitles(
-                    extracted_ass, translated_dialogue, polish_ass, replace_chars
+            # AI-translated Polish subtitles
+            ai_polish_ass = work_dir / f'{video_path.stem}_polish_ai.ass'
+            SubtitleProcessor.create_polish_subtitles(
+                extracted_ass, translated_dialogue, ai_polish_ass, replace_chars
+            )
+            if fallback_font_family:
+                SubtitleProcessor.override_font_name(ai_polish_ass, fallback_font_family)
+
+            # Build subtitle track list:
+            #   1. Downloaded Polish (default, if available)
+            #   2. AI Polish
+            #   3. Clean English
+            subtitle_files: list[SubtitleFile] = []
+            if fetched_pol:
+                pol_title = f'Polish ({fetched_pol_source})' if fetched_pol_source else 'Polish'
+                subtitle_files.append(SubtitleFile(fetched_pol, 'pol', pol_title, is_default=True))
+                if fallback_font_family:
+                    SubtitleProcessor.override_font_name(fetched_pol, fallback_font_family)
+
+            subtitle_files.append(
+                SubtitleFile(
+                    ai_polish_ass,
+                    'pol',
+                    'Polish (AI)',
+                    is_default=not bool(fetched_pol),
                 )
+            )
+            subtitle_files.append(
+                SubtitleFile(clean_english_ass, 'eng', 'English Dialogue', is_default=False)
+            )
 
             # Step 6.5: Inpaint burned-in subtitles if detected
             source_video = video_path
@@ -289,12 +363,17 @@ class TranslationPipeline:
                 )
                 source_video = inpainted_video
 
-            # Step 7: Mux final video
+            # Step 7: Mux final video (all existing subs stripped, only our tracks added)
             self._stage('mux')
             temp_video = work_dir / f'{video_path.stem}_temp{video_path.suffix}'
             video_ops = self._get_video_ops()
-            video_ops.create_clean_video(source_video, clean_english_ass, polish_ass, temp_video)
-            video_ops.verify_result(temp_video)
+            video_ops.create_clean_video(
+                source_video,
+                subtitle_files,
+                temp_video,
+                font_attachments=font_attachments or None,
+            )
+            video_ops.verify_result(temp_video, expected_tracks=subtitle_files)
 
             if not dry_run:
                 self._replace_original(video_path, temp_video)

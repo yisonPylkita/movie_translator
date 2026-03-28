@@ -30,7 +30,7 @@ Dialogue: 0,0:00:04.00,0:00:06.00,Default,,0,0,0,,How are you
         DialogueLine(4000, 6000, 'Jak sie masz'),
     ]
 
-    pipeline = TranslationPipeline(device='cpu', batch_size=1, model='allegro')
+    pipeline = TranslationPipeline(device='cpu', batch_size=1, model='allegro', enable_fetch=False)
 
     with patch('movie_translator.pipeline.translate_dialogue_lines', return_value=mock_translated):
         result = pipeline.process_video_file(mkv_file, tmp_output_dir)
@@ -59,7 +59,7 @@ How are you
         DialogueLine(4000, 6000, 'Jak sie masz'),
     ]
 
-    pipeline = TranslationPipeline(device='cpu', batch_size=1, model='allegro')
+    pipeline = TranslationPipeline(device='cpu', batch_size=1, model='allegro', enable_fetch=False)
 
     with patch('movie_translator.pipeline.translate_dialogue_lines', return_value=mock_translated):
         result = pipeline.process_video_file(mkv_file, tmp_output_dir)
@@ -71,9 +71,12 @@ How are you
 def test_full_pipeline_detects_no_english_subtitles(create_test_mkv, tmp_output_dir):
     mkv_file = create_test_mkv(language='jpn', track_name='Japanese')
 
-    pipeline = TranslationPipeline(device='cpu', batch_size=1)
+    pipeline = TranslationPipeline(device='cpu', batch_size=1, enable_fetch=False)
 
-    with patch('movie_translator.pipeline.translate_dialogue_lines', return_value=[]):
+    with (
+        patch('movie_translator.pipeline.translate_dialogue_lines', return_value=[]),
+        patch('movie_translator.pipeline.is_vision_ocr_available', return_value=False),
+    ):
         result = pipeline.process_video_file(mkv_file, tmp_output_dir)
 
     assert result is False
@@ -82,7 +85,7 @@ def test_full_pipeline_detects_no_english_subtitles(create_test_mkv, tmp_output_
 def test_full_pipeline_fails_when_translation_returns_empty(create_test_mkv, tmp_output_dir):
     mkv_file = create_test_mkv(language='eng', track_name='English')
 
-    pipeline = TranslationPipeline(device='cpu', batch_size=1)
+    pipeline = TranslationPipeline(device='cpu', batch_size=1, enable_fetch=False)
 
     with patch('movie_translator.pipeline.translate_dialogue_lines', return_value=[]):
         result = pipeline.process_video_file(mkv_file, tmp_output_dir)
@@ -93,7 +96,7 @@ def test_full_pipeline_fails_when_translation_returns_empty(create_test_mkv, tmp
 def test_full_pipeline_fails_when_translation_returns_none(create_test_mkv, tmp_output_dir):
     mkv_file = create_test_mkv(language='eng', track_name='English')
 
-    pipeline = TranslationPipeline(device='cpu', batch_size=1)
+    pipeline = TranslationPipeline(device='cpu', batch_size=1, enable_fetch=False)
 
     with patch('movie_translator.pipeline.translate_dialogue_lines', return_value=None):
         result = pipeline.process_video_file(mkv_file, tmp_output_dir)

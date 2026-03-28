@@ -97,7 +97,7 @@ class OpenSubtitlesProvider:
             raise RuntimeError(f'No download link in response for subtitle {match.subtitle_id}')
 
         req = urllib.request.Request(download_link)
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:
             output_path.write_bytes(resp.read())
 
         logger.info(f'Downloaded subtitle: {output_path.name} ({match.source})')
@@ -170,7 +170,7 @@ class OpenSubtitlesProvider:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=5) as resp:
                 resp_headers = dict(resp.headers.items())
                 self._rate_limiter.update_from_headers(resp_headers)
                 return json.loads(resp.read())

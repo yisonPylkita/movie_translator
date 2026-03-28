@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from ..logging import logger
@@ -11,15 +12,22 @@ class SubtitleFetcher:
         self._providers = providers
 
     def search_all(self, identity, languages: list[str]) -> list[SubtitleMatch]:
-        """Search all providers and return ALL plausible matches, sorted by score descending."""
+        """Search all providers in parallel, return ALL plausible matches sorted by score."""
         all_matches: list[SubtitleMatch] = []
-        for provider in self._providers:
-            try:
-                matches = provider.search(identity, languages)
-                all_matches.extend(matches)
-                logger.debug(f'{provider.name}: found {len(matches)} matches')
-            except Exception as e:
-                logger.warning(f'{provider.name} search failed: {e}')
+
+        def _search_provider(provider):
+            return provider.name, provider.search(identity, languages)
+
+        with ThreadPoolExecutor(max_workers=len(self._providers)) as pool:
+            futures = {pool.submit(_search_provider, p): p for p in self._providers}
+            for future in as_completed(futures):
+                try:
+                    name, matches = future.result()
+                    all_matches.extend(matches)
+                    logger.debug(f'{name}: found {len(matches)} matches')
+                except Exception as e:
+                    provider = futures[future]
+                    logger.warning(f'{provider.name} search failed: {e}')
 
         return sorted(all_matches, key=lambda m: (m.score, m.hash_match), reverse=True)
 

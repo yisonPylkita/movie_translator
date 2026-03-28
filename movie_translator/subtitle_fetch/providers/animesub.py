@@ -164,7 +164,7 @@ class AnimeSubProvider:
             method='POST',
         )
 
-        with self._opener.open(req, timeout=30) as resp:
+        with self._opener.open(req, timeout=5) as resp:
             content_type = resp.headers.get('Content-Type', '')
             zip_bytes = resp.read()
 
@@ -194,7 +194,7 @@ class AnimeSubProvider:
         url = f'{BASE_URL}/szukaj.php?szukane={query}&pTitle={title_type}&od={page}'
 
         req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
-        with self._opener.open(req, timeout=15) as resp:
+        with self._opener.open(req, timeout=5) as resp:
             html = resp.read().decode('iso-8859-2', errors='replace')
 
         parser = _ResultParser()

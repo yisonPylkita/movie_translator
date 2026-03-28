@@ -58,7 +58,7 @@ class PodnapisiProvider:
         url = f'{API_BASE}/subtitles/{match.subtitle_id}/download'
         req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
 
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:
             content = resp.read()
 
         # Podnapisi returns a ZIP file
@@ -81,7 +81,7 @@ class PodnapisiProvider:
 
     def _fetch_xml(self, url: str) -> str:
         req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=5) as resp:
             return resp.read().decode('utf-8')
 
     def _parse_results(self, xml_text: str, languages: list[str]) -> list[SubtitleMatch]:
