@@ -11,3 +11,5 @@ class MediaIdentity(NamedTuple):
     oshash: str  # OpenSubtitles file hash (16 hex chars)
     file_size: int  # Bytes (needed for OpenSubtitles API)
     raw_filename: str  # Original filename for fallback search
+    imdb_id: str | None = None  # e.g. 'tt0903747'
+    tmdb_id: int | None = None  # TMDB numeric ID
