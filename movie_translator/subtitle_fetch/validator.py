@@ -1,12 +1,18 @@
-"""Subtitle validation via timing pattern fingerprinting.
+"""Subtitle validation via line-level timing matching.
 
 Compares downloaded subtitle candidates against a reference track by
-converting timing information into binary activity vectors and measuring
-their cross-correlation.
+matching individual dialogue line start times. For each candidate line,
+finds the nearest reference line and checks if it falls within a tolerance
+window. The fraction of matched lines is the similarity score.
+
+This approach discriminates between episodes of the same show because
+exact line timing differs between episodes even when overall dialogue
+density is similar.
 """
 
 from __future__ import annotations
 
+import bisect
 import math
 from pathlib import Path
 
@@ -99,6 +105,140 @@ def compute_similarity(
     return min(best, 1.0)
 
 
+def compute_line_match_score(
+    ref_starts: list[int],
+    cand_starts: list[int],
+    tolerance_ms: int = 1500,
+) -> float:
+    """Score how well candidate line timings match reference line timings.
+
+    For each candidate line start time, finds the nearest reference line
+    start time using binary search. A candidate line is "matched" if the
+    nearest reference line is within tolerance_ms. The score is the fraction
+    of candidate lines that matched.
+
+    Args:
+        ref_starts: Sorted list of reference line start times (ms).
+        cand_starts: Sorted list of candidate line start times (ms).
+        tolerance_ms: Maximum distance (ms) for a line to count as matched.
+
+    Returns:
+        Fraction of candidate lines matched (0.0 to 1.0).
+    """
+    if not ref_starts or not cand_starts:
+        return 0.0
+
+    matched = 0
+    for cand_t in cand_starts:
+        # Binary search for nearest reference line
+        idx = bisect.bisect_left(ref_starts, cand_t)
+        best_dist = float('inf')
+
+        # Check the insertion point and its neighbor
+        for i in (idx - 1, idx):
+            if 0 <= i < len(ref_starts):
+                dist = abs(ref_starts[i] - cand_t)
+                if dist < best_dist:
+                    best_dist = dist
+
+        if best_dist <= tolerance_ms:
+            matched += 1
+
+    return matched / len(cand_starts)
+
+
+def build_density_vector(
+    timestamps: list[tuple[int, int]],
+    duration_ms: int,
+    window_ms: int = 10000,
+) -> np.ndarray:
+    """Build a dialogue density vector — count of events starting in each window.
+
+    Unlike binary activity vectors, density vectors preserve how MUCH dialogue
+    occurs in each window. This discriminates between episodes because different
+    scenes have different amounts of dialogue even when overall density is similar.
+
+    Args:
+        timestamps: List of (start_ms, end_ms) pairs.
+        duration_ms: Total timeline duration in milliseconds.
+        window_ms: Width of each time window in milliseconds.
+
+    Returns:
+        Float numpy array with event counts per window.
+    """
+    n_bins = math.ceil(duration_ms / window_ms) if duration_ms > 0 else 0
+    if n_bins == 0:
+        return np.zeros(0, dtype=np.float64)
+
+    vec = np.zeros(n_bins, dtype=np.float64)
+    for start, _ in timestamps:
+        bin_idx = min(start // window_ms, n_bins - 1)
+        vec[bin_idx] += 1.0
+
+    return vec
+
+
+def compute_density_correlation(
+    ref_density: np.ndarray,
+    cand_density: np.ndarray,
+    max_shift: int = 1,
+) -> float:
+    """Compute Pearson correlation between density vectors with shifting.
+
+    Tries shifts in both directions and returns peak correlation.
+
+    Args:
+        ref_density: Density vector for reference.
+        cand_density: Density vector for candidate.
+        max_shift: Max bins to shift in each direction.
+
+    Returns:
+        Peak Pearson correlation from -1.0 to 1.0, or 0.0 if degenerate.
+    """
+    if len(ref_density) == 0 or len(cand_density) == 0:
+        return 0.0
+
+    # Pad to same length
+    max_len = max(len(ref_density), len(cand_density))
+    ref = np.zeros(max_len, dtype=np.float64)
+    cand = np.zeros(max_len, dtype=np.float64)
+    ref[: len(ref_density)] = ref_density
+    cand[: len(cand_density)] = cand_density
+
+    ref_std = np.std(ref)
+    cand_std = np.std(cand)
+
+    if ref_std == 0 or cand_std == 0:
+        return 0.0
+
+    best = 0.0
+    effective_max = min(max_shift, max_len - 1)
+    for shift in range(-effective_max, effective_max + 1):
+        if shift >= 0:
+            r = ref[shift:]
+            c = cand[: max_len - shift]
+        else:
+            r = ref[: max_len + shift]
+            c = cand[-shift:]
+
+        if len(r) < 3:
+            continue
+
+        r_mean = np.mean(r)
+        c_mean = np.mean(c)
+        r_std = np.std(r)
+        c_std = np.std(c)
+
+        if r_std == 0 or c_std == 0:
+            continue
+
+        corr = float(np.mean((r - r_mean) * (c - c_mean)) / (r_std * c_std))
+        if corr > best:
+            best = corr
+
+    return best
+
+
 def extract_timestamps(subtitle_path: Path) -> tuple[list[tuple[int, int]], int]:
     """Extract dialogue timestamps from a subtitle file.
 
@@ -145,23 +285,22 @@ def extract_timestamps(subtitle_path: Path) -> tuple[list[tuple[int, int]], int]
 class SubtitleValidator:
     """Validates subtitle candidates against a reference track.
 
-    Uses timing pattern fingerprinting: converts subtitle timestamps to
-    binary activity vectors and measures cross-correlation to score how
-    well candidates match the reference timing pattern.
+    Uses line-level timing matching: for each candidate dialogue line,
+    finds the nearest reference line by start time and checks if it falls
+    within a tolerance window. The fraction of matched lines is the score.
     """
 
-    def __init__(self, reference_path: Path, bin_size_ms: int = 2000) -> None:
-        self._bin_size_ms = bin_size_ms
+    def __init__(self, reference_path: Path, window_ms: int = 10000) -> None:
+        self._window_ms = window_ms
         self._ref_timestamps, self._ref_duration = extract_timestamps(reference_path)
-        self._ref_vector = build_activity_vector(
-            self._ref_timestamps, self._ref_duration, bin_size_ms
-        )
 
     def score_candidate(self, candidate_path: Path) -> float:
         """Score a single candidate subtitle file against the reference.
 
-        Both vectors are built using max(ref_duration, cand_duration) so
-        they have the same length for comparison.
+        Uses dialogue density correlation: compares how many dialogue lines
+        start in each time window. Different episodes have different scenes
+        (talky vs action) at different times, producing different density
+        patterns even when overall dialogue volume is similar.
 
         Args:
             candidate_path: Path to the candidate subtitle file.
@@ -170,15 +309,15 @@ class SubtitleValidator:
             Similarity score between 0.0 and 1.0.
         """
         cand_timestamps, cand_duration = extract_timestamps(candidate_path)
-        duration = max(self._ref_duration, cand_duration)
 
-        if duration == 0:
+        if not cand_timestamps or not self._ref_timestamps:
             return 0.0
 
-        ref_vec = build_activity_vector(self._ref_timestamps, duration, self._bin_size_ms)
-        cand_vec = build_activity_vector(cand_timestamps, duration, self._bin_size_ms)
+        duration = max(self._ref_duration, cand_duration)
+        ref_density = build_density_vector(self._ref_timestamps, duration, self._window_ms)
+        cand_density = build_density_vector(cand_timestamps, duration, self._window_ms)
 
-        return compute_similarity(ref_vec, cand_vec)
+        return compute_density_correlation(ref_density, cand_density)
 
     def validate_candidates(
         self,

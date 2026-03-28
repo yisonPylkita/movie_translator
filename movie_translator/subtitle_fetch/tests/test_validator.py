@@ -253,50 +253,123 @@ Last
 
 
 # -- Helpers for SubtitleValidator tests --
+# Density correlation needs enough dialogue lines spread over time to be meaningful.
+# These fixtures simulate a ~5-minute episode with clustered dialogue.
 
-REFERENCE_SRT = """\
-1
-00:00:01,000 --> 00:00:03,000
-Hello
 
-2
-00:00:05,000 --> 00:00:07,000
-World
+def _make_srt(lines: list[tuple[int, int, str]]) -> str:
+    """Build an SRT string from (start_ms, end_ms, text) tuples."""
+    parts = []
+    for i, (start, end, text) in enumerate(lines, 1):
+        sh, sm, ss, sms = (
+            start // 3600000,
+            (start % 3600000) // 60000,
+            (start % 60000) // 1000,
+            start % 1000,
+        )
+        eh, em, es, ems = (
+            end // 3600000,
+            (end % 3600000) // 60000,
+            (end % 60000) // 1000,
+            end % 1000,
+        )
+        parts.append(
+            f'{i}\n{sh:02d}:{sm:02d}:{ss:02d},{sms:03d} --> {eh:02d}:{em:02d}:{es:02d},{ems:03d}\n{text}\n'
+        )
+    return '\n'.join(parts)
 
-3
-00:00:10,000 --> 00:00:12,000
-Goodbye
-"""
 
-# Same timing pattern as reference -> high score
-MATCHING_SRT = """\
-1
-00:00:01,000 --> 00:00:03,000
-Hola
+# Reference: dialogue clustered at 0-30s, 60-90s, 150-180s, 240-270s
+_REF_LINES = [
+    # Cluster 1: 0-30s (dense)
+    (1000, 3000, 'A'),
+    (4000, 6000, 'B'),
+    (7000, 9000, 'C'),
+    (10000, 12000, 'D'),
+    (14000, 16000, 'E'),
+    (18000, 20000, 'F'),
+    (22000, 24000, 'G'),
+    (26000, 28000, 'H'),
+    # Cluster 2: 60-90s (medium)
+    (60000, 62000, 'I'),
+    (65000, 67000, 'J'),
+    (70000, 72000, 'K'),
+    (75000, 77000, 'L'),
+    (80000, 82000, 'M'),
+    # Gap: 90-150s (silence)
+    # Cluster 3: 150-180s (dense)
+    (150000, 152000, 'N'),
+    (153000, 155000, 'O'),
+    (157000, 159000, 'P'),
+    (161000, 163000, 'Q'),
+    (165000, 167000, 'R'),
+    (170000, 172000, 'S'),
+    (175000, 177000, 'T'),
+    # Gap: 180-240s
+    # Cluster 4: 240-270s (sparse)
+    (240000, 242000, 'U'),
+    (250000, 252000, 'V'),
+    (260000, 262000, 'W'),
+]
 
-2
-00:00:05,000 --> 00:00:07,000
-Mundo
+REFERENCE_SRT = _make_srt(_REF_LINES)
 
-3
-00:00:10,000 --> 00:00:12,000
-Adios
-"""
+# Matching: same cluster pattern, slightly shifted timing (like a translation)
+_MATCH_LINES = [
+    (1200, 3200, 'A2'),
+    (4200, 6200, 'B2'),
+    (7500, 9500, 'C2'),
+    (10500, 12500, 'D2'),
+    (14500, 16500, 'E2'),
+    (18500, 20500, 'F2'),
+    (22500, 24500, 'G2'),
+    (26500, 28500, 'H2'),
+    (60500, 62500, 'I2'),
+    (65500, 67500, 'J2'),
+    (70500, 72500, 'K2'),
+    (75500, 77500, 'L2'),
+    (80500, 82500, 'M2'),
+    (150500, 152500, 'N2'),
+    (153500, 155500, 'O2'),
+    (157500, 159500, 'P2'),
+    (161500, 163500, 'Q2'),
+    (165500, 167500, 'R2'),
+    (170500, 172500, 'S2'),
+    (175500, 177500, 'T2'),
+    (240500, 242500, 'U2'),
+    (250500, 252500, 'V2'),
+    (260500, 262500, 'W2'),
+]
 
-# Completely different timing pattern -> low score
-MISMATCHED_SRT = """\
-1
-00:01:00,000 --> 00:01:05,000
-Something
+MATCHING_SRT = _make_srt(_MATCH_LINES)
 
-2
-00:02:00,000 --> 00:02:05,000
-Else
+# Mismatched: uniform sparse dialogue (like a different episode with action scenes)
+# Reference has dense clusters with large gaps; this has evenly spaced lines.
+_MISMATCH_LINES = [
+    # Evenly distributed: one line every ~15s across 300s (very different density shape)
+    (5000, 7000, 'X'),
+    (20000, 22000, 'Y'),
+    (35000, 37000, 'Z'),
+    (50000, 52000, 'AA'),
+    (65000, 67000, 'BB'),
+    (80000, 82000, 'CC'),
+    (95000, 97000, 'DD'),
+    (110000, 112000, 'EE'),
+    (125000, 127000, 'FF'),
+    (140000, 142000, 'GG'),
+    (155000, 157000, 'HH'),
+    (170000, 172000, 'II'),
+    (185000, 187000, 'JJ'),
+    (200000, 202000, 'KK'),
+    (215000, 217000, 'LL'),
+    (230000, 232000, 'MM'),
+    (245000, 247000, 'NN'),
+    (260000, 262000, 'OO'),
+    (275000, 277000, 'PP'),
+    (290000, 292000, 'QQ'),
+]
 
-3
-00:03:00,000 --> 00:03:05,000
-Entirely
-"""
+MISMATCHED_SRT = _make_srt(_MISMATCH_LINES)
 
 
 def _make_match(subtitle_id: str, score: float = 0.8) -> SubtitleMatch:
@@ -318,11 +391,10 @@ class TestSubtitleValidator:
         ref = tmp_path / 'reference.srt'
         ref.write_text(REFERENCE_SRT)
         validator = SubtitleValidator(ref)
-        # Should have loaded the reference fingerprint
-        assert validator._ref_vector is not None
-        assert len(validator._ref_vector) > 0
+        assert validator._ref_timestamps
+        assert validator._ref_duration > 0
 
-    def test_score_candidate_identical_is_high(self, tmp_path: Path):
+    def test_score_candidate_matching_is_high(self, tmp_path: Path):
         ref = tmp_path / 'reference.srt'
         ref.write_text(REFERENCE_SRT)
         cand = tmp_path / 'candidate.srt'
@@ -330,7 +402,7 @@ class TestSubtitleValidator:
 
         validator = SubtitleValidator(ref)
         score = validator.score_candidate(cand)
-        assert score == pytest.approx(1.0)
+        assert score >= 0.7
 
     def test_score_candidate_mismatched_is_low(self, tmp_path: Path):
         ref = tmp_path / 'reference.srt'
@@ -340,7 +412,7 @@ class TestSubtitleValidator:
 
         validator = SubtitleValidator(ref)
         score = validator.score_candidate(cand)
-        assert score < 0.5
+        assert score < 0.3
 
     def test_validate_candidates_filters_by_threshold(self, tmp_path: Path):
         ref = tmp_path / 'reference.srt'
@@ -358,7 +430,6 @@ class TestSubtitleValidator:
         ]
 
         results = validator.validate_candidates(candidates, min_threshold=0.5)
-        # Only the good match should pass the threshold
         assert len(results) == 1
         match, path, score = results[0]
         assert match.subtitle_id == 'good'
@@ -368,32 +439,21 @@ class TestSubtitleValidator:
         ref = tmp_path / 'reference.srt'
         ref.write_text(REFERENCE_SRT)
 
-        # Create two candidates with slightly different timings
         cand1 = tmp_path / 'cand1.srt'
         cand1.write_text(MATCHING_SRT)
-        cand2_content = """\
-1
-00:00:01,000 --> 00:00:03,000
-One
-
-2
-00:00:05,000 --> 00:00:07,000
-Two
-"""
         cand2 = tmp_path / 'cand2.srt'
-        cand2.write_text(cand2_content)
+        cand2.write_text(MISMATCHED_SRT)
 
         validator = SubtitleValidator(ref)
         candidates = [
-            (_make_match('partial'), cand2),
-            (_make_match('perfect'), cand1),
+            (_make_match('bad'), cand2),
+            (_make_match('good'), cand1),
         ]
 
         results = validator.validate_candidates(candidates, min_threshold=0.0)
         assert len(results) == 2
-        # First result should have the higher score
         assert results[0][2] >= results[1][2]
-        assert results[0][0].subtitle_id == 'perfect'
+        assert results[0][0].subtitle_id == 'good'
 
     def test_validate_candidates_empty_list(self, tmp_path: Path):
         ref = tmp_path / 'reference.srt'
@@ -403,31 +463,20 @@ Two
         results = validator.validate_candidates([])
         assert results == []
 
-    def test_custom_bin_size(self, tmp_path: Path):
+    def test_custom_window_size(self, tmp_path: Path):
         ref = tmp_path / 'reference.srt'
         ref.write_text(REFERENCE_SRT)
 
-        validator = SubtitleValidator(ref, bin_size_ms=1000)
-        assert validator._bin_size_ms == 1000
+        validator = SubtitleValidator(ref, window_ms=5000)
+        assert validator._window_ms == 5000
 
-    def test_score_uses_max_duration(self, tmp_path: Path):
-        # Candidate has events much later than reference
+    def test_score_empty_candidate(self, tmp_path: Path):
         ref = tmp_path / 'reference.srt'
         ref.write_text(REFERENCE_SRT)
 
-        long_content = """\
-1
-00:00:01,000 --> 00:00:03,000
-Hello
-
-2
-00:05:00,000 --> 00:05:05,000
-Way later
-"""
         cand = tmp_path / 'candidate.srt'
-        cand.write_text(long_content)
+        cand.write_text('')
 
         validator = SubtitleValidator(ref)
-        # Should not crash and should give a meaningful score
         score = validator.score_candidate(cand)
-        assert 0.0 <= score <= 1.0
+        assert score == 0.0

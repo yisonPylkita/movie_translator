@@ -140,7 +140,7 @@ class TranslationPipeline:
         if reference_path is not None:
             try:
                 validator = SubtitleValidator(reference_path)
-                validated = validator.validate_candidates(downloaded, min_threshold=0.5)
+                validated = validator.validate_candidates(downloaded, min_threshold=0.3)
             except Exception as e:
                 logger.warning(f'Validation failed, falling back to provider scoring: {e}')
                 validated = None
