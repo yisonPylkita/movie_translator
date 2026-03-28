@@ -196,5 +196,6 @@ class TestDownloadCandidate:
         match = SubtitleMatch('eng', 'missing_provider', 'sub-789', 'rel', 'srt', 0.7, False)
 
         import pytest
+
         with pytest.raises(ValueError, match='missing_provider'):
             fetcher.download_candidate(match, tmp_path / 'out.srt')

@@ -29,7 +29,7 @@ class SubtitleFetcher:
         if provider is None:
             raise ValueError(
                 f"No provider registered with name '{match.source}'. "
-                f"Available providers: {[p.name for p in self._providers]}"
+                f'Available providers: {[p.name for p in self._providers]}'
             )
         provider.download(match, output_path)
         return output_path
