@@ -38,6 +38,7 @@ dependencies = [
     "opencv-python-headless>=4.8",
     "guessit>=3.8",
     "aniparse>=2.0",
+    "defusedxml>=0.7",
 ]
 
 [project.scripts]

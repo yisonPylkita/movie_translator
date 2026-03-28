@@ -46,9 +46,8 @@ class NapiProjektProvider:
             logger.debug(f'NapiProjekt hash failed: {e}')
             return []
 
-        if not self._check_hash(file_hash):
-            return []
-
+        # Return the match optimistically — download() will raise if not found.
+        # This avoids downloading the subtitle twice (once to check, once to save).
         return [
             SubtitleMatch(
                 language='pol',
@@ -92,33 +91,3 @@ class NapiProjektProvider:
         output_path.write_bytes(content)
         logger.info(f'Downloaded subtitle: {output_path.name} (napiprojekt)')
         return output_path
-
-    def _check_hash(self, file_hash: str) -> bool:
-        """Check if NapiProjekt has subtitles for the given hash."""
-        token = hashlib.md5((MAGIC_PREFIX + file_hash).encode()).hexdigest()
-
-        params = urllib.parse.urlencode(
-            {
-                'f': file_hash,
-                't': token,
-                'v': 'pynapi',
-                'l': 'PL',
-                'n': file_hash,
-                'p': '0',
-            }
-        ).encode()
-
-        req = urllib.request.Request(
-            API_URL,
-            data=params,
-            headers={'User-Agent': USER_AGENT},
-            method='POST',
-        )
-
-        try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                content = resp.read()
-            return not content.startswith(b'NPc0') and len(content) > 10
-        except Exception as e:
-            logger.debug(f'NapiProjekt check failed: {e}')
-            return False

@@ -3,9 +3,10 @@
 import io
 import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
+
+import defusedxml.ElementTree as ET
 
 from ...logging import logger
 from ..types import SubtitleMatch
