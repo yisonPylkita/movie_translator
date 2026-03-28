@@ -117,6 +117,8 @@ def mux_video_with_subtitles(
     subtitle_files: list[SubtitleFile],
     output_path: Path,
     font_attachments: list[Path] | None = None,
+    original_sub_index: int | None = None,
+    original_sub_title: str | None = None,
 ) -> None:
     if not video_path.exists():
         raise VideoMuxError(f'Video file not found: {video_path}')
@@ -129,9 +131,47 @@ def mux_video_with_subtitles(
     mkvmerge = get_mkvmerge() if is_mkv else None
 
     if mkvmerge:
-        _mux_with_mkvmerge(mkvmerge, video_path, subtitle_files, output_path, font_attachments)
+        _mux_with_mkvmerge(
+            mkvmerge,
+            video_path,
+            subtitle_files,
+            output_path,
+            font_attachments,
+            original_sub_index,
+            original_sub_title,
+        )
     else:
-        _mux_with_ffmpeg(video_path, subtitle_files, output_path, font_attachments)
+        _mux_with_ffmpeg(
+            video_path,
+            subtitle_files,
+            output_path,
+            font_attachments,
+            original_sub_index,
+            original_sub_title,
+        )
+
+
+def _resolve_mkvmerge_sub_track_id(
+    mkvmerge: str,
+    video_path: Path,
+    subtitle_index: int,
+) -> int:
+    """Convert a subtitle-relative index to the mkvmerge absolute track ID."""
+    result = subprocess.run(
+        [mkvmerge, '-J', str(video_path)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise VideoMuxError(f'mkvmerge identify failed: {result.stderr}')
+    info = json.loads(result.stdout)
+    sub_tracks = [t for t in info.get('tracks', []) if t['type'] == 'subtitles']
+    if subtitle_index >= len(sub_tracks):
+        raise VideoMuxError(
+            f'Subtitle index {subtitle_index} out of range '
+            f'(video has {len(sub_tracks)} subtitle tracks)'
+        )
+    return sub_tracks[subtitle_index]['id']
 
 
 def _mux_with_mkvmerge(
@@ -140,15 +180,22 @@ def _mux_with_mkvmerge(
     subtitle_files: list[SubtitleFile],
     output_path: Path,
     font_attachments: list[Path] | None = None,
+    original_sub_index: int | None = None,
+    original_sub_title: str | None = None,
 ) -> None:
     """Mux using mkvmerge — properly interleaves subtitle packets with video data."""
-    cmd = [
-        mkvmerge,
-        '-o',
-        str(output_path),
-        '--no-subtitles',
-        str(video_path),
-    ]
+    cmd = [mkvmerge, '-o', str(output_path)]
+
+    if original_sub_index is not None:
+        track_id = _resolve_mkvmerge_sub_track_id(mkvmerge, video_path, original_sub_index)
+        cmd.extend(['--subtitle-tracks', str(track_id)])
+        if original_sub_title:
+            cmd.extend(['--track-name', f'{track_id}:{original_sub_title}'])
+        cmd.extend(['--default-track-flag', f'{track_id}:0'])
+    else:
+        cmd.append('--no-subtitles')
+
+    cmd.append(str(video_path))
 
     for sub in subtitle_files:
         cmd.extend(['--language', f'0:{sub.language}'])
@@ -172,6 +219,8 @@ def _mux_with_ffmpeg(
     subtitle_files: list[SubtitleFile],
     output_path: Path,
     font_attachments: list[Path] | None = None,
+    original_sub_index: int | None = None,
+    original_sub_title: str | None = None,
 ) -> None:
     """Fallback muxing with ffmpeg (for MP4 or when mkvmerge is unavailable)."""
     ffmpeg = get_ffmpeg()
@@ -190,6 +239,12 @@ def _mux_with_ffmpeg(
     cmd.extend(['-map', '0:a'])
     # Preserve existing font/attachment streams from the original video
     cmd.extend(['-map', '0:t?'])
+
+    # Preserve original subtitle track if specified
+    orig_sub_offset = 0
+    if original_sub_index is not None:
+        cmd.extend(['-map', f'0:s:{original_sub_index}'])
+        orig_sub_offset = 1
 
     for i in range(1, len(subtitle_files) + 1):
         cmd.extend(['-map', f'{i}:0'])
@@ -214,11 +269,19 @@ def _mux_with_ffmpeg(
                 ]
             )
 
+    # Metadata for preserved original track
+    if original_sub_index is not None:
+        if original_sub_title:
+            cmd.extend(['-metadata:s:s:0', f'title={original_sub_title}'])
+        cmd.extend(['-disposition:s:0', '0'])
+
+    # Metadata for our added tracks (offset by orig_sub_offset)
     for i, sub in enumerate(subtitle_files):
-        cmd.extend([f'-metadata:s:s:{i}', f'language={sub.language}'])
-        cmd.extend([f'-metadata:s:s:{i}', f'title={sub.title}'])
+        idx = i + orig_sub_offset
+        cmd.extend([f'-metadata:s:s:{idx}', f'language={sub.language}'])
+        cmd.extend([f'-metadata:s:s:{idx}', f'title={sub.title}'])
         disposition = 'default' if sub.is_default else '0'
-        cmd.extend([f'-disposition:s:{i}', disposition])
+        cmd.extend([f'-disposition:s:{idx}', disposition])
 
     cmd.append(str(output_path))
 

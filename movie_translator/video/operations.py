@@ -17,9 +17,13 @@ class VideoOperations:
         subtitle_files: list[SubtitleFile],
         output_video: Path,
         font_attachments: list[Path] | None = None,
+        original_sub_index: int | None = None,
+        original_sub_title: str | None = None,
     ) -> None:
         logger.info(f'🎬 Creating clean video: {output_video.name}')
         track_desc = ', '.join(f'{s.title} ({s.language})' for s in subtitle_files)
+        if original_sub_title:
+            track_desc = f'{original_sub_title}, {track_desc}'
         logger.info(f'   - Adding: {track_desc}')
 
         mux_video_with_subtitles(
@@ -27,6 +31,8 @@ class VideoOperations:
             subtitle_files,
             output_video,
             font_attachments=font_attachments,
+            original_sub_index=original_sub_index,
+            original_sub_title=original_sub_title,
         )
 
         logger.info('   - Clean video merge successful')

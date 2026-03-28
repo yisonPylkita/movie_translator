@@ -219,6 +219,52 @@ class TestMuxBackendSelection:
         assert len(sub_streams) == 2
 
 
+class TestOriginalTrackPreservation:
+    def test_mkvmerge_preserves_original_english(self, create_test_mkv, create_ass_file, tmp_path):
+        if get_mkvmerge() is None:
+            pytest.skip('mkvmerge not installed')
+
+        mkv_file = create_test_mkv(language='eng', track_name='English')
+        polish_ass = create_ass_file('polish.ass')
+        output_path = tmp_path / 'output.mkv'
+
+        subs = [SubtitleFile(polish_ass, 'pol', 'Polish (AI)', is_default=True)]
+        ops = VideoOperations()
+        ops.create_clean_video(
+            mkv_file,
+            subs,
+            output_path,
+            original_sub_index=0,
+            original_sub_title='English (Original)',
+        )
+
+        from movie_translator.ffmpeg import get_video_info
+
+        info = get_video_info(output_path)
+        sub_streams = [s for s in info['streams'] if s['codec_type'] == 'subtitle']
+        assert len(sub_streams) == 2  # original English + Polish (AI)
+        titles = [s.get('tags', {}).get('title', '') for s in sub_streams]
+        assert 'English (Original)' in titles
+
+    def test_no_original_track_works(self, create_test_mkv, create_ass_file, tmp_path):
+        if get_mkvmerge() is None:
+            pytest.skip('mkvmerge not installed')
+
+        mkv_file = create_test_mkv()
+        polish_ass = create_ass_file('polish.ass')
+        output_path = tmp_path / 'output.mkv'
+
+        subs = [SubtitleFile(polish_ass, 'pol', 'Polish (AI)', is_default=True)]
+        ops = VideoOperations()
+        ops.create_clean_video(mkv_file, subs, output_path)
+
+        from movie_translator.ffmpeg import get_video_info
+
+        info = get_video_info(output_path)
+        sub_streams = [s for s in info['streams'] if s['codec_type'] == 'subtitle']
+        assert len(sub_streams) == 1
+
+
 def _mux_with_mkvmerge_ref():
     """Return the real _mux_with_mkvmerge for wraps= usage."""
     from movie_translator.ffmpeg import _mux_with_mkvmerge
