@@ -8,8 +8,12 @@ their cross-correlation.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
+
+from ..subtitles._pysubs2 import get_pysubs2
+from ..types import NON_DIALOGUE_STYLES
 
 
 def build_activity_vector(
@@ -91,3 +95,46 @@ def compute_similarity(
             best = score
 
     return min(best, 1.0)
+
+
+def extract_timestamps(subtitle_path: Path) -> tuple[list[tuple[int, int]], int]:
+    """Extract dialogue timestamps from a subtitle file.
+
+    Parses the subtitle file using pysubs2, filters out non-dialogue events
+    (signs, songs, etc.), and returns timing pairs.
+
+    Args:
+        subtitle_path: Path to subtitle file (SRT, ASS, or any pysubs2-supported format).
+
+    Returns:
+        Tuple of (timestamps, duration_ms) where timestamps is a list of
+        (start_ms, end_ms) pairs and duration_ms is the end time of the
+        last event.
+    """
+    pysubs2 = get_pysubs2()
+    if pysubs2 is None:
+        return [], 0
+
+    try:
+        subs = pysubs2.load(str(subtitle_path))
+    except Exception:
+        return [], 0
+
+    timestamps: list[tuple[int, int]] = []
+    for event in subs:
+        if not event.text or not event.text.strip():
+            continue
+
+        # Filter non-dialogue styles
+        style = getattr(event, 'style', 'Default').lower()
+        if any(keyword in style for keyword in NON_DIALOGUE_STYLES):
+            continue
+
+        # Skip empty plaintext (after stripping ASS tags)
+        if hasattr(event, 'plaintext') and not event.plaintext.strip():
+            continue
+
+        timestamps.append((event.start, event.end))
+
+    duration_ms = max(end for _, end in timestamps) if timestamps else 0
+    return timestamps, duration_ms
