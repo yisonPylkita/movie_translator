@@ -144,7 +144,8 @@ def _mux_with_mkvmerge(
     """Mux using mkvmerge — properly interleaves subtitle packets with video data."""
     cmd = [
         mkvmerge,
-        '-o', str(output_path),
+        '-o',
+        str(output_path),
         '--no-subtitles',
         str(video_path),
     ]

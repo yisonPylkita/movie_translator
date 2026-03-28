@@ -144,9 +144,14 @@ class TestMuxBackendSelection:
         subs = _make_subtitle_files(create_ass_file('pol.ass'), create_ass_file('eng.ass'))
         output_path = tmp_path / 'output.mkv'
 
-        with patch('movie_translator.ffmpeg._mux_with_mkvmerge', wraps=_mux_with_mkvmerge_ref()) as mock_mkv, \
-             patch('movie_translator.ffmpeg._mux_with_ffmpeg') as mock_ff:
+        with (
+            patch(
+                'movie_translator.ffmpeg._mux_with_mkvmerge', wraps=_mux_with_mkvmerge_ref()
+            ) as mock_mkv,
+            patch('movie_translator.ffmpeg._mux_with_ffmpeg') as mock_ff,
+        ):
             from movie_translator.ffmpeg import mux_video_with_subtitles
+
             mux_video_with_subtitles(mkv_file, subs, output_path)
             mock_mkv.assert_called_once()
             mock_ff.assert_not_called()
@@ -160,6 +165,7 @@ class TestMuxBackendSelection:
 
         with patch('movie_translator.ffmpeg.get_mkvmerge', return_value=None):
             from movie_translator.ffmpeg import mux_video_with_subtitles
+
             mux_video_with_subtitles(mkv_file, subs, output_path)
 
         assert output_path.exists()
@@ -172,6 +178,7 @@ class TestMuxBackendSelection:
 
         with patch('movie_translator.ffmpeg._mux_with_mkvmerge') as mock_mkv:
             from movie_translator.ffmpeg import mux_video_with_subtitles
+
             mux_video_with_subtitles(mkv_file, subs, output_path)
             mock_mkv.assert_not_called()
 
@@ -205,6 +212,7 @@ class TestMuxBackendSelection:
         ops.create_clean_video(mkv_file, subs, output_path)
 
         from movie_translator.ffmpeg import get_video_info
+
         info = get_video_info(output_path)
         sub_streams = [s for s in info['streams'] if s['codec_type'] == 'subtitle']
         # Should have exactly our 2 tracks, not the original + our 2
@@ -214,4 +222,5 @@ class TestMuxBackendSelection:
 def _mux_with_mkvmerge_ref():
     """Return the real _mux_with_mkvmerge for wraps= usage."""
     from movie_translator.ffmpeg import _mux_with_mkvmerge
+
     return _mux_with_mkvmerge
