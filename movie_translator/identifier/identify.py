@@ -40,6 +40,8 @@ def identify_media(video_path: Path) -> MediaIdentity:
     episode = parsed.get('episode')
     year = parsed.get('year')
     media_type = parsed.get('media_type', 'movie')
+    is_anime = parsed.get('is_anime', False)
+    release_group = parsed.get('release_group')
 
     # If container has episode info, try to use it
     container_episode = container.get('episode')
@@ -49,7 +51,10 @@ def identify_media(video_path: Path) -> MediaIdentity:
         except (ValueError, TypeError):
             pass
 
-    logger.info(f'Identified: "{title}" (type={media_type}, S{season}E{episode}, year={year})')
+    anime_tag = ' [anime]' if is_anime else ''
+    logger.info(
+        f'Identified: "{title}" (type={media_type}, S{season}E{episode}, year={year}){anime_tag}'
+    )
 
     # Signal 4: TMDB enrichment (optional, requires TMDB_API_KEY)
     imdb_id = None
@@ -75,4 +80,6 @@ def identify_media(video_path: Path) -> MediaIdentity:
         raw_filename=filename,
         imdb_id=imdb_id,
         tmdb_id=tmdb_id,
+        is_anime=is_anime,
+        release_group=release_group,
     )

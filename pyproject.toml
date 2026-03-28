@@ -37,6 +37,7 @@ dependencies = [
     "simple-lama-inpainting>=0.1.0",
     "opencv-python-headless>=4.8",
     "guessit>=3.8",
+    "aniparse>=2.0",
 ]
 
 [project.scripts]
