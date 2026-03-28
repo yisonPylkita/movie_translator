@@ -69,6 +69,11 @@ def parse_args() -> argparse.Namespace:
         help='Process files but do not replace originals (keeps output in temp directory)',
     )
     parser.add_argument(
+        '--keep-artifacts',
+        action='store_true',
+        help='Preserve working directories after processing (default: clean up on success)',
+    )
+    parser.add_argument(
         '--verbose',
         '-v',
         action='store_true',
@@ -98,6 +103,30 @@ def show_summary(results: list[tuple[str, str]], dry_run: bool = False) -> None:
 
 
 VIDEO_EXTENSIONS = ('*.mkv', '*.mp4')
+
+
+def create_working_dirs(video_path: Path, input_dir: Path) -> Path:
+    """Create per-anime/per-episode working directory structure.
+
+    Structure: input_dir/.translate_temp/<anime_folder>/<video_stem>/
+    With subdirs: candidates/, reference/
+
+    Args:
+        video_path: Path to the video file.
+        input_dir: Root input directory.
+
+    Returns:
+        Path to the per-episode working directory.
+    """
+    temp_root = input_dir / '.translate_temp'
+    anime_name = video_path.parent.name
+    episode_name = video_path.stem
+
+    work_dir = temp_root / anime_name / episode_name
+    (work_dir / 'candidates').mkdir(parents=True, exist_ok=True)
+    (work_dir / 'reference').mkdir(parents=True, exist_ok=True)
+
+    return work_dir
 
 
 def find_video_files_with_temp_dirs(input_dir: Path) -> list[tuple[Path, Path]]:
