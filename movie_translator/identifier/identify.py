@@ -4,6 +4,7 @@ from ..logging import logger
 from .hasher import compute_oshash
 from .metadata import extract_container_metadata
 from .parser import parse_filename
+from .tmdb import lookup_tmdb
 from .types import MediaIdentity
 
 
@@ -50,6 +51,18 @@ def identify_media(video_path: Path) -> MediaIdentity:
 
     logger.info(f'Identified: "{title}" (type={media_type}, S{season}E{episode}, year={year})')
 
+    # Signal 4: TMDB enrichment (optional, requires TMDB_API_KEY)
+    imdb_id = None
+    tmdb_id = None
+    try:
+        tmdb_result = lookup_tmdb(parsed_title, year, media_type)
+        if tmdb_result:
+            tmdb_id = tmdb_result.get('tmdb_id')
+            imdb_id = tmdb_result.get('imdb_id')
+            logger.debug(f'TMDB enrichment: tmdb_id={tmdb_id}, imdb_id={imdb_id}')
+    except Exception as e:
+        logger.debug(f'TMDB enrichment skipped: {e}')
+
     return MediaIdentity(
         title=title,
         parsed_title=parsed_title,
@@ -60,4 +73,6 @@ def identify_media(video_path: Path) -> MediaIdentity:
         oshash=oshash,
         file_size=file_size,
         raw_filename=filename,
+        imdb_id=imdb_id,
+        tmdb_id=tmdb_id,
     )
