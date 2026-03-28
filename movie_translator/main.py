@@ -1,5 +1,6 @@
 import argparse
 import logging
+import shutil
 import sys
 from pathlib import Path
 
@@ -129,6 +130,20 @@ def create_working_dirs(video_path: Path, input_dir: Path) -> Path:
     return work_dir
 
 
+def find_video_files(input_dir: Path) -> list[Path]:
+    """Find all video files in input directory (flat or one level deep)."""
+    video_files: list[Path] = []
+    for ext in VIDEO_EXTENSIONS:
+        video_files.extend(input_dir.glob(ext))
+    if not video_files:
+        for subdir in sorted(input_dir.iterdir()):
+            if subdir.is_dir() and not subdir.name.startswith('.'):
+                for ext in VIDEO_EXTENSIONS:
+                    video_files.extend(subdir.glob(ext))
+    video_files.sort()
+    return video_files
+
+
 def find_video_files_with_temp_dirs(input_dir: Path) -> list[tuple[Path, Path]]:
     video_files_direct: list[Path] = []
     for ext in VIDEO_EXTENSIONS:
@@ -170,13 +185,13 @@ def main():
     if not check_dependencies():
         sys.exit(1)
 
-    video_files_with_temps = find_video_files_with_temp_dirs(input_dir)
+    video_files = find_video_files(input_dir)
 
-    if not video_files_with_temps:
+    if not video_files:
         console.print(f'[red]❌ No video files found in {input_dir}[/red]')
         sys.exit(1)
 
-    total_files = len(video_files_with_temps)
+    total_files = len(video_files)
 
     if args.dry_run:
         console.print('[yellow]Dry run mode - originals will not be modified[/yellow]')
@@ -195,7 +210,7 @@ def main():
             tracker=tracker,
         )
 
-        for video_path, temp_dir in video_files_with_temps:
+        for video_path in video_files:
             relative_name = (
                 f'{video_path.parent.name}/{video_path.name}'
                 if video_path.parent != input_dir
@@ -203,17 +218,40 @@ def main():
             )
 
             tracker.start_file(relative_name)
+            work_dir = create_working_dirs(video_path, input_dir)
+            success = False
 
             try:
                 if extractor.has_polish_subtitles(video_path):
                     tracker.complete_file('skipped')
-                elif pipeline.process_video_file(video_path, temp_dir, dry_run=args.dry_run):
+                    success = True
+                elif pipeline.process_video_file(video_path, work_dir, dry_run=args.dry_run):
                     tracker.complete_file('success')
+                    success = True
                 else:
                     tracker.complete_file('failed')
             except Exception as e:
                 logger.error(f'Unexpected error: {e}')
                 tracker.complete_file('failed')
+
+            # Clean up working directory on success (unless --keep-artifacts)
+            if success and not args.keep_artifacts and work_dir.exists():
+                try:
+                    shutil.rmtree(work_dir)
+                    # Remove empty parent dirs up to .translate_temp
+                    parent = work_dir.parent
+                    while parent.name != '.translate_temp' and parent != input_dir:
+                        if parent.exists() and not any(parent.iterdir()):
+                            parent.rmdir()
+                            parent = parent.parent
+                        else:
+                            break
+                    # Remove .translate_temp itself if empty
+                    temp_root = input_dir / '.translate_temp'
+                    if temp_root.exists() and not any(temp_root.iterdir()):
+                        temp_root.rmdir()
+                except OSError as e:
+                    logger.debug(f'Failed to clean up {work_dir}: {e}')
 
 
 if __name__ == '__main__':
