@@ -43,3 +43,51 @@ def build_activity_vector(
         vec[first_bin : last_bin + 1] = 1.0
 
     return vec
+
+
+def compute_similarity(
+    reference: np.ndarray,
+    candidate: np.ndarray,
+    max_shift_bins: int = 15,
+) -> float:
+    """Compute normalized cross-correlation between two activity vectors.
+
+    Tries shifts from -max_shift_bins to +max_shift_bins and returns the
+    peak correlation, normalized by the geometric mean of energies.
+
+    Args:
+        reference: Binary activity vector for the reference track.
+        candidate: Binary activity vector for the candidate track.
+        max_shift_bins: Maximum number of bins to shift in each direction.
+
+    Returns:
+        Peak correlation score between 0.0 and 1.0.
+    """
+    ref_energy = float(np.dot(reference, reference))
+    cand_energy = float(np.dot(candidate, candidate))
+
+    if ref_energy == 0.0 or cand_energy == 0.0:
+        return 0.0
+
+    norm = math.sqrt(ref_energy * cand_energy)
+
+    # Pad both vectors to the same length for easier shifting.
+    max_len = max(len(reference), len(candidate))
+    ref = np.zeros(max_len, dtype=np.float64)
+    cand = np.zeros(max_len, dtype=np.float64)
+    ref[: len(reference)] = reference
+    cand[: len(candidate)] = candidate
+
+    best = 0.0
+    # Clamp shift range so we don't exceed vector length.
+    effective_max = min(max_shift_bins, max_len - 1)
+    for shift in range(-effective_max, effective_max + 1):
+        if shift >= 0:
+            overlap = np.dot(ref[shift:], cand[: max_len - shift])
+        else:
+            overlap = np.dot(ref[: max_len + shift], cand[-shift:])
+        score = float(overlap) / norm
+        if score > best:
+            best = score
+
+    return min(best, 1.0)
