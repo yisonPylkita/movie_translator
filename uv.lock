@@ -14,6 +14,15 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "aniparse"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6e/78/593ec9b12630da151bf5e70bda6754d21445c11ed9799529bdda1e6569df/aniparse-2.0.0.tar.gz", hash = "sha256:5630844597904415b5f0f9aa20d627f4eaa72599db0b89cdb044b4edbe47e801", size = 88451, upload-time = "2026-02-23T17:51:43.467Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5b/d8/7e2bc8e830226f60093a6aec65e45db77ffae2e6c786c34a99b95e0c78c0/aniparse-2.0.0-py3-none-any.whl", hash = "sha256:2ded80e9d0975a2bbd4bb099cf4a42cf098fad60bc363d170bbe42dc38978756", size = 86534, upload-time = "2026-02-23T17:51:41.821Z" },
+]
+
+[[package]]
 name = "babelfish"
 version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -220,6 +229,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b0/0c/35b3d92ddebfdfda76bb485738306545817253d0a3ded0bfe80ef8e67aa5/cryptography-46.0.3-pp311-pypy311_pp73-manylinux_2_28_x86_64.whl", hash = "sha256:c70cc23f12726be8f8bc72e41d5065d77e4515efae3690326764ea1b07845cfb", size = 4409944, upload-time = "2025-10-15T23:18:20.597Z" },
     { url = "https://files.pythonhosted.org/packages/99/55/181022996c4063fc0e7666a47049a1ca705abb9c8a13830f074edb347495/cryptography-46.0.3-pp311-pypy311_pp73-manylinux_2_34_aarch64.whl", hash = "sha256:9394673a9f4de09e28b5356e7fff97d778f8abad85c9d5ac4a4b7e25a0de7717", size = 4242957, upload-time = "2025-10-15T23:18:22.18Z" },
     { url = "https://files.pythonhosted.org/packages/ba/af/72cd6ef29f9c5f731251acadaeb821559fe25f10852f44a63374c9ca08c1/cryptography-46.0.3-pp311-pypy311_pp73-manylinux_2_34_x86_64.whl", hash = "sha256:94cd0549accc38d1494e1f8de71eca837d0509d0d44bf11d158524b0e12cebf9", size = 4409447, upload-time = "2025-10-15T23:18:24.209Z" },
+]
+
+[[package]]
+name = "defusedxml"
+version = "0.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124974bfe172b4daf3c984ebd9c2a06e2b8a4dc7331c72/defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69", size = 75520, upload-time = "2021-03-08T10:59:26.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61", size = 25604, upload-time = "2021-03-08T10:59:24.45Z" },
 ]
 
 [[package]]
@@ -629,6 +647,8 @@ name = "movie-translator"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "aniparse" },
+    { name = "defusedxml" },
     { name = "fonttools" },
     { name = "guessit" },
     { name = "numpy" },
@@ -654,6 +674,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aniparse", specifier = ">=2.0" },
+    { name = "defusedxml", specifier = ">=0.7" },
     { name = "fonttools", specifier = ">=4.61.0" },
     { name = "guessit", specifier = ">=3.8" },
     { name = "numpy", specifier = ">=1.26" },
