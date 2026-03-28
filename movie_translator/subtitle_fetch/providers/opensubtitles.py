@@ -1,9 +1,11 @@
 import json
 import os
+import urllib.error
 import urllib.request
 from pathlib import Path
 
 from ...logging import logger
+from ..rate_limiter import RateLimiter
 from ..types import SubtitleMatch
 
 API_BASE = 'https://api.opensubtitles.com/api/v1'
@@ -27,6 +29,7 @@ class OpenSubtitlesProvider:
         self._username = username or os.environ.get('OPENSUBTITLES_USERNAME', '')
         self._password = password or os.environ.get('OPENSUBTITLES_PASSWORD', '')
         self._token: str | None = None
+        self._rate_limiter = RateLimiter(min_interval=0.25)
 
     @property
     def name(self) -> str:
@@ -124,6 +127,8 @@ class OpenSubtitlesProvider:
     def _api_request(
         self, method: str, endpoint: str, params: dict | None = None, body: dict | None = None
     ) -> dict:
+        self._rate_limiter.wait()
+
         url = f'{API_BASE}{endpoint}'
         if params:
             query = '&'.join(f'{k}={urllib.request.quote(str(v))}' for k, v in params.items())
@@ -140,8 +145,22 @@ class OpenSubtitlesProvider:
         data = json.dumps(body).encode() if body else None
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read())
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                # Parse rate limit headers
+                resp_headers = dict(resp.headers.items())
+                self._rate_limiter.update_from_headers(resp_headers)
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                retry_after = e.headers.get('Retry-After')
+                delay = float(retry_after) if retry_after else 5.0
+                self._rate_limiter.record_429(retry_after=delay)
+                raise
+            if e.code == 406:
+                logger.warning('OpenSubtitles daily download quota exceeded')
+                raise
+            raise
 
     def _ensure_logged_in(self):
         if self._token:

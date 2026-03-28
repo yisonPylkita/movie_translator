@@ -100,3 +100,23 @@ class TestOpenSubtitlesProvider:
 
         assert len(matches) == 1
         assert matches[0].language == 'pol'
+
+    def test_api_request_uses_rate_limiter(self):
+        import json
+        from unittest.mock import MagicMock
+
+        provider = OpenSubtitlesProvider(api_key='test-key')
+        mock_limiter = MagicMock()
+        provider._rate_limiter = mock_limiter
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps({'data': []}).encode()
+        mock_resp.headers.items.return_value = []
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+
+        with patch('urllib.request.urlopen', return_value=mock_resp):
+            provider._api_request('GET', '/subtitles', {'languages': 'en'})
+
+        mock_limiter.wait.assert_called_once()
+        mock_limiter.update_from_headers.assert_called_once()
