@@ -32,10 +32,20 @@ class TestTranslateStage:
             DialogueLine(4000, 6000, 'Do widzenia'),
         ]
 
-        with patch('movie_translator.stages.translate.translate_dialogue_lines', return_value=translated), \
-             patch('movie_translator.stages.translate.check_embedded_fonts_support_polish', return_value=False), \
-             patch('movie_translator.stages.translate.get_ass_font_names', return_value={'Arial'}), \
-             patch('movie_translator.stages.translate.find_system_font_for_polish', return_value=None):
+        with (
+            patch(
+                'movie_translator.stages.translate.translate_dialogue_lines',
+                return_value=translated,
+            ),
+            patch(
+                'movie_translator.stages.translate.check_embedded_fonts_support_polish',
+                return_value=False,
+            ),
+            patch('movie_translator.stages.translate.get_ass_font_names', return_value={'Arial'}),
+            patch(
+                'movie_translator.stages.translate.find_system_font_for_polish', return_value=None
+            ),
+        ):
             result = TranslateStage().run(ctx)
 
         assert result.translated_lines == translated
@@ -45,9 +55,16 @@ class TestTranslateStage:
     def test_raises_on_empty_translation(self, tmp_path):
         ctx = self._make_ctx(tmp_path)
 
-        with patch('movie_translator.stages.translate.translate_dialogue_lines', return_value=[]), \
-             patch('movie_translator.stages.translate.check_embedded_fonts_support_polish', return_value=False), \
-             patch('movie_translator.stages.translate.get_ass_font_names', return_value=set()), \
-             patch('movie_translator.stages.translate.find_system_font_for_polish', return_value=None):
+        with (
+            patch('movie_translator.stages.translate.translate_dialogue_lines', return_value=[]),
+            patch(
+                'movie_translator.stages.translate.check_embedded_fonts_support_polish',
+                return_value=False,
+            ),
+            patch('movie_translator.stages.translate.get_ass_font_names', return_value=set()),
+            patch(
+                'movie_translator.stages.translate.find_system_font_for_polish', return_value=None
+            ),
+        ):
             with pytest.raises(RuntimeError, match='Translation failed'):
                 TranslateStage().run(ctx)

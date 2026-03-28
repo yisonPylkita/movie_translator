@@ -25,7 +25,10 @@ class CreateTracksStage:
         # Create AI Polish subtitle file
         ai_polish_ass = ctx.work_dir / f'{ctx.video_path.stem}_polish_ai.ass'
         SubtitleProcessor.create_polish_subtitles(
-            ctx.english_source, ctx.translated_lines, ai_polish_ass, replace_chars,
+            ctx.english_source,
+            ctx.translated_lines,
+            ai_polish_ass,
+            replace_chars,
         )
         if ctx.font_info.fallback_font_family:
             SubtitleProcessor.override_font_name(ai_polish_ass, ctx.font_info.fallback_font_family)
@@ -39,12 +42,18 @@ class CreateTracksStage:
             tracks.append(SubtitleFile(fetched_pol.path, 'pol', pol_title, is_default=True))
             if ctx.font_info.fallback_font_family:
                 SubtitleProcessor.override_font_name(
-                    fetched_pol.path, ctx.font_info.fallback_font_family,
+                    fetched_pol.path,
+                    ctx.font_info.fallback_font_family,
                 )
 
-        tracks.append(SubtitleFile(
-            ai_polish_ass, 'pol', 'Polish (AI)', is_default=not bool(fetched_pol),
-        ))
+        tracks.append(
+            SubtitleFile(
+                ai_polish_ass,
+                'pol',
+                'Polish (AI)',
+                is_default=not bool(fetched_pol),
+            )
+        )
 
         ctx.subtitle_tracks = tracks
         return ctx

@@ -19,7 +19,9 @@ class TestExtractEnglishStage:
             config=PipelineConfig(),
         )
         if fetched_eng:
-            ctx.fetched_subtitles = {'eng': FetchedSubtitle(path=fetched_eng, source='opensubtitles')}
+            ctx.fetched_subtitles = {
+                'eng': FetchedSubtitle(path=fetched_eng, source='opensubtitles')
+            }
         else:
             ctx.fetched_subtitles = {}
         ctx.reference_path = reference
