@@ -46,8 +46,16 @@ class NapiProjektProvider:
             logger.debug(f'NapiProjekt hash failed: {e}')
             return []
 
-        # Return the match optimistically — download() will raise if not found.
-        # This avoids downloading the subtitle twice (once to check, once to save).
+        # Probe the API to check if a subtitle actually exists for this hash
+        content = self._fetch_subtitle(file_hash)
+        if content is None:
+            logger.debug(f'NapiProjekt: no subtitle for hash {file_hash[:8]}')
+            return []
+
+        # Cache the content so download() doesn't hit the API again
+        self._cached_content = content
+        self._cached_hash = file_hash
+
         return [
             SubtitleMatch(
                 language='pol',
@@ -62,6 +70,22 @@ class NapiProjektProvider:
 
     def download(self, match: SubtitleMatch, output_path: Path) -> Path:
         file_hash = match.subtitle_id
+
+        # Use cached content from search() if available
+        if hasattr(self, '_cached_content') and self._cached_hash == file_hash:
+            content = self._cached_content
+            self._cached_content = None
+        else:
+            content = self._fetch_subtitle(file_hash)
+            if content is None:
+                raise RuntimeError(f'NapiProjekt: subtitle not found for hash {file_hash}')
+
+        output_path.write_bytes(content)
+        logger.info(f'Downloaded subtitle: {output_path.name} (napiprojekt)')
+        return output_path
+
+    def _fetch_subtitle(self, file_hash: str) -> bytes | None:
+        """Fetch subtitle content from NapiProjekt API. Returns None if not found."""
         token = hashlib.md5((MAGIC_PREFIX + file_hash).encode()).hexdigest()
 
         params = urllib.parse.urlencode(
@@ -86,8 +110,6 @@ class NapiProjektProvider:
             content = resp.read()
 
         if content.startswith(b'NPc0') or len(content) < 10:
-            raise RuntimeError(f'NapiProjekt: subtitle not found for hash {file_hash}')
+            return None
 
-        output_path.write_bytes(content)
-        logger.info(f'Downloaded subtitle: {output_path.name} (napiprojekt)')
-        return output_path
+        return content
