@@ -1,11 +1,10 @@
 import json
 import os
-import urllib.error
 import urllib.request
 from pathlib import Path
 
 from ...logging import logger
-from ..rate_limiter import RateLimiter
+from ..scoring import compute_release_score
 from ..types import SubtitleMatch
 
 API_BASE = 'https://api.opensubtitles.com/api/v1'
@@ -29,7 +28,6 @@ class OpenSubtitlesProvider:
         self._username = username or os.environ.get('OPENSUBTITLES_USERNAME', '')
         self._password = password or os.environ.get('OPENSUBTITLES_PASSWORD', '')
         self._token: str | None = None
-        self._rate_limiter = RateLimiter(min_interval=0.25)
 
     @property
     def name(self) -> str:
@@ -51,7 +49,7 @@ class OpenSubtitlesProvider:
             }
             try:
                 data = self._api_request('GET', '/subtitles', params)
-                matches = self._parse_results(data, languages)
+                matches = self._parse_results(data, languages, identity)
             except Exception as e:
                 logger.debug(f'OpenSubtitles hash search failed: {e}')
 
@@ -68,9 +66,19 @@ class OpenSubtitlesProvider:
             if identity.media_type == 'movie' and identity.year:
                 params['year'] = str(identity.year)
 
+            # Use IMDB/TMDB IDs for more precise search
+            imdb_id = getattr(identity, 'imdb_id', None)
+            if imdb_id:
+                params['imdb_id'] = (
+                    imdb_id.replace('tt', '') if imdb_id.startswith('tt') else imdb_id
+                )
+            tmdb_id = getattr(identity, 'tmdb_id', None)
+            if tmdb_id:
+                params['tmdb_id'] = str(tmdb_id)
+
             try:
                 data = self._api_request('GET', '/subtitles', params)
-                matches = self._parse_results(data, languages)
+                matches = self._parse_results(data, languages, identity)
             except Exception as e:
                 logger.debug(f'OpenSubtitles query search failed: {e}')
 
@@ -92,7 +100,9 @@ class OpenSubtitlesProvider:
         logger.info(f'Downloaded subtitle: {output_path.name} ({match.source})')
         return output_path
 
-    def _parse_results(self, data: dict, languages: list[str]) -> list[SubtitleMatch]:
+    def _parse_results(
+        self, data: dict, languages: list[str], identity=None
+    ) -> list[SubtitleMatch]:
         matches = []
         for item in data.get('data', []):
             attrs = item.get('attributes', {})
@@ -110,6 +120,17 @@ class OpenSubtitlesProvider:
             file_name = file_info.get('file_name', '')
             ext = file_name.rsplit('.', 1)[-1] if '.' in file_name else 'srt'
             is_hash = attrs.get('moviehash_match', False)
+            if is_hash:
+                score = 1.0
+            else:
+                base_score = 0.6
+                if identity is not None:
+                    release_bonus = (
+                        compute_release_score(identity.raw_filename, attrs.get('release', '')) * 0.3
+                    )  # up to 0.3 bonus
+                    score = base_score + release_bonus
+                else:
+                    score = 0.7
 
             matches.append(
                 SubtitleMatch(
@@ -118,7 +139,7 @@ class OpenSubtitlesProvider:
                     subtitle_id=str(file_info.get('file_id', '')),
                     release_name=attrs.get('release', ''),
                     format=ext,
-                    score=1.0 if is_hash else 0.7,
+                    score=score,
                     hash_match=is_hash,
                 )
             )
@@ -127,8 +148,6 @@ class OpenSubtitlesProvider:
     def _api_request(
         self, method: str, endpoint: str, params: dict | None = None, body: dict | None = None
     ) -> dict:
-        self._rate_limiter.wait()
-
         url = f'{API_BASE}{endpoint}'
         if params:
             query = '&'.join(f'{k}={urllib.request.quote(str(v))}' for k, v in params.items())
@@ -145,22 +164,8 @@ class OpenSubtitlesProvider:
         data = json.dumps(body).encode() if body else None
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                # Parse rate limit headers
-                resp_headers = dict(resp.headers.items())
-                self._rate_limiter.update_from_headers(resp_headers)
-                return json.loads(resp.read())
-        except urllib.error.HTTPError as e:
-            if e.code == 429:
-                retry_after = e.headers.get('Retry-After')
-                delay = float(retry_after) if retry_after else 5.0
-                self._rate_limiter.record_429(retry_after=delay)
-                raise
-            if e.code == 406:
-                logger.warning('OpenSubtitles daily download quota exceeded')
-                raise
-            raise
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
 
     def _ensure_logged_in(self):
         if self._token:

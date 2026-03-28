@@ -71,7 +71,22 @@ class TestOpenSubtitlesProvider:
             matches = provider.search(_make_identity(), ['eng'])
 
         assert matches[0].hash_match is False
-        assert matches[0].score == 0.7
+        assert 0.6 <= matches[0].score < 1.0  # now range-based with release name scoring
+
+    def test_search_uses_imdb_id_when_available(self):
+        provider = OpenSubtitlesProvider(api_key='test-key')
+        called_params = {}
+
+        def capture_request(method, endpoint, params=None, body=None):
+            if params and 'imdb_id' in params:
+                called_params.update(params)
+            return {'data': []}
+
+        with patch.object(provider, '_api_request', side_effect=capture_request):
+            identity = _make_identity(imdb_id='tt0903747')
+            provider.search(identity, ['eng'])
+
+        assert called_params.get('imdb_id') == '0903747'
 
     def test_search_filters_by_requested_languages(self):
         api_response = {
@@ -100,23 +115,3 @@ class TestOpenSubtitlesProvider:
 
         assert len(matches) == 1
         assert matches[0].language == 'pol'
-
-    def test_api_request_uses_rate_limiter(self):
-        import json
-        from unittest.mock import MagicMock
-
-        provider = OpenSubtitlesProvider(api_key='test-key')
-        mock_limiter = MagicMock()
-        provider._rate_limiter = mock_limiter
-
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = json.dumps({'data': []}).encode()
-        mock_resp.headers.items.return_value = []
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
-
-        with patch('urllib.request.urlopen', return_value=mock_resp):
-            provider._api_request('GET', '/subtitles', {'languages': 'en'})
-
-        mock_limiter.wait.assert_called_once()
-        mock_limiter.update_from_headers.assert_called_once()

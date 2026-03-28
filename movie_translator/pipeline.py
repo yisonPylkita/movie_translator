@@ -9,7 +9,9 @@ from .logging import logger
 from .ocr import extract_burned_in_subtitles, is_vision_ocr_available, probe_for_burned_in_subtitles
 from .subtitle_fetch import SubtitleFetcher, SubtitleValidator
 from .subtitle_fetch.providers.animesub import AnimeSubProvider
+from .subtitle_fetch.providers.napiprojekt import NapiProjektProvider
 from .subtitle_fetch.providers.opensubtitles import OpenSubtitlesProvider
+from .subtitle_fetch.providers.podnapisi import PodnapisiProvider
 from .subtitle_fetch.types import SubtitleMatch
 from .subtitles import SubtitleExtractor, SubtitleProcessor
 from .translation import translate_dialogue_lines
@@ -39,14 +41,26 @@ class TranslationPipeline:
         if self.tracker:
             self.tracker.set_stage(name, info)
 
-    def _build_fetcher(self) -> SubtitleFetcher | None:
+    def _build_fetcher(self, video_path: Path | None = None) -> SubtitleFetcher | None:
         """Create a SubtitleFetcher with all configured providers."""
         if not self.enable_fetch:
             return None
         providers: list = [AnimeSubProvider()]
+
+        # Podnapisi (always available, no API key needed)
+        providers.append(PodnapisiProvider())
+
+        # NapiProjekt (needs video path for hash computation)
+        if video_path is not None:
+            napi = NapiProjektProvider()
+            napi.set_video_path(video_path)
+            providers.append(napi)
+
+        # OpenSubtitles (needs API key)
         api_key = os.environ.get('OPENSUBTITLES_API_KEY', '')
         if api_key:
             providers.append(OpenSubtitlesProvider(api_key=api_key))
+
         return SubtitleFetcher(providers)
 
     def _extract_reference(self, video_path: Path, work_dir: Path) -> Path | None:
@@ -92,7 +106,7 @@ class TranslationPipeline:
 
         Returns {language_code: subtitle_file_path} for the best subtitle per language.
         """
-        fetcher = self._build_fetcher()
+        fetcher = self._build_fetcher(video_path=video_path)
         if fetcher is None:
             return {}
 
