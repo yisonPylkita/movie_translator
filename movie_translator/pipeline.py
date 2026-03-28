@@ -10,11 +10,9 @@ from .stages import (
     ExtractReferenceStage,
     FetchSubtitlesStage,
     IdentifyStage,
+    MuxStage,
     TranslateStage,
 )
-
-# TODO: uncomment when MuxStage is implemented
-# from .stages import MuxStage
 
 
 class TranslationPipeline:
@@ -40,8 +38,7 @@ class TranslationPipeline:
             ExtractEnglishStage(),
             TranslateStage(),
             CreateTracksStage(),
-            # TODO: uncomment when MuxStage is implemented
-            # MuxStage(),
+            MuxStage(),
         ]
 
     def process_video_file(self, video_path: Path, work_dir: Path, dry_run: bool = False) -> bool:

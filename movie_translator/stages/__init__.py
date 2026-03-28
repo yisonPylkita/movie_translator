@@ -5,6 +5,7 @@ from .extract_english import ExtractEnglishStage
 from .extract_ref import ExtractReferenceStage
 from .fetch import FetchSubtitlesStage
 from .identify import IdentifyStage
+from .mux import MuxStage
 from .translate import TranslateStage
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     'ExtractReferenceStage',
     'FetchSubtitlesStage',
     'IdentifyStage',
+    'MuxStage',
     'TranslateStage',
 ]
