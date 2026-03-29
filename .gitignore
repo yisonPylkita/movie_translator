@@ -25,3 +25,11 @@ test_output.srt  # Test translation output
 # Temp directories
 .translate_temp/
 test_workdir/
+
+# Vendor build artifacts (Rust)
+vendor/ilass/target/
+
+# Media files (never commit these)
+*.mkv
+*.mp4
+*.avi
