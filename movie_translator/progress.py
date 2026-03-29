@@ -31,8 +31,8 @@ STAGE_LABELS = {
 }
 
 LEVEL_STYLES = {
-    'DEBUG': 'dim',
-    'INFO': 'white',
+    'DEBUG': 'dim white',
+    'INFO': 'cyan',
     'WARNING': 'yellow',
     'ERROR': 'bold red',
 }
@@ -66,7 +66,7 @@ class ProgressTracker:
         self._current_stage = ''
         self._stages_done: list[str] = []
         self._stage_info: dict[str, str] = {}  # Extra info per stage
-        self._log_lines: deque[tuple[str, str]] = deque(maxlen=12)
+        self._log_lines: deque[tuple[str, str]] = deque(maxlen=24)
         self._file_start_time = 0.0
         self._batch_start_time = 0.0
         self._live: Live | None = None
