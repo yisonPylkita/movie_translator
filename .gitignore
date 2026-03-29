@@ -18,6 +18,9 @@ build/
 # macOS
 .DS_Store
 
+# Secrets
+.env
+
 # Project specific
 movies/
 test_output.srt  # Test translation output
