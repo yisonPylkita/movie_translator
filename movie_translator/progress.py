@@ -82,19 +82,22 @@ class ProgressTracker:
         )
         self._live.__enter__()
 
-        # Install log handler to capture messages
+        # Install log handler to capture messages into the TUI panel.
+        # Disable propagation to prevent the root logger's RichHandler
+        # from also printing to the console (which fights with Live).
         self._log_handler = _LogCapture(self)
         logger = logging.getLogger('movie_translator')
-        # Remove existing handlers temporarily (they'd fight with Live)
         self._original_handlers = logger.handlers[:]
+        self._original_propagate = logger.propagate
         logger.handlers = [self._log_handler]
+        logger.propagate = False
 
         return self
 
     def __exit__(self, *args):
-        # Restore original handlers
         logger = logging.getLogger('movie_translator')
         logger.handlers = self._original_handlers
+        logger.propagate = self._original_propagate
 
         if self._live:
             self._live.__exit__(*args)
