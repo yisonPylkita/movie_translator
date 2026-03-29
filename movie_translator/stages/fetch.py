@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from ..context import FetchedSubtitle, PipelineContext
 from ..logging import logger
 from ..subtitle_fetch import SubtitleFetcher, SubtitleValidator
+from ..subtitle_fetch.align import align_to_reference
 from ..subtitle_fetch.providers.animesub import AnimeSubProvider
 from ..subtitle_fetch.providers.napiprojekt import NapiProjektProvider
 from ..subtitle_fetch.providers.opensubtitles import OpenSubtitlesProvider
@@ -47,11 +48,17 @@ class FetchSubtitlesStage:
             ctx.fetched_subtitles = {}
             return ctx
 
-        # Validate and select best per language
+        # Validate and select per language
         ctx.fetched_subtitles = self._validate_and_select(
             downloaded,
             ctx.reference_path,
         )
+
+        # Realign fetched Polish subtitles against the English reference
+        if ctx.reference_path and 'pol' in ctx.fetched_subtitles:
+            for sub in ctx.fetched_subtitles['pol']:
+                align_to_reference(sub.path, ctx.reference_path)
+
         return ctx
 
     def _build_fetcher(self, video_path):
@@ -87,8 +94,11 @@ class FetchSubtitlesStage:
         logger.info(f'Downloaded {len(downloaded)} candidate(s)')
         return downloaded
 
+    # Keep all Polish subs scoring at or above this threshold.
+    _QUALITY_THRESHOLD = 0.8
+
     def _validate_and_select(self, downloaded, reference_path):
-        result = {}
+        result: dict[str, list[FetchedSubtitle]] = {}
 
         if reference_path is not None:
             try:
@@ -104,10 +114,20 @@ class FetchSubtitlesStage:
             if validated:
                 logger.info(f'{len(validated)} candidate(s) passed validation')
                 for match, path, score in validated:
-                    if match.language not in result:
-                        result[match.language] = FetchedSubtitle(path=path, source=match.source)
+                    sub = FetchedSubtitle(path=path, source=match.source)
+                    lang = match.language
+                    if lang not in result:
+                        # First (best) candidate for this language — always keep.
+                        result[lang] = [sub]
                         logger.info(
-                            f'Best {match.language}: {match.release_name} '
+                            f'Selected {lang}: {match.release_name} '
+                            f'(score: {score:.3f}, source: {match.source})'
+                        )
+                    elif score >= self._QUALITY_THRESHOLD:
+                        # Additional high-quality candidate — keep it too.
+                        result[lang].append(sub)
+                        logger.info(
+                            f'Also keeping {lang}: {match.release_name} '
                             f'(score: {score:.3f}, source: {match.source})'
                         )
             else:
@@ -115,7 +135,7 @@ class FetchSubtitlesStage:
         else:
             for match, path in downloaded:
                 if match.language not in result:
-                    result[match.language] = FetchedSubtitle(path=path, source=match.source)
+                    result[match.language] = [FetchedSubtitle(path=path, source=match.source)]
                     logger.info(
                         f'Best {match.language} (unvalidated): {match.release_name} '
                         f'(source: {match.source})'

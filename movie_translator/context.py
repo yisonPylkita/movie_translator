@@ -53,7 +53,7 @@ class PipelineContext:
     identity: object | None = None  # MediaIdentity (avoid circular import)
     reference_path: Path | None = None
     original_english_track: OriginalTrack | None = None
-    fetched_subtitles: dict[str, FetchedSubtitle] | None = None
+    fetched_subtitles: dict[str, list[FetchedSubtitle]] | None = None
     english_source: Path | None = None
     dialogue_lines: list[DialogueLine] | None = None
     translated_lines: list[DialogueLine] | None = None

@@ -34,12 +34,12 @@ class CreateTracksStage:
             SubtitleProcessor.override_font_name(ai_polish_ass, ctx.font_info.fallback_font_family)
 
         # Build track list
-        fetched_pol = ctx.fetched_subtitles.get('pol') if ctx.fetched_subtitles else None
+        fetched_pol_list = ctx.fetched_subtitles.get('pol', []) if ctx.fetched_subtitles else []
         tracks: list[SubtitleFile] = []
 
-        if fetched_pol:
+        for i, fetched_pol in enumerate(fetched_pol_list):
             pol_title = f'Polish ({fetched_pol.source})'
-            tracks.append(SubtitleFile(fetched_pol.path, 'pol', pol_title, is_default=True))
+            tracks.append(SubtitleFile(fetched_pol.path, 'pol', pol_title, is_default=(i == 0)))
             if ctx.font_info.fallback_font_family:
                 SubtitleProcessor.override_font_name(
                     fetched_pol.path,
@@ -51,7 +51,7 @@ class CreateTracksStage:
                 ai_polish_ass,
                 'pol',
                 'Polish (AI)',
-                is_default=not bool(fetched_pol),
+                is_default=not bool(fetched_pol_list),
             )
         )
 

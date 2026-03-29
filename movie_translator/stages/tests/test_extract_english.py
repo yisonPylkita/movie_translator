@@ -20,7 +20,7 @@ class TestExtractEnglishStage:
         )
         if fetched_eng:
             ctx.fetched_subtitles = {
-                'eng': FetchedSubtitle(path=fetched_eng, source='opensubtitles')
+                'eng': [FetchedSubtitle(path=fetched_eng, source='opensubtitles')]
             }
         else:
             ctx.fetched_subtitles = {}

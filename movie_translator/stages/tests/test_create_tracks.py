@@ -30,7 +30,7 @@ class TestCreateTracksStage:
         ctx.font_info = FontInfo(supports_polish=True)
 
         if fetched_pol:
-            ctx.fetched_subtitles = {'pol': fetched_pol}
+            ctx.fetched_subtitles = {'pol': [fetched_pol]}
         else:
             ctx.fetched_subtitles = {}
         return ctx

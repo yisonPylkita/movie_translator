@@ -17,9 +17,9 @@ class ExtractEnglishStage:
         # Priority: fetched English > reference > embedded > OCR
         fetched_eng = None
         if ctx.fetched_subtitles:
-            fetched_eng_sub = ctx.fetched_subtitles.get('eng')
-            if fetched_eng_sub:
-                fetched_eng = fetched_eng_sub.path
+            eng_subs = ctx.fetched_subtitles.get('eng')
+            if eng_subs:
+                fetched_eng = eng_subs[0].path
 
         if fetched_eng:
             ctx.english_source = fetched_eng
