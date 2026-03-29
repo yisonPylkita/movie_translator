@@ -7,7 +7,10 @@ from ..ocr import (
     is_vision_ocr_available,
     probe_for_burned_in_subtitles,
 )
+from ..ocr.pgs_extractor import extract_pgs_track
 from ..subtitles import SubtitleExtractor, SubtitleProcessor
+
+_IMAGE_CODECS = ('hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle')
 
 
 class ExtractEnglishStage:
@@ -46,11 +49,20 @@ class ExtractEnglishStage:
 
         eng_track = extractor.find_english_track(track_info)
         if eng_track:
-            subtitle_ext = extractor.get_subtitle_extension(eng_track)
-            output = ctx.work_dir / f'{ctx.video_path.stem}_extracted{subtitle_ext}'
-            subtitle_index = eng_track.get('subtitle_index', 0)
-            extractor.extract_subtitle(ctx.video_path, eng_track['id'], output, subtitle_index)
-            return output
+            codec = eng_track.get('codec', '').lower()
+            is_image = any(codec == c or codec.startswith(c) for c in _IMAGE_CODECS)
+
+            if is_image:
+                # PGS/DVD — extract via OCR
+                srt = extract_pgs_track(ctx.video_path, eng_track['id'], ctx.work_dir)
+                if srt:
+                    return srt
+            else:
+                subtitle_ext = extractor.get_subtitle_extension(eng_track)
+                output = ctx.work_dir / f'{ctx.video_path.stem}_extracted{subtitle_ext}'
+                subtitle_index = eng_track.get('subtitle_index', 0)
+                extractor.extract_subtitle(ctx.video_path, eng_track['id'], output, subtitle_index)
+                return output
 
         # OCR fallback — only probe if the reference stage didn't already
         if not ctx.burned_in_probed and is_vision_ocr_available():

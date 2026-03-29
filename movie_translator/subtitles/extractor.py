@@ -226,10 +226,9 @@ class SubtitleExtractor:
 
     def _handle_image_tracks(self, image_tracks: list[dict], total_count: int) -> dict | None:
         logger.info(
-            f'Found {total_count} English track(s), but only image-based (PGS/DVD) — '
-            f'will fall back to OCR'
+            f'Found {total_count} English track(s), image-based (PGS/DVD) — will extract via OCR'
         )
-        return None
+        return image_tracks[0]
 
     def get_subtitle_extension(self, track: dict[str, Any]) -> str:
         codec = track.get('codec', '').lower()
