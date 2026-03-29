@@ -238,14 +238,19 @@ class ProgressTracker:
 
     def _render_logs(self):
         text = Text()
+        max_width = (self._console.width or 120) - 6
         for msg, level in self._log_lines:
-            style = LEVEL_STYLES.get(level, 'white')
-            if level == 'DONE':
-                style = 'white'
-            # Truncate to terminal width minus panel padding
-            max_width = (self._console.width or 120) - 6
             display_msg = msg[:max_width] + '...' if len(msg) > max_width else msg
-            text.append(display_msg + '\n', style=style)
+            base_style = LEVEL_STYLES.get(level, 'white')
+            if level == 'DONE':
+                base_style = 'white'
+            # Parse Rich markup in the message (e.g. [green]✓[/green])
+            # so existing colors are preserved; the level style is the default.
+            try:
+                line = Text.from_markup(display_msg + '\n', style=base_style)
+            except Exception:
+                line = Text(display_msg + '\n', style=base_style)
+            text.append_text(line)
         return Panel(text, title='[dim]Log', border_style='dim', padding=(0, 1))
 
     def _print_summary(self):
