@@ -71,7 +71,22 @@ class TestOpenSubtitlesProvider:
             matches = provider.search(_make_identity(), ['eng'])
 
         assert matches[0].hash_match is False
-        assert matches[0].score == 0.7
+        assert 0.6 <= matches[0].score < 1.0  # now range-based with release name scoring
+
+    def test_search_uses_imdb_id_when_available(self):
+        provider = OpenSubtitlesProvider(api_key='test-key')
+        called_params = {}
+
+        def capture_request(method, endpoint, params=None, body=None):
+            if params and 'imdb_id' in params:
+                called_params.update(params)
+            return {'data': []}
+
+        with patch.object(provider, '_api_request', side_effect=capture_request):
+            identity = _make_identity(imdb_id='tt0903747')
+            provider.search(identity, ['eng'])
+
+        assert called_params.get('imdb_id') == '0903747'
 
     def test_search_filters_by_requested_languages(self):
         api_response = {

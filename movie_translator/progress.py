@@ -189,9 +189,9 @@ class ProgressTracker:
         # Progress bar
         progress = Progress(
             TextColumn('[bold blue]Movie Translator'),
-            BarColumn(bar_width=30),
+            BarColumn(),
             MofNCompleteColumn(),
-            expand=False,
+            expand=True,
         )
         progress.add_task('', total=self._total, completed=done)
 
@@ -239,8 +239,9 @@ class ProgressTracker:
             style = LEVEL_STYLES.get(level, 'white')
             if level == 'DONE':
                 style = 'white'
-            # Truncate long lines
-            display_msg = msg[:120] + '...' if len(msg) > 120 else msg
+            # Truncate to terminal width minus panel padding
+            max_width = (self._console.width or 120) - 6
+            display_msg = msg[:max_width] + '...' if len(msg) > max_width else msg
             text.append(display_msg + '\n', style=style)
         return Panel(text, title='[dim]Log', border_style='dim', padding=(0, 1))
 
@@ -257,8 +258,8 @@ class ProgressTracker:
         elapsed = time.monotonic() - self._batch_start_time
         self._console.print(' | '.join(parts) + f'  [dim]({elapsed:.0f}s total)[/dim]')
 
-    @staticmethod
-    def _short_name(name: str, max_len: int = 60) -> str:
+    def _short_name(self, name: str) -> str:
+        max_len = (self._console.width or 80) - 20  # leave room for elapsed time + padding
         if len(name) <= max_len:
             return name
         return name[: max_len - 3] + '...'

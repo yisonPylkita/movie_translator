@@ -1,4 +1,4 @@
-from movie_translator.main import create_working_dirs
+from movie_translator.discovery import create_work_dir
 
 
 def test_creates_per_anime_per_episode_dirs(tmp_path):
@@ -8,7 +8,7 @@ def test_creates_per_anime_per_episode_dirs(tmp_path):
     video = anime_dir / 'Aho-Girl - 01.mkv'
     video.touch()
 
-    work_dir = create_working_dirs(video, tmp_path)
+    work_dir = create_work_dir(video, tmp_path)
 
     assert work_dir.parent.name == 'Aho-Girl'  # per-anime parent
     assert work_dir.name == 'Aho-Girl - 01'  # per-episode dir
@@ -24,7 +24,7 @@ def test_creates_subdirs(tmp_path):
     video = anime_dir / 'Show - 01.mkv'
     video.touch()
 
-    work_dir = create_working_dirs(video, tmp_path)
+    work_dir = create_work_dir(video, tmp_path)
 
     assert (work_dir / 'candidates').is_dir()
     assert (work_dir / 'reference').is_dir()

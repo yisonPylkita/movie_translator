@@ -112,6 +112,29 @@ class SubtitleProcessor:
         )
 
     @staticmethod
+    def override_font_name(ass_file: Path, new_font_name: str) -> None:
+        """Replace all font names in ASS styles with the given font name."""
+        pysubs2 = get_pysubs2()
+        if pysubs2 is None:
+            raise SubtitleProcessingError('pysubs2 library not available')
+
+        try:
+            subs = pysubs2.load(str(ass_file))
+        except Exception as e:
+            raise SubtitleProcessingError(f'Failed to load subtitle file: {e}') from e
+
+        for style in subs.styles.values():
+            if hasattr(style, 'fontname'):
+                style.fontname = new_font_name
+
+        try:
+            subs.save(str(ass_file))
+        except Exception as e:
+            raise SubtitleProcessingError(f'Failed to save subtitle file: {e}') from e
+
+        logger.debug(f'   - Overrode font name to "{new_font_name}" in {ass_file.name}')
+
+    @staticmethod
     def validate_cleaned_subtitles(original_file: Path, cleaned_file: Path) -> None:
         """Validate that cleaned subtitles maintain proper timing coverage."""
         pysubs2 = get_pysubs2()

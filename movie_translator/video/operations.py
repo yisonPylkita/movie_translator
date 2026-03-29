@@ -14,22 +14,25 @@ class VideoOperations:
     def create_clean_video(
         self,
         original_video: Path,
-        english_ass: Path,
-        polish_ass: Path,
+        subtitle_files: list[SubtitleFile],
         output_video: Path,
+        font_attachments: list[Path] | None = None,
+        original_sub_index: int | None = None,
+        original_sub_title: str | None = None,
     ) -> None:
         logger.info(f'🎬 Creating clean video: {output_video.name}')
-        logger.info('   - Adding: Polish (AI) + English dialogue (Polish as default)')
-
-        subtitle_files = [
-            SubtitleFile(polish_ass, 'pol', 'Polish (AI)', is_default=True),
-            SubtitleFile(english_ass, 'eng', 'English Dialogue', is_default=False),
-        ]
+        track_desc = ', '.join(f'{s.title} ({s.language})' for s in subtitle_files)
+        if original_sub_title:
+            track_desc = f'{original_sub_title}, {track_desc}'
+        logger.info(f'   - Adding: {track_desc}')
 
         mux_video_with_subtitles(
             original_video,
             subtitle_files,
             output_video,
+            font_attachments=font_attachments,
+            original_sub_index=original_sub_index,
+            original_sub_title=original_sub_title,
         )
 
         logger.info('   - Clean video merge successful')
@@ -38,7 +41,9 @@ class VideoOperations:
             size_mb = output_video.stat().st_size / 1024 / 1024
             logger.info(f'   - Output size: {size_mb:.1f} MB')
 
-    def verify_result(self, output_video: Path) -> None:
+    def verify_result(
+        self, output_video: Path, expected_tracks: list[SubtitleFile] | None = None
+    ) -> None:
         logger.info(f'🔍 Verifying result: {output_video.name}')
 
         if not output_video.exists():
@@ -51,7 +56,8 @@ class VideoOperations:
         for track in subtitle_tracks:
             logger.debug(f'     * Track {track["index"]}: {track["title"]} ({track["language"]})')
 
-        self._validate_track_order(subtitle_tracks)
+        if expected_tracks is not None:
+            self._validate_tracks(subtitle_tracks, expected_tracks)
 
     def _get_subtitle_tracks(self, video_info: dict[str, Any]) -> list[dict[str, Any]]:
         streams = video_info.get('streams', [])
@@ -70,19 +76,18 @@ class VideoOperations:
 
         return subtitle_tracks
 
-    def _validate_track_order(self, subtitle_tracks: list[dict[str, Any]]) -> None:
-        if len(subtitle_tracks) != 2:
-            raise VideoOperationError(f'Expected 2 subtitle tracks, found {len(subtitle_tracks)}')
+    def _validate_tracks(self, actual: list[dict[str, Any]], expected: list[SubtitleFile]) -> None:
+        if len(actual) != len(expected):
+            raise VideoOperationError(
+                f'Expected {len(expected)} subtitle tracks, found {len(actual)}'
+            )
 
-        polish_first = subtitle_tracks[0]['language'] == 'pol'
-        english_second = subtitle_tracks[1]['language'] == 'eng'
+        for i, (track, exp) in enumerate(zip(actual, expected, strict=True)):
+            if track['language'] != exp.language:
+                raise VideoOperationError(
+                    f'Track {i + 1}: expected language "{exp.language}", '
+                    f'found "{track["language"]}"'
+                )
 
-        if polish_first and english_second:
-            logger.info('   ✅ Perfect! Polish (AI) as default track + English dialogue')
-            return
-
-        raise VideoOperationError(
-            f'Incorrect track order. Expected: Polish first, English second. '
-            f'Found: Track 1={subtitle_tracks[0]["language"]}, '
-            f'Track 2={subtitle_tracks[1]["language"]}'
-        )
+        track_names = ', '.join(f'{t["title"]} ({t["language"]})' for t in actual)
+        logger.info(f'   ✅ Verified: {track_names}')

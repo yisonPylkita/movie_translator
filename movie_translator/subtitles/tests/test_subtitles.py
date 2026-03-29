@@ -130,6 +130,22 @@ Dialogue: 0,0:00:01.00,0:00:03.00,Signs,,0,0,0,,EPISODE 1
         assert 'Cześć' in content
 
 
+class TestFontOverride:
+    def test_override_font_name(self, create_ass_file):
+        ass_file = create_ass_file()
+        SubtitleProcessor.override_font_name(ass_file, 'DejaVu Sans')
+
+        import pysubs2
+
+        subs = pysubs2.load(str(ass_file))
+        for style in subs.styles.values():
+            assert style.fontname == 'DejaVu Sans'
+
+    def test_override_font_name_nonexistent_file(self, tmp_path):
+        with pytest.raises(SubtitleProcessingError):
+            SubtitleProcessor.override_font_name(tmp_path / 'nonexistent.ass', 'Arial')
+
+
 class TestSubtitleExtractor:
     def test_get_track_info(self, create_test_mkv):
         mkv_file = create_test_mkv(language='eng')
