@@ -48,7 +48,7 @@ def identify_media(video_path: Path) -> MediaIdentity:
     if container_episode and not episode:
         try:
             episode = int(container_episode)
-        except (ValueError, TypeError):
+        except ValueError, TypeError:
             pass
 
     anime_tag = ' [anime]' if is_anime else ''

@@ -42,7 +42,7 @@ class RateLimiter:
             try:
                 remaining_int = int(remaining)
                 reset_secs = float(reset)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 return
 
             if remaining_int <= 1 and reset_secs > 0:
