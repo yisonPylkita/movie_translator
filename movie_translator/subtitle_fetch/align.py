@@ -1,14 +1,19 @@
-"""Static offset realignment for fetched subtitles.
+"""Piecewise subtitle realignment for fetched subtitles.
 
 Compares a fetched subtitle file against a reference track (typically
-extracted from the video) and estimates a constant timing offset. If the
-offset is significant, shifts all events in the fetched file to align
-with the reference.
+extracted from the video) and estimates timing offsets. Handles the
+common case where the candidate was timed to a video source with the
+opening sequence (OP) removed, producing a different offset for pre-OP
+and post-OP content.
 
-Uses cross-correlation of binary activity vectors to find the shift that
-maximises overlap between the two subtitle tracks. This is robust to
-different line splitting, different line counts, and offsets comparable
-to the inter-line spacing.
+Algorithm:
+  1. Detect structural gaps (OP/ED) in the reference by finding large
+     dialogue-free intervals.
+  2. If no gap found, estimate a single global offset via cross-correlation.
+  3. If an OP gap is found, estimate separate offsets for the pre-OP and
+     post-OP segments. The post-OP search range accounts for the full
+     OP duration being removed.
+  4. Apply per-segment shifts to the subtitle file.
 """
 
 from __future__ import annotations
@@ -50,20 +55,14 @@ def estimate_offset(
     """Estimate static timing offset via cross-correlation.
 
     Builds binary activity vectors from both tracks and finds the shift
-    that maximises their overlap. This works regardless of how lines are
-    split and handles offsets of any size up to max_shift_ms.
+    that maximises their overlap.
 
     A positive result means the candidate is early (shift it later).
     A negative result means the candidate is late (shift it earlier).
 
-    Args:
-        ref_timestamps: Reference (start_ms, end_ms) pairs.
-        cand_timestamps: Candidate (start_ms, end_ms) pairs.
-        bin_size_ms: Resolution of the activity vectors.
-        max_shift_ms: Maximum offset to search in each direction.
-
     Returns:
-        Estimated offset in milliseconds, or None if inputs are empty.
+        Estimated offset in milliseconds, or None if inputs are empty
+        or the correlation quality is too low.
     """
     if not ref_timestamps or not cand_timestamps:
         return None
@@ -100,9 +99,7 @@ def estimate_offset(
             best_score = score
             best_shift = shift
 
-    # Quality check: reject if the peak overlap is too low relative to
-    # how much activity each track has. This catches spurious matches
-    # when the true offset exceeds the search window.
+    # Quality check: reject if the peak overlap is too low.
     ref_energy = float(np.dot(ref, ref))
     cand_energy = float(np.dot(cand, cand))
     if ref_energy == 0 or cand_energy == 0:
@@ -114,15 +111,151 @@ def estimate_offset(
     return best_shift * bin_size_ms
 
 
+# ---------------------------------------------------------------------------
+# OP gap detection
+# ---------------------------------------------------------------------------
+
+# Minimum dialogue-free interval to be considered an OP/ED gap.
+_MIN_GAP_MS = 60000
+
+# Only look for the OP gap in this time window of the reference track.
+_OP_SEARCH_START_MS = 30000  # 0:30 — OP rarely starts before 30s
+_OP_SEARCH_END_MS = 360000  # 6:00 — OP should be done by 6 min
+
+
+def detect_op_gap(
+    timestamps: list[tuple[int, int]],
+    min_gap_ms: int = _MIN_GAP_MS,
+    search_start_ms: int = _OP_SEARCH_START_MS,
+    search_end_ms: int = _OP_SEARCH_END_MS,
+) -> tuple[int, int] | None:
+    """Find the opening-sequence gap in a subtitle track.
+
+    Looks for the largest dialogue-free interval within the expected OP
+    time window. The gap boundaries are the end of the last pre-OP event
+    and the start of the first post-OP event.
+
+    Returns:
+        (gap_start_ms, gap_end_ms) or None if no qualifying gap found.
+    """
+    if not timestamps:
+        return None
+
+    # Sort by start time, use end times for gap measurement
+    events = sorted(timestamps, key=lambda t: t[0])
+
+    best_gap = None
+    best_gap_size = 0
+
+    for i in range(len(events) - 1):
+        _, end_i = events[i]
+        start_next, _ = events[i + 1]
+        gap_size = start_next - end_i
+
+        if gap_size < min_gap_ms:
+            continue
+        # The gap must start within the search window
+        if not (search_start_ms <= end_i <= search_end_ms):
+            continue
+        if gap_size > best_gap_size:
+            best_gap_size = gap_size
+            best_gap = (end_i, start_next)
+
+    return best_gap
+
+
+# ---------------------------------------------------------------------------
+# Piecewise offset estimation
+# ---------------------------------------------------------------------------
+
+
+def _estimate_segment_offset(
+    ref_timestamps: list[tuple[int, int]],
+    cand_timestamps: list[tuple[int, int]],
+    max_shift_ms: int,
+    bin_size_ms: int = 100,
+) -> int | None:
+    """Estimate offset for a specific segment's timestamps."""
+    if not ref_timestamps or not cand_timestamps:
+        return None
+
+    # Use the max end time across both as duration
+    duration = max(
+        max(e for _, e in ref_timestamps),
+        max(e for _, e in cand_timestamps),
+    )
+
+    ref_vec = _build_binary_vector(ref_timestamps, duration, bin_size_ms)
+    cand_vec = _build_binary_vector(cand_timestamps, duration, bin_size_ms)
+
+    if len(ref_vec) == 0 or len(cand_vec) == 0:
+        return None
+
+    max_len = max(len(ref_vec), len(cand_vec))
+    ref = np.zeros(max_len, dtype=np.float64)
+    cand = np.zeros(max_len, dtype=np.float64)
+    ref[: len(ref_vec)] = ref_vec
+    cand[: len(cand_vec)] = cand_vec
+
+    max_shift_bins = max_shift_ms // bin_size_ms
+    effective_max = min(max_shift_bins, max_len - 1)
+
+    best_score = -1.0
+    best_shift = 0
+
+    for shift in range(-effective_max, effective_max + 1):
+        if shift >= 0:
+            score = float(np.dot(ref[shift:], cand[: max_len - shift]))
+        else:
+            score = float(np.dot(ref[: max_len + shift], cand[-shift:]))
+        if score > best_score:
+            best_score = score
+            best_shift = shift
+
+    # Quality check
+    ref_energy = float(np.dot(ref, ref))
+    cand_energy = float(np.dot(cand, cand))
+    if ref_energy == 0 or cand_energy == 0:
+        return None
+    norm = math.sqrt(ref_energy * cand_energy)
+    if best_score / norm < 0.2:
+        return None
+
+    return best_shift * bin_size_ms
+
+
+def _apply_piecewise_offsets(
+    subtitle_path: Path,
+    boundary_ms: int,
+    pre_offset_ms: int,
+    post_offset_ms: int,
+) -> None:
+    """Shift events in a subtitle file with different offsets per segment.
+
+    Events with start time < boundary_ms are shifted by pre_offset_ms.
+    Events with start time >= boundary_ms are shifted by post_offset_ms.
+
+    Modifies the file in place.
+    """
+    pysubs2 = get_pysubs2()
+    if pysubs2 is None:
+        return
+
+    subs = pysubs2.load(str(subtitle_path))
+    for event in subs:
+        if event.start < boundary_ms:
+            event.start += pre_offset_ms
+            event.end += pre_offset_ms
+        else:
+            event.start += post_offset_ms
+            event.end += post_offset_ms
+    subs.save(str(subtitle_path))
+
+
 def apply_offset(subtitle_path: Path, offset_ms: int) -> None:
     """Shift all events in a subtitle file by the given offset.
 
     Modifies the file in place.
-
-    Args:
-        subtitle_path: Path to the subtitle file.
-        offset_ms: Offset in milliseconds (positive = shift later,
-            negative = shift earlier).
     """
     pysubs2 = get_pysubs2()
     if pysubs2 is None:
@@ -133,57 +266,151 @@ def apply_offset(subtitle_path: Path, offset_ms: int) -> None:
     subs.save(str(subtitle_path))
 
 
-# Offsets below this threshold are imperceptible and not worth correcting.
-_MIN_OFFSET_MS = 150
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
-# Offsets above this threshold likely indicate a misidentified subtitle
-# rather than a simple release-cut difference.
-_MAX_OFFSET_MS = 15000
+_MIN_OFFSET_MS = 150
 
 
 def align_to_reference(
     subtitle_path: Path,
     reference_path: Path,
     min_offset_ms: int = _MIN_OFFSET_MS,
-    max_offset_ms: int = _MAX_OFFSET_MS,
 ) -> int:
-    """Estimate and apply a static timing offset to align a subtitle file.
+    """Align a subtitle file to a reference track, handling OP-removed sources.
 
-    Compares the subtitle against a reference track, estimates the offset,
-    and shifts the subtitle file in place if the offset is significant.
+    Detects if the reference has an opening-sequence gap. If so, estimates
+    separate offsets for the pre-OP and post-OP segments and applies a
+    piecewise shift. Otherwise, falls back to a single global offset.
 
     Args:
         subtitle_path: Path to the subtitle file to realign.
         reference_path: Path to the reference subtitle file.
         min_offset_ms: Minimum absolute offset to apply (below this is noise).
-        max_offset_ms: Maximum absolute offset to trust (above this is suspect).
 
     Returns:
-        The applied offset in milliseconds (0 if no correction was needed).
+        The applied offset in milliseconds. For piecewise alignment,
+        returns the post-OP offset (the dominant one). Returns 0 if no
+        correction was needed.
     """
     ref_timestamps, _ = extract_timestamps(reference_path)
     cand_timestamps, _ = extract_timestamps(subtitle_path)
 
-    offset = estimate_offset(ref_timestamps, cand_timestamps, max_shift_ms=max_offset_ms)
+    if not ref_timestamps or not cand_timestamps:
+        return 0
+
+    op_gap = detect_op_gap(ref_timestamps)
+
+    if op_gap is not None:
+        return _align_piecewise(
+            subtitle_path, ref_timestamps, cand_timestamps, op_gap, min_offset_ms
+        )
+
+    return _align_global(subtitle_path, ref_timestamps, cand_timestamps, min_offset_ms)
+
+
+def _align_global(
+    subtitle_path: Path,
+    ref_timestamps: list[tuple[int, int]],
+    cand_timestamps: list[tuple[int, int]],
+    min_offset_ms: int,
+) -> int:
+    """Single global offset alignment (no OP gap detected)."""
+    offset = estimate_offset(ref_timestamps, cand_timestamps, max_shift_ms=15000)
 
     if offset is None:
-        logger.debug('Offset estimation failed: empty inputs')
+        logger.debug('Global offset estimation failed')
         return 0
 
-    abs_offset = abs(offset)
-
-    if abs_offset < min_offset_ms:
-        logger.debug('Offset %+dms below threshold (%dms), skipping', offset, min_offset_ms)
-        return 0
-
-    if abs_offset > max_offset_ms:
-        logger.warning(
-            'Offset %+dms exceeds safety limit (%dms), skipping realignment',
-            offset,
-            max_offset_ms,
-        )
+    if abs(offset) < min_offset_ms:
+        logger.debug('Global offset %+dms below threshold, skipping', offset)
         return 0
 
     apply_offset(subtitle_path, offset)
-    logger.info('Realigned subtitle by %+dms', offset)
+    logger.info('Realigned subtitle by %+dms (global)', offset)
     return offset
+
+
+def _align_piecewise(
+    subtitle_path: Path,
+    ref_timestamps: list[tuple[int, int]],
+    cand_timestamps: list[tuple[int, int]],
+    op_gap: tuple[int, int],
+    min_offset_ms: int,
+) -> int:
+    """Piecewise alignment for OP-removed subtitle sources."""
+    gap_start, gap_end = op_gap
+    op_duration = gap_end - gap_start
+
+    logger.info(
+        'Detected OP gap in reference: %d-%dms (%.1fs)',
+        gap_start,
+        gap_end,
+        op_duration / 1000,
+    )
+
+    # Split reference into pre-OP and post-OP segments
+    pre_op_ref = [(s, e) for s, e in ref_timestamps if e <= gap_start]
+    post_op_ref = [(s, e) for s, e in ref_timestamps if s >= gap_end]
+
+    # Estimate pre-OP offset (small search range — just a few seconds)
+    pre_offset = _estimate_segment_offset(pre_op_ref, cand_timestamps, max_shift_ms=15000)
+
+    # Estimate post-OP offset (large search range — OP could be removed)
+    post_offset = _estimate_segment_offset(
+        post_op_ref, cand_timestamps, max_shift_ms=op_duration + 30000
+    )
+
+    if pre_offset is None and post_offset is None:
+        logger.debug('Piecewise offset estimation failed for both segments')
+        return 0
+
+    # If one segment failed, use the other's offset for both
+    if pre_offset is None:
+        pre_offset = post_offset
+    if post_offset is None:
+        post_offset = pre_offset
+
+    # Check if the offsets are actually different (piecewise needed)
+    if abs(pre_offset - post_offset) < min_offset_ms:
+        # Offsets are the same — just do a global shift
+        offset = post_offset  # post-OP has more lines, more reliable
+        if abs(offset) < min_offset_ms:
+            return 0
+        apply_offset(subtitle_path, offset)
+        logger.info('Realigned subtitle by %+dms (uniform)', offset)
+        return offset
+
+    # Determine the boundary in the candidate timeline.
+    # Pre-OP candidate events end at approximately: gap_start - pre_offset
+    # Post-OP candidate events start at approximately: gap_end - post_offset
+    # Use the midpoint as the boundary.
+    pre_op_cand_end = gap_start - pre_offset
+    post_op_cand_start = gap_end - post_offset
+    boundary = (pre_op_cand_end + post_op_cand_start) // 2
+
+    logger.info(
+        'Piecewise alignment: pre-OP %+dms, post-OP %+dms, boundary at %dms',
+        pre_offset,
+        post_offset,
+        boundary,
+    )
+
+    # Only apply if at least one offset is significant
+    pre_significant = abs(pre_offset) >= min_offset_ms
+    post_significant = abs(post_offset) >= min_offset_ms
+
+    if not pre_significant and not post_significant:
+        return 0
+
+    effective_pre = pre_offset if pre_significant else 0
+    effective_post = post_offset if post_significant else 0
+
+    _apply_piecewise_offsets(subtitle_path, boundary, effective_pre, effective_post)
+    logger.info(
+        'Applied piecewise realignment: pre-OP %+dms, post-OP %+dms',
+        effective_pre,
+        effective_post,
+    )
+    return effective_post  # Return the dominant offset

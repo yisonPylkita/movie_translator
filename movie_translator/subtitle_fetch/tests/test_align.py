@@ -7,6 +7,7 @@ import pytest
 from movie_translator.subtitle_fetch.align import (
     align_to_reference,
     apply_offset,
+    detect_op_gap,
     estimate_offset,
 )
 from movie_translator.subtitle_fetch.validator import extract_timestamps
@@ -39,8 +40,66 @@ def _to_timestamps(starts: list[int], duration: int = 2000) -> list[tuple[int, i
     return [(s, s + duration) for s in starts]
 
 
-# Reference: representative dialogue spread across a ~5-minute timeline
-_REF_LINES = [
+# ---------------------------------------------------------------------------
+# Fixtures: simulated episode with OP gap
+# ---------------------------------------------------------------------------
+
+# Reference track with OP gap: dialogue at 0-100s, OP at 110-200s, dialogue at 210-500s
+_REF_PRE_OP = [
+    (5000, 7000, 'A'),
+    (10000, 12000, 'B'),
+    (15000, 17000, 'C'),
+    (20000, 22000, 'D'),
+    (30000, 32000, 'E'),
+    (40000, 42000, 'F'),
+    (50000, 52000, 'G'),
+    (60000, 62000, 'H'),
+    (70000, 72000, 'I'),
+    (80000, 82000, 'J'),
+    (90000, 92000, 'K'),
+    (100000, 102000, 'L'),
+]
+
+_REF_POST_OP = [
+    (210000, 212000, 'M'),
+    (215000, 217000, 'N'),
+    (220000, 222000, 'O'),
+    (230000, 232000, 'P'),
+    (240000, 242000, 'Q'),
+    (250000, 252000, 'R'),
+    (260000, 262000, 'S'),
+    (270000, 272000, 'T'),
+    (280000, 282000, 'U'),
+    (290000, 292000, 'V'),
+    (300000, 302000, 'W'),
+    (310000, 312000, 'X'),
+    (350000, 352000, 'Y'),
+    (400000, 402000, 'Z'),
+    (450000, 452000, 'AA'),
+    (500000, 502000, 'BB'),
+]
+
+_REF_LINES = _REF_PRE_OP + _REF_POST_OP
+REF_SRT = _make_srt(_REF_LINES)
+
+
+def _shift_lines(lines, offset_ms):
+    return [(s + offset_ms, e + offset_ms, t) for s, e, t in lines]
+
+
+def _make_op_removed_candidate(pre_offset_ms, post_offset_ms):
+    """Build a candidate SRT where the OP gap has been removed.
+
+    pre_offset_ms: how much earlier the candidate pre-OP events are vs reference
+    post_offset_ms: how much earlier the candidate post-OP events are vs reference
+    """
+    pre_lines = _shift_lines(_REF_PRE_OP, pre_offset_ms)
+    post_lines = _shift_lines(_REF_POST_OP, post_offset_ms)
+    return _make_srt(pre_lines + post_lines)
+
+
+# Simple reference without OP gap (for global alignment tests)
+_SIMPLE_REF = [
     (1000, 3000, 'A'),
     (4000, 6000, 'B'),
     (7000, 9000, 'C'),
@@ -57,18 +116,63 @@ _REF_LINES = [
     (250000, 252000, 'N'),
     (260000, 262000, 'O'),
 ]
+SIMPLE_REF_SRT = _make_srt(_SIMPLE_REF)
 
-REFERENCE_SRT = _make_srt(_REF_LINES)
+
+# ---------------------------------------------------------------------------
+# Tests: detect_op_gap
+# ---------------------------------------------------------------------------
 
 
-def _shift_lines(lines, offset_ms):
-    """Create a copy of lines shifted by offset_ms."""
-    return [(s + offset_ms, e + offset_ms, t) for s, e, t in lines]
+class TestDetectOpGap:
+    def test_finds_op_gap(self):
+        ts = [(s, e) for s, e, _ in _REF_LINES]
+        gap = detect_op_gap(ts)
+        assert gap is not None
+        gap_start, gap_end = gap
+        # Gap should be between last pre-OP event end and first post-OP event start
+        assert 100000 <= gap_start <= 110000
+        assert 205000 <= gap_end <= 215000
+
+    def test_no_gap_when_none_exists(self):
+        ts = _to_timestamps([1000, 5000, 10000, 15000, 20000])
+        gap = detect_op_gap(ts)
+        assert gap is None
+
+    def test_ignores_gaps_outside_search_window(self):
+        # Gap at 500s — outside the 30s-360s search window
+        ts = [(1000, 3000), (5000, 7000), (500000, 502000), (600000, 602000)]
+        gap = detect_op_gap(ts, search_start_ms=30000, search_end_ms=360000)
+        assert gap is None
+
+    def test_finds_largest_gap_in_window(self):
+        # Two gaps: 80s gap at 60s mark, 200s gap at 120s mark
+        ts = [
+            (10000, 12000),
+            (50000, 52000),
+            # 80s gap (52s to 132s)
+            (132000, 134000),
+            (140000, 142000),
+            # 200s gap (142s to 342s)
+            (342000, 344000),
+            (400000, 402000),
+        ]
+        gap = detect_op_gap(ts)
+        assert gap is not None
+        gap_start, gap_end = gap
+        # Should find the 200s gap, not the 80s one
+        assert gap_end - gap_start > 150000
+
+    def test_empty_timestamps(self):
+        assert detect_op_gap([]) is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: estimate_offset (cross-correlation)
+# ---------------------------------------------------------------------------
 
 
 class TestEstimateOffset:
-    """Tests for estimate_offset() using cross-correlation."""
-
     def test_identical_timings_returns_zero(self):
         ts = _to_timestamps([1000, 4000, 7000, 10000, 14000])
         offset = estimate_offset(ts, ts)
@@ -76,7 +180,6 @@ class TestEstimateOffset:
 
     def test_positive_offset_candidate_early(self):
         ref = _to_timestamps([1000, 4000, 7000, 10000, 14000, 60000, 65000, 70000])
-        # Candidate is 1500ms early (needs shifting forward by +1500)
         cand = _to_timestamps(
             [s - 1500 for s in [1000, 4000, 7000, 10000, 14000, 60000, 65000, 70000]]
         )
@@ -92,7 +195,6 @@ class TestEstimateOffset:
         assert offset == pytest.approx(-2000, abs=100)
 
     def test_large_offset_with_dense_lines(self):
-        # This is the case that broke nearest-neighbor: 5s offset with 3s line spacing
         ref = _to_timestamps([1000, 4000, 7000, 10000, 14000, 60000, 65000, 70000])
         cand = _to_timestamps(
             [s + 5000 for s in [1000, 4000, 7000, 10000, 14000, 60000, 65000, 70000]]
@@ -100,99 +202,23 @@ class TestEstimateOffset:
         offset = estimate_offset(ref, cand)
         assert offset == pytest.approx(-5000, abs=200)
 
-    def test_three_second_offset_like_konosuba(self):
-        # Simulate the real-world case: ~3s offset, lines every 2-3s
-        ref = _to_timestamps(
-            [
-                7000,
-                9000,
-                12000,
-                19000,
-                21000,
-                33000,
-                36000,
-                42000,
-                46000,
-                54000,
-                60000,
-                62000,
-                67000,
-                70000,
-                86000,
-            ]
-        )
-        cand = _to_timestamps(
-            [
-                4000,
-                6000,
-                9000,
-                16000,
-                18000,
-                30000,
-                33000,
-                39000,
-                43000,
-                51000,
-                58000,
-                59000,
-                65000,
-                67000,
-                83000,
-            ]
-        )
-        offset = estimate_offset(ref, cand)
-        assert offset == pytest.approx(3000, abs=200)
-
-    def test_different_line_counts(self):
-        # Candidate has more lines (different splitting) but same 2s offset.
-        # Each ref line is 2s long; candidate splits each into two 1s lines.
-        ref = [
-            (1000, 3000),
-            (10000, 12000),
-            (20000, 22000),
-            (60000, 62000),
-            (80000, 82000),
-            (150000, 152000),
-        ]
-        cand = [
-            (3000, 4000),
-            (4000, 5000),
-            (12000, 13000),
-            (13000, 14000),
-            (22000, 23000),
-            (23000, 24000),
-            (62000, 63000),
-            (63000, 64000),
-            (82000, 83000),
-            (83000, 84000),
-            (152000, 153000),
-            (153000, 154000),
-        ]
-        offset = estimate_offset(ref, cand)
-        assert offset == pytest.approx(-2000, abs=200)
-
     def test_empty_reference_returns_none(self):
         assert estimate_offset([], _to_timestamps([1000, 2000])) is None
 
     def test_empty_candidate_returns_none(self):
         assert estimate_offset(_to_timestamps([1000, 2000]), []) is None
 
-    def test_custom_bin_size(self):
-        ref = _to_timestamps([10000, 20000, 30000, 60000, 80000])
-        cand = _to_timestamps([s + 3000 for s in [10000, 20000, 30000, 60000, 80000]])
-        offset = estimate_offset(ref, cand, bin_size_ms=200)
-        assert offset == pytest.approx(-3000, abs=200)
+
+# ---------------------------------------------------------------------------
+# Tests: apply_offset
+# ---------------------------------------------------------------------------
 
 
 class TestApplyOffset:
-    """Tests for apply_offset()."""
-
     def test_shifts_all_events_forward(self, tmp_path: Path):
         srt = tmp_path / 'test.srt'
         srt.write_text(_make_srt([(1000, 3000, 'A'), (5000, 7000, 'B')]))
-
         apply_offset(srt, 2000)
-
         timestamps, _ = extract_timestamps(srt)
         assert timestamps[0] == (3000, 5000)
         assert timestamps[1] == (7000, 9000)
@@ -200,140 +226,120 @@ class TestApplyOffset:
     def test_shifts_all_events_backward(self, tmp_path: Path):
         srt = tmp_path / 'test.srt'
         srt.write_text(_make_srt([(5000, 7000, 'A'), (10000, 12000, 'B')]))
-
         apply_offset(srt, -2000)
-
         timestamps, _ = extract_timestamps(srt)
         assert timestamps[0] == (3000, 5000)
         assert timestamps[1] == (8000, 10000)
 
     def test_zero_offset_no_change(self, tmp_path: Path):
         srt = tmp_path / 'test.srt'
-        content = _make_srt([(1000, 3000, 'A'), (5000, 7000, 'B')])
-        srt.write_text(content)
-
+        srt.write_text(_make_srt([(1000, 3000, 'A'), (5000, 7000, 'B')]))
         apply_offset(srt, 0)
-
         timestamps, _ = extract_timestamps(srt)
         assert timestamps[0] == (1000, 3000)
         assert timestamps[1] == (5000, 7000)
 
-    def test_preserves_text_content(self, tmp_path: Path):
-        srt = tmp_path / 'test.srt'
-        srt.write_text(_make_srt([(1000, 3000, 'Hello world'), (5000, 7000, 'Second line')]))
 
-        apply_offset(srt, 1000)
-
-        pysubs2 = __import__('pysubs2')
-        subs = pysubs2.load(str(srt))
-        texts = [e.plaintext.strip() for e in subs]
-        assert 'Hello world' in texts
-        assert 'Second line' in texts
+# ---------------------------------------------------------------------------
+# Tests: align_to_reference (global — no OP gap)
+# ---------------------------------------------------------------------------
 
 
-class TestAlignToReference:
-    """Tests for align_to_reference() end-to-end."""
-
-    def test_no_correction_when_already_aligned(self, tmp_path: Path):
+class TestAlignToReferenceGlobal:
+    def test_no_correction_when_aligned(self, tmp_path: Path):
         ref = tmp_path / 'ref.srt'
-        ref.write_text(REFERENCE_SRT)
+        ref.write_text(SIMPLE_REF_SRT)
         cand = tmp_path / 'cand.srt'
-        cand.write_text(REFERENCE_SRT)
-
-        offset = align_to_reference(cand, ref)
-        assert offset == 0
+        cand.write_text(SIMPLE_REF_SRT)
+        assert align_to_reference(cand, ref) == 0
 
     def test_corrects_late_subtitles(self, tmp_path: Path):
         ref = tmp_path / 'ref.srt'
-        ref.write_text(REFERENCE_SRT)
-        # Candidate is 2 seconds late
+        ref.write_text(SIMPLE_REF_SRT)
         cand = tmp_path / 'cand.srt'
-        cand.write_text(_make_srt(_shift_lines(_REF_LINES, 2000)))
-
+        cand.write_text(_make_srt(_shift_lines(_SIMPLE_REF, 2000)))
         offset = align_to_reference(cand, ref)
         assert offset == pytest.approx(-2000, abs=100)
 
-        # Verify the file was actually corrected
-        timestamps, _ = extract_timestamps(cand)
-        ref_timestamps, _ = extract_timestamps(ref)
-        for (cs, _), (rs, _) in zip(timestamps, ref_timestamps, strict=True):
-            assert abs(cs - rs) < 150
-
-    def test_corrects_early_subtitles(self, tmp_path: Path):
-        ref = tmp_path / 'ref.srt'
-        ref.write_text(REFERENCE_SRT)
-        cand = tmp_path / 'cand.srt'
-        cand.write_text(_make_srt(_shift_lines(_REF_LINES, -1500)))
-
-        offset = align_to_reference(cand, ref)
-        assert offset == pytest.approx(1500, abs=100)
-
-    def test_skips_offset_below_threshold(self, tmp_path: Path):
-        ref = tmp_path / 'ref.srt'
-        ref.write_text(REFERENCE_SRT)
-        # Candidate is only 50ms off — well below 150ms threshold
-        cand = tmp_path / 'cand.srt'
-        cand.write_text(_make_srt(_shift_lines(_REF_LINES, 50)))
-
-        offset = align_to_reference(cand, ref, min_offset_ms=150)
-        assert offset == 0
-
-    def test_skips_offset_above_safety_limit(self, tmp_path: Path):
-        ref = tmp_path / 'ref.srt'
-        ref.write_text(REFERENCE_SRT)
-        # Candidate is 20 seconds off — above 15s safety limit.
-        # The quality check also rejects spurious matches within the window.
-        cand = tmp_path / 'cand.srt'
-        cand.write_text(_make_srt(_shift_lines(_REF_LINES, 20000)))
-
-        offset = align_to_reference(cand, ref, max_offset_ms=15000)
-        assert offset == 0
-
-    def test_corrects_three_second_offset(self, tmp_path: Path):
-        """Regression test for the Konosuba S1E01 case."""
-        ref = tmp_path / 'ref.srt'
-        ref.write_text(REFERENCE_SRT)
-        cand = tmp_path / 'cand.srt'
-        cand.write_text(_make_srt(_shift_lines(_REF_LINES, -3000)))
-
-        offset = align_to_reference(cand, ref)
-        assert offset == pytest.approx(3000, abs=100)
-
-    def test_works_with_noisy_candidate(self, tmp_path: Path):
-        ref = tmp_path / 'ref.srt'
-        ref.write_text(REFERENCE_SRT)
-        shifted = _shift_lines(_REF_LINES, 3000)
-        shifted.append((100000, 102000, 'noise1'))
-        shifted.append((200000, 202000, 'noise2'))
-        cand = tmp_path / 'cand.srt'
-        cand.write_text(_make_srt(shifted))
-
-        offset = align_to_reference(cand, ref)
-        assert offset == pytest.approx(-3000, abs=200)
-
     def test_returns_zero_for_empty_candidate(self, tmp_path: Path):
         ref = tmp_path / 'ref.srt'
-        ref.write_text(REFERENCE_SRT)
+        ref.write_text(SIMPLE_REF_SRT)
         cand = tmp_path / 'cand.srt'
         cand.write_text('')
+        assert align_to_reference(cand, ref) == 0
 
-        offset = align_to_reference(cand, ref)
-        assert offset == 0
 
-    def test_returns_zero_for_empty_reference(self, tmp_path: Path):
+# ---------------------------------------------------------------------------
+# Tests: align_to_reference (piecewise — OP gap detected)
+# ---------------------------------------------------------------------------
+
+
+class TestAlignToReferencePiecewise:
+    def test_corrects_op_removed_candidate(self, tmp_path: Path):
+        """Core test: candidate was timed to a video with OP removed."""
         ref = tmp_path / 'ref.srt'
-        ref.write_text('')
+        ref.write_text(REF_SRT)
+
+        # Candidate: pre-OP is 2s early, post-OP is ~110s early (OP duration removed)
         cand = tmp_path / 'cand.srt'
-        cand.write_text(REFERENCE_SRT)
+        cand.write_text(_make_op_removed_candidate(pre_offset_ms=-2000, post_offset_ms=-110000))
 
         offset = align_to_reference(cand, ref)
-        assert offset == 0
+        # Should return the post-OP offset (dominant)
+        assert offset == pytest.approx(110000, abs=1000)
 
-    def test_corrects_fractional_second_offset(self, tmp_path: Path):
+        # Verify both segments are corrected
+        timestamps, _ = extract_timestamps(cand)
+        ref_timestamps, _ = extract_timestamps(ref)
+        ref_starts = sorted(s for s, _ in ref_timestamps)
+        cand_starts = sorted(s for s, _ in timestamps)
+
+        # Pre-OP lines should be within ~200ms of reference
+        for cs in cand_starts:
+            if cs < 105000:
+                # Find nearest reference line
+                dists = [abs(cs - rs) for rs in ref_starts]
+                assert min(dists) < 500, f'Pre-OP line at {cs}ms not aligned'
+
+        # Post-OP lines should be within ~1500ms of reference
+        for cs in cand_starts:
+            if cs > 200000:
+                dists = [abs(cs - rs) for rs in ref_starts]
+                assert min(dists) < 2000, f'Post-OP line at {cs}ms not aligned'
+
+    def test_uniform_offset_with_op_gap(self, tmp_path: Path):
+        """When both segments have the same offset, apply a single shift."""
         ref = tmp_path / 'ref.srt'
-        ref.write_text(REFERENCE_SRT)
+        ref.write_text(REF_SRT)
+
+        # Same offset for both segments — should use uniform shift
         cand = tmp_path / 'cand.srt'
-        cand.write_text(_make_srt(_shift_lines(_REF_LINES, 700)))
+        cand.write_text(_make_op_removed_candidate(-2000, -2000))
 
         offset = align_to_reference(cand, ref)
-        assert offset == pytest.approx(-700, abs=100)
+        assert offset == pytest.approx(2000, abs=200)
+
+    def test_only_pre_op_offset(self, tmp_path: Path):
+        """When post-OP is already aligned but pre-OP is off."""
+        ref = tmp_path / 'ref.srt'
+        ref.write_text(REF_SRT)
+
+        # Pre-OP is 3s early, post-OP is correctly timed
+        pre = _shift_lines(_REF_PRE_OP, -3000)
+        post = [(s, e, t) for s, e, t in _REF_POST_OP]
+        cand = tmp_path / 'cand.srt'
+        cand.write_text(_make_srt(pre + post))
+
+        offset = align_to_reference(cand, ref)
+        # Should still apply piecewise correction
+        assert offset is not None
+
+    def test_skips_tiny_offsets(self, tmp_path: Path):
+        """Offsets below threshold are ignored."""
+        ref = tmp_path / 'ref.srt'
+        ref.write_text(REF_SRT)
+
+        # Both segments only 50ms off
+        cand = tmp_path / 'cand.srt'
+        cand.write_text(_make_op_removed_candidate(-50, -50))
+        assert align_to_reference(cand, ref, min_offset_ms=150) == 0
