@@ -5,6 +5,11 @@ from ..logging import logger
 from ..subtitles import SubtitleProcessor
 from ..types import SubtitleFile
 
+# Reliable fallback font for AI-translated subtitles. Used when no system
+# font with Polish support was detected. Must be widely available across
+# players and operating systems.
+_DEFAULT_AI_FONT = 'Arial'
+
 
 class CreateTracksStage:
     name = 'create_tracks'
@@ -30,8 +35,13 @@ class CreateTracksStage:
             ai_polish_ass,
             replace_chars,
         )
-        if ctx.font_info.fallback_font_family:
-            SubtitleProcessor.override_font_name(ai_polish_ass, ctx.font_info.fallback_font_family)
+
+        # The AI subtitle inherits styles from the English source, which
+        # often uses custom fansub fonts. These may not be available to the
+        # player for the AI track (embedded fonts apply to the original track
+        # only). Always set a reliable, widely available font.
+        ai_font = ctx.font_info.fallback_font_family or _DEFAULT_AI_FONT
+        SubtitleProcessor.override_font_name(ai_polish_ass, ai_font)
 
         # Build track list
         fetched_pol_list = ctx.fetched_subtitles.get('pol', []) if ctx.fetched_subtitles else []
