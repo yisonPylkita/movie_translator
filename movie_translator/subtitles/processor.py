@@ -65,6 +65,12 @@ class SubtitleProcessor:
         new_subs.info = original_subs.info.copy()
         new_subs.styles = original_subs.styles.copy()
 
+        # Use the source file's primary dialogue style. Fall back to
+        # 'Default' only if no styles are defined (e.g., SRT source).
+        dialogue_style = 'Default'
+        if original_subs.styles:
+            dialogue_style = next(iter(original_subs.styles))
+
         for line in dialogue_lines:
             text = line.text
             if text_transform:
@@ -74,7 +80,7 @@ class SubtitleProcessor:
             event = pysubs2.SSAEvent(
                 start=line.start_ms,
                 end=line.end_ms,
-                style='Default',
+                style=dialogue_style,
                 text=text,
             )
             new_subs.append(event)
