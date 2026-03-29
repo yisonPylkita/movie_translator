@@ -52,11 +52,13 @@ class ExtractEnglishStage:
             extractor.extract_subtitle(ctx.video_path, eng_track['id'], output, subtitle_index)
             return output
 
-        # OCR fallback
-        if is_vision_ocr_available() and probe_for_burned_in_subtitles(ctx.video_path):
-            result = extract_burned_in_subtitles(ctx.video_path, ctx.work_dir)
-            if result:
-                ctx.ocr_results = result.ocr_results
-                return result.srt_path
+        # OCR fallback — only probe if the reference stage didn't already
+        if not ctx.burned_in_probed and is_vision_ocr_available():
+            ctx.burned_in_probed = True
+            if probe_for_burned_in_subtitles(ctx.video_path):
+                result = extract_burned_in_subtitles(ctx.video_path, ctx.work_dir)
+                if result:
+                    ctx.ocr_results = result.ocr_results
+                    return result.srt_path
 
         return None

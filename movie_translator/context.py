@@ -62,3 +62,4 @@ class PipelineContext:
     subtitle_tracks: list[SubtitleFile] | None = None
     ocr_results: list[OCRResult] | None = None
     inpainted_video: Path | None = None
+    burned_in_probed: bool = False  # True after burned-in subtitle probe has run

@@ -44,8 +44,9 @@ class ExtractReferenceStage:
             except Exception as e:
                 logger.warning(f'Failed to extract reference: {e}')
 
-        # Fall back to OCR if no embedded track
+        # Fall back to OCR if no embedded text track
         if ctx.reference_path is None and is_vision_ocr_available():
+            ctx.burned_in_probed = True
             if probe_for_burned_in_subtitles(ctx.video_path):
                 try:
                     result = extract_burned_in_subtitles(ctx.video_path, ref_dir)
