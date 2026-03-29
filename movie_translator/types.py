@@ -2,7 +2,9 @@ from pathlib import Path
 from typing import NamedTuple
 
 # Styles that indicate non-dialogue content (signs, songs, etc.)
-NON_DIALOGUE_STYLES = ('sign', 'song', 'title', 'op', 'ed')
+# Covers common fansub naming: OP/ED/IN (insert song) layers with
+# romaji (OPRO/INRO) and English (OPEN/INEN) suffixes.
+NON_DIALOGUE_STYLES = ('sign', 'song', 'title', 'op', 'ed', 'insert', 'inro', 'inen')
 
 # Polish diacritical characters
 POLISH_CHARS = 'ąćęłńóśźżĄĆĘŁŃÓŚŹŻ'

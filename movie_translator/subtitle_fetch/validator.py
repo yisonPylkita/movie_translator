@@ -21,6 +21,7 @@ import numpy as np
 from ..logging import logger
 from ..subtitles._pysubs2 import get_pysubs2
 from ..types import NON_DIALOGUE_STYLES
+from .style_classifier import classify_styles
 from .types import SubtitleMatch
 
 
@@ -262,14 +263,26 @@ def extract_timestamps(subtitle_path: Path) -> tuple[list[tuple[int, int]], int]
     except Exception:
         return [], 0
 
+    # Use structural classification (based on event properties) as primary,
+    # with keyword matching as a secondary filter for edge cases like
+    # unpositioned song lyrics.
+    dialogue_styles = classify_styles(subs)
+
     timestamps: list[tuple[int, int]] = []
     for event in subs:
         if not event.text or not event.text.strip():
             continue
 
-        # Filter non-dialogue styles
-        style = getattr(event, 'style', 'Default').lower()
-        if any(keyword in style for keyword in NON_DIALOGUE_STYLES):
+        style = getattr(event, 'style', 'Default')
+
+        # Primary: structural classifier
+        if style not in dialogue_styles:
+            continue
+
+        # Secondary: keyword filter catches song lyrics that look like
+        # dialogue structurally (unpositioned, normal text length)
+        style_lower = style.lower()
+        if any(keyword in style_lower for keyword in NON_DIALOGUE_STYLES):
             continue
 
         # Skip empty plaintext (after stripping ASS tags)
