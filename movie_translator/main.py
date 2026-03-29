@@ -51,6 +51,11 @@ def parse_args():
     parser.add_argument('--batch-size', type=int, default=16)
     parser.add_argument('--model', choices=['allegro'], default='allegro')
     parser.add_argument('--no-fetch', action='store_true')
+    parser.add_argument(
+        '--inpaint',
+        action='store_true',
+        help='Remove burned-in subtitles from video frames via inpainting (slow)',
+    )
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--keep-artifacts', action='store_true')
     parser.add_argument('--verbose', '-v', action='store_true')
@@ -108,6 +113,7 @@ def main():
             batch_size=args.batch_size,
             model=args.model,
             enable_fetch=not args.no_fetch,
+            enable_inpaint=args.inpaint,
             tracker=tracker,
         )
 

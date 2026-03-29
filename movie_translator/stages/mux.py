@@ -14,10 +14,12 @@ class MuxStage:
     name = 'mux'
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
-        # Use inpainted video if OCR was used
+        # Inpaint burned-in subtitles if OCR was used and inpainting is enabled.
+        # OCR is automatic (always runs when needed), but inpainting is opt-in
+        # via --inpaint because it's slow (rewrites the entire video).
         source_video = ctx.video_path
-        if ctx.ocr_results and ctx.inpainted_video is None:
-            logger.info('Removing burned-in subtitles...')
+        if ctx.ocr_results and ctx.config.enable_inpaint and ctx.inpainted_video is None:
+            logger.info('Removing burned-in subtitles via inpainting...')
             inpainted = ctx.work_dir / f'{ctx.video_path.stem}_inpainted{ctx.video_path.suffix}'
             remove_burned_in_subtitles(
                 ctx.video_path,

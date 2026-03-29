@@ -22,6 +22,7 @@ class TranslationPipeline:
         batch_size: int = 16,
         model: str = 'allegro',
         enable_fetch: bool = True,
+        enable_inpaint: bool = False,
         tracker=None,
     ):
         self.config = PipelineConfig(
@@ -29,6 +30,7 @@ class TranslationPipeline:
             batch_size=batch_size,
             model=model,
             enable_fetch=enable_fetch,
+            enable_inpaint=enable_inpaint,
         )
         self.tracker = tracker
         self.stages = [

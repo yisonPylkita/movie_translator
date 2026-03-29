@@ -18,6 +18,7 @@ class PipelineConfig:
     batch_size: int = 16
     model: str = 'allegro'
     enable_fetch: bool = True
+    enable_inpaint: bool = False
     dry_run: bool = False
 
 
