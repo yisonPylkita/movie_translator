@@ -1,5 +1,6 @@
 import gc
 import time
+import warnings
 from collections.abc import Callable
 
 import torch
@@ -17,6 +18,10 @@ from .models import (
     ModelConfig,
     get_local_model_path,
 )
+
+# Suppress the repeated "pip install sacremoses" warning from the Marian
+# tokenizer. sacremoses is optional and not needed for our use case.
+warnings.filterwarnings('ignore', message='.*sacremoses.*')
 
 # Callback receives (batch_num, total_batches, lines_per_second)
 ProgressCallback = Callable[[int, int, float], None]
