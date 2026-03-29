@@ -14,6 +14,37 @@ class SubtitleProcessingError(Exception):
     pass
 
 
+def _find_dialogue_style(subs) -> str:
+    """Find the best dialogue style name in an SSAFile.
+
+    Picks a style that exists in the file and is likely dialogue.
+    Handles ASS files (with named styles like 'Dialogue', 'Default'),
+    SRT-sourced files (always 'Default'), and edge cases where no
+    styles are defined.
+    """
+    if not subs.styles:
+        return 'Default'
+
+    # Prefer 'Default' if it exists (SRT, most Polish subs, simple ASS)
+    if 'Default' in subs.styles:
+        return 'Default'
+
+    # Look for common dialogue style names (case-sensitive match)
+    dialogue_names = ('Dialogue', 'Dialog', 'Main', 'Dialogi', 'Normal')
+    for name in dialogue_names:
+        if name in subs.styles:
+            return name
+
+    # Case-insensitive search for anything with 'dialog' or 'default'
+    for name in subs.styles:
+        lower = name.lower()
+        if 'dialog' in lower or 'default' in lower or 'main' in lower:
+            return name
+
+    # Last resort: use the first style and hope for the best
+    return next(iter(subs.styles))
+
+
 class SubtitleProcessor:
     """Unified subtitle processor for parsing, writing, and validation."""
 
@@ -65,11 +96,9 @@ class SubtitleProcessor:
         new_subs.info = original_subs.info.copy()
         new_subs.styles = original_subs.styles.copy()
 
-        # Use the source file's primary dialogue style. Fall back to
-        # 'Default' only if no styles are defined (e.g., SRT source).
-        dialogue_style = 'Default'
-        if original_subs.styles:
-            dialogue_style = next(iter(original_subs.styles))
+        # Pick the dialogue style from the source file. The style must
+        # exist in new_subs.styles or the player will use a bare fallback.
+        dialogue_style = _find_dialogue_style(new_subs)
 
         for line in dialogue_lines:
             text = line.text
