@@ -5,8 +5,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ..context import FetchedSubtitle, PipelineContext
 from ..logging import logger
-from ..subtitle_fetch import SubtitleFetcher, SubtitleValidator
-from ..subtitle_fetch.align import align_to_reference
+from ..subtitle_fetch import SubtitleFetcher, SubtitleValidator, align_ilass
+from ..subtitle_fetch.align import align_to_reference as align_builtin
 from ..subtitle_fetch.providers.animesub import AnimeSubProvider
 from ..subtitle_fetch.providers.napiprojekt import NapiProjektProvider
 from ..subtitle_fetch.providers.opensubtitles import OpenSubtitlesProvider
@@ -57,7 +57,7 @@ class FetchSubtitlesStage:
         # Realign fetched Polish subtitles against the English reference
         if ctx.reference_path and 'pol' in ctx.fetched_subtitles:
             for sub in ctx.fetched_subtitles['pol']:
-                align_to_reference(sub.path, ctx.reference_path)
+                self._align_subtitle(sub.path, ctx.reference_path)
 
         return ctx
 
@@ -93,6 +93,15 @@ class FetchSubtitlesStage:
 
         logger.info(f'Downloaded {len(downloaded)} candidate(s)')
         return downloaded
+
+    @staticmethod
+    def _align_subtitle(subtitle_path, reference_path):
+        """Align a subtitle file to a reference, trying ilass first."""
+        if align_ilass.is_available():
+            if align_ilass.align_to_reference(subtitle_path, reference_path):
+                return
+            logger.info('ilass alignment failed, falling back to built-in')
+        align_builtin(subtitle_path, reference_path)
 
     # Keep all Polish subs scoring at or above this threshold.
     _QUALITY_THRESHOLD = 0.8
