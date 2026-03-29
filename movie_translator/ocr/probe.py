@@ -18,13 +18,19 @@ def probe_for_burned_in_subtitles(
     video_path: Path,
     num_samples: int = 100,
     crop_ratio: float = 0.25,
-    min_text_frames: int = 1,
+    min_detection_rate: float = 0.08,
+    min_text_length: int = 8,
 ) -> bool:
     """Quick-check whether a video has burned-in subtitles.
 
     Extracts num_samples random frames from the subtitle region (bottom crop_ratio
-    of the frame), runs OCR on each, and returns True if at least min_text_frames
-    contain text.
+    of the frame), runs OCR on each, and returns True if enough frames contain
+    subtitle-like text.
+
+    Burned-in subtitles appear in ~30-60% of frames as full sentences.
+    Short text detections (date stamps, signs, OCR noise) are filtered out
+    by min_text_length. A min_detection_rate of 8% means at least 8 out of
+    100 frames must have subtitle-like text.
 
     This takes ~5-10 seconds instead of minutes for full OCR extraction.
     """
@@ -84,16 +90,23 @@ def probe_for_burned_in_subtitles(
             text = recognize_text(frame_path)
             frame_path.unlink(missing_ok=True)
 
-            if text and len(text.strip()) > 1:
+            # Filter short text (dates, signs, OCR noise). Real subtitle
+            # lines are typically 8+ characters.
+            if text and len(text.strip()) >= min_text_length:
                 text_count += 1
-                if text_count >= min_text_frames:
-                    logger.info(
-                        f'Burned-in subtitles detected (found text in {text_count}/{i + 1} '
-                        f'probed frames): "{text.strip()[:60]}..."'
-                    )
-                    return True
 
-        logger.info(f'No burned-in subtitles detected ({text_count}/{num_samples} frames had text)')
+        min_required = max(1, int(num_samples * min_detection_rate))
+        if text_count >= min_required:
+            logger.info(
+                f'Burned-in subtitles detected ({text_count}/{num_samples} frames '
+                f'had subtitle-like text)'
+            )
+            return True
+
+        logger.info(
+            f'No burned-in subtitles detected ({text_count}/{num_samples} frames '
+            f'had text, need {min_required}+)'
+        )
         return False
 
     finally:
