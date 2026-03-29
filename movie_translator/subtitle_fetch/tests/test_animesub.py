@@ -3,7 +3,12 @@ import zipfile
 from unittest.mock import patch
 
 from movie_translator.identifier.types import MediaIdentity
-from movie_translator.subtitle_fetch.providers.animesub import AnimeSubProvider, _ResultParser
+from movie_translator.subtitle_fetch.providers.animesub import (
+    AnimeSubProvider,
+    _entry_matches,
+    _extract_season_from_title,
+    _ResultParser,
+)
 
 SAMPLE_HTML = """
 <table class="Napisy">
@@ -104,6 +109,71 @@ class TestResultParser:
         assert parser.entries[1]['format'] == 'SubRip'
 
 
+class TestExtractSeasonFromTitle:
+    BASE = 'Kono Subarashii Sekai ni Shukufuku wo!'
+
+    def test_no_suffix_is_season_1(self):
+        assert _extract_season_from_title(self.BASE, f'{self.BASE} ep01') == 1
+
+    def test_number_suffix_2(self):
+        assert _extract_season_from_title(self.BASE, f'{self.BASE} 2 ep08') == 2
+
+    def test_number_suffix_3(self):
+        assert _extract_season_from_title(self.BASE, f'{self.BASE} 3 ep01') == 3
+
+    def test_explicit_s2(self):
+        assert _extract_season_from_title(self.BASE, f'{self.BASE} S2 ep01-10') == 2
+
+    def test_ova_returns_none(self):
+        assert _extract_season_from_title(self.BASE, f'{self.BASE} OVA ep01') is None
+
+    def test_movie_returns_none(self):
+        assert _extract_season_from_title(self.BASE, f'{self.BASE} Movie') is None
+
+    def test_bonus_stage_returns_none(self):
+        assert _extract_season_from_title(self.BASE, f'{self.BASE} 3: Bonus Stage ep01') is None
+
+    def test_different_base_title(self):
+        assert _extract_season_from_title('Naruto', 'Naruto Shippuden ep01') is None
+
+
+class TestEntryMatches:
+    BASE = 'Kono Subarashii Sekai ni Shukufuku wo!'
+
+    def test_s1_ep01_matches_no_suffix(self):
+        assert _entry_matches(f'{self.BASE} ep01', self.BASE, season=1, episode=1)
+
+    def test_s1_ep08_rejects_s2(self):
+        assert not _entry_matches(f'{self.BASE} 2 ep08', self.BASE, season=1, episode=8)
+
+    def test_s1_ep08_rejects_s3(self):
+        assert not _entry_matches(f'{self.BASE} 3 ep08', self.BASE, season=1, episode=8)
+
+    def test_s2_ep08_matches_s2(self):
+        assert _entry_matches(f'{self.BASE} 2 ep08', self.BASE, season=2, episode=8)
+
+    def test_wrong_episode_rejected(self):
+        assert not _entry_matches(f'{self.BASE} ep05', self.BASE, season=1, episode=8)
+
+    def test_season_none_accepts_any_season(self):
+        # When season is unknown, accept any
+        assert _entry_matches(f'{self.BASE} 2 ep08', self.BASE, season=None, episode=8)
+
+    def test_ova_rejected_when_season_specified(self):
+        # OVA is not season 1 — reject it
+        assert not _entry_matches(f'{self.BASE} OVA ep01', self.BASE, season=1, episode=1)
+
+    def test_ova_accepted_when_season_none(self):
+        # When season is unknown, accept OVAs
+        assert _entry_matches(f'{self.BASE} OVA ep01', self.BASE, season=None, episode=1)
+
+    def test_simple_naruto_match(self):
+        assert _entry_matches('Naruto ep001', 'Naruto', season=1, episode=1)
+
+    def test_no_episode_pattern_rejected(self):
+        assert not _entry_matches('Naruto Movie', 'Naruto', season=1, episode=1)
+
+
 class TestAnimeSubProvider:
     def test_name(self):
         assert AnimeSubProvider().name == 'animesub'
@@ -130,6 +200,39 @@ class TestAnimeSubProvider:
         assert matches[0].subtitle_id == '1022:abc'
         assert matches[0].format == 'ass'
         assert matches[0].score == 0.6
+
+    def test_rejects_wrong_season(self):
+        """S2 and S3 results must not match when searching for S1."""
+        provider = AnimeSubProvider()
+        with patch.object(
+            provider,
+            '_search_page',
+            return_value=[
+                {'id': '1', 'sh': 'a', 'title': 'Naruto 2 ep01', 'format': 'SubRip'},
+                {'id': '2', 'sh': 'b', 'title': 'Naruto 3 ep01', 'format': 'SubRip'},
+                {'id': '3', 'sh': 'c', 'title': 'Naruto ep01', 'format': 'SubRip'},
+            ],
+        ):
+            matches = provider.search(_make_identity(season=1), ['pol'])
+
+        # Only the S1 result (no suffix) should match
+        assert len(matches) == 1
+        assert matches[0].release_name == 'Naruto ep01'
+
+    def test_accepts_correct_season(self):
+        provider = AnimeSubProvider()
+        with patch.object(
+            provider,
+            '_search_page',
+            return_value=[
+                {'id': '1', 'sh': 'a', 'title': 'Naruto 2 ep01', 'format': 'SubRip'},
+                {'id': '2', 'sh': 'b', 'title': 'Naruto ep01', 'format': 'SubRip'},
+            ],
+        ):
+            matches = provider.search(_make_identity(season=2), ['pol'])
+
+        assert len(matches) == 1
+        assert matches[0].release_name == 'Naruto 2 ep01'
 
     def test_srt_format_detected(self):
         provider = AnimeSubProvider()

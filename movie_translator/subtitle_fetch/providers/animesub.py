@@ -20,17 +20,78 @@ BASE_URL = 'http://animesub.info'
 USER_AGENT = 'Mozilla/5.0 (compatible; MovieTranslator/1.0)'
 
 
-def _entry_matches_episode(title: str, episode: int) -> bool:
-    """Check if an AnimeSub result title matches a specific episode number.
+def _extract_season_from_title(base_title: str, entry_title: str) -> int | None:
+    """Infer the season number from an AnimeSub entry title.
 
-    Matches patterns like "ep01", "ep1", "ep001", "episode 1", "E01".
+    Anime season conventions on AnimeSub:
+      "Title ep01"              → Season 1 (no suffix)
+      "Title 2 ep08"           → Season 2 (number suffix)
+      "Title 3 ep01"           → Season 3
+      "Title S2 ep01-10"       → Season 2 (explicit S-prefix)
+      "Title OVA ep01"         → None (special, not a season)
+      "Title 3: Bonus Stage"   → None (special)
+
+    Args:
+        base_title: The anime title we searched for (e.g., "Kono Subarashii...")
+        entry_title: The full entry title from AnimeSub results
+
+    Returns:
+        Inferred season number, or None if it's a special/OVA/movie.
     """
-    # Extract all episode-like numbers from the title
+    # Strip the base title to get the suffix
+    # Case-insensitive prefix removal
+    suffix = entry_title
+    if entry_title.lower().startswith(base_title.lower()):
+        suffix = entry_title[len(base_title) :].strip()
+
+    # If no suffix before the episode marker → Season 1
+    if not suffix or suffix.lower().startswith('ep'):
+        return 1
+
+    # Check for specials first — these are NOT numbered seasons
+    specials = ('ova', 'movie', 'film', 'special', 'bonus', 'recap')
+    suffix_lower = suffix.lower()
+    if any(s in suffix_lower for s in specials):
+        return None
+
+    # "S2 ep..." or "S3 ep..."
+    s_match = re.match(r's(\d+)\b', suffix_lower)
+    if s_match:
+        return int(s_match.group(1))
+
+    # "2 ep..." or "3 ep..." or "2: Something ep..."
+    num_match = re.match(r'(\d+)\b', suffix)
+    if num_match:
+        return int(num_match.group(1))
+
+    # Unrecognized suffix — don't assume a season
+    return None
+
+
+def _entry_matches(title: str, base_title: str, season: int | None, episode: int) -> bool:
+    """Check if an AnimeSub result matches the requested season and episode.
+
+    Args:
+        title: The entry title from AnimeSub results
+        base_title: The anime title we searched for
+        season: Requested season (None = don't filter by season)
+        episode: Requested episode number
+    """
+    # Check episode number
     patterns = re.findall(r'(?:ep|episode\s*|e)(\d+)', title.lower())
-    if patterns:
-        return any(int(n) == episode for n in patterns)
-    # No episode pattern found — might be a movie or special, don't match
-    return False
+    if not patterns:
+        return False
+    if not any(int(n) == episode for n in patterns):
+        return False
+
+    # Check season (if requested)
+    if season is not None:
+        entry_season = _extract_season_from_title(base_title, title)
+        # Reject if the entry is a different season OR a special/OVA
+        if entry_season != season:
+            return False
+
+    return True
 
 
 class _ResultParser(HTMLParser):
@@ -127,10 +188,9 @@ class AnimeSubProvider:
                 for entry in entries:
                     entry_title = entry.get('title', '')
 
-                    # Episode matching: if we know the episode number, only accept
-                    # results that contain it (e.g., "ep01", "ep1", "episode 1")
+                    # Filter by season and episode
                     if episode is not None:
-                        if not _entry_matches_episode(entry_title, episode):
+                        if not _entry_matches(entry_title, title, identity.season, episode):
                             continue
 
                     fmt = entry.get('format', '').lower()
