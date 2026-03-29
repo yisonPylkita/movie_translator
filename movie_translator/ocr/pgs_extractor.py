@@ -21,9 +21,8 @@ from pathlib import Path
 import numpy as np
 
 from ..logging import logger
-from ..types import DialogueLine, OCRResult
+from ..types import BoundingBox, DialogueLine, OCRResult
 from .vision_ocr import is_available as is_ocr_available
-from .vision_ocr import recognize_text_with_boxes
 
 # ---------------------------------------------------------------------------
 # PGS binary format parsing
@@ -108,7 +107,11 @@ def _extract_subtitle_images(
     Returns list of (pts_ms, grayscale_image, width, height) tuples.
     Only returns events that contain actual subtitle content (skips clear events).
     """
-    palette: dict[int, tuple[int, int, int, int]] = {}  # idx → (Y, Cr, Cb, alpha)
+    # Lookup tables for palette → grayscale conversion (256 entries max).
+    # Updated incrementally as PDS segments arrive.
+    y_lut = np.zeros(256, dtype=np.uint8)
+    a_lut = np.zeros(256, dtype=np.uint8)
+
     results = []
     ods_data = b''
     ods_width = 0
@@ -129,7 +132,8 @@ def _extract_subtitle_images(
             i = 2  # Skip palette_id + version
             while i + 4 < len(d):
                 entry_id = d[i]
-                palette[entry_id] = (d[i + 1], d[i + 2], d[i + 3], d[i + 4])
+                y_lut[entry_id] = d[i + 1]
+                a_lut[entry_id] = d[i + 4]
                 i += 5
 
         elif seg['type'] == _SEG_ODS:
@@ -146,19 +150,64 @@ def _extract_subtitle_images(
                 if ods_width > 0 and ods_height > 0 and ods_data:
                     indexed = _decode_rle(ods_data, ods_width, ods_height)
 
-                    # Render to grayscale using palette luminance (Y channel)
-                    gray = np.zeros_like(indexed)
-                    alpha_ch = np.zeros_like(indexed)
-                    for idx, (y_val, _, _, a_val) in palette.items():
-                        mask = indexed == idx
-                        gray[mask] = y_val
-                        alpha_ch[mask] = a_val
-
-                    # White text on black background (best for OCR)
-                    img = np.where(alpha_ch > 128, gray, 0).astype(np.uint8)
+                    # Vectorized palette lookup: single numpy operation
+                    gray = y_lut[indexed]
+                    alpha = a_lut[indexed]
+                    img = np.where(alpha > 128, gray, 0).astype(np.uint8)
                     results.append((current_pts, img, ods_width, ods_height))
 
     return results
+
+
+# ---------------------------------------------------------------------------
+# In-memory OCR (avoids PNG write/read cycle)
+# ---------------------------------------------------------------------------
+
+
+def _ocr_grayscale_image(img: np.ndarray) -> tuple[str, list[BoundingBox]]:
+    """OCR a grayscale numpy array directly via Apple Vision, no disk I/O."""
+    try:
+        import Quartz
+        import Vision
+    except ImportError:
+        return '', []
+
+    h, w = img.shape[:2]
+    color_space = Quartz.CGColorSpaceCreateDeviceGray()
+    provider = Quartz.CGDataProviderCreateWithData(None, img.tobytes(), w * h, None)
+    cg_image = Quartz.CGImageCreate(w, h, 8, 8, w, color_space, 0, provider, None, False, 0)
+
+    if not cg_image:
+        return '', []
+
+    request = Vision.VNRecognizeTextRequest.alloc().init()
+    request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+    request.setRecognitionLanguages_(['en'])
+    request.setUsesLanguageCorrection_(True)
+
+    handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(cg_image, None)
+    success = handler.performRequests_error_([request], None)
+    if not success[0]:
+        return '', []
+
+    texts = []
+    boxes = []
+    for obs in request.results():
+        candidates = obs.topCandidates_(1)
+        if not candidates:
+            continue
+        texts.append(candidates[0].string())
+        bbox = obs.boundingBox()
+        boxes.append(
+            BoundingBox(
+                x=bbox.origin.x,
+                y=1.0 - bbox.origin.y - bbox.size.height,
+                width=bbox.size.width,
+                height=bbox.size.height,
+            )
+        )
+
+    return '\n'.join(texts).strip(), boxes
 
 
 # ---------------------------------------------------------------------------
@@ -218,33 +267,17 @@ def extract_pgs_track(
 
     logger.info(f'Found {len(images)} subtitle images, running OCR...')
 
-    # Step 3: OCR each image
+    # Step 3: OCR each image (in-memory, no disk I/O)
     ocr_results: list[OCRResult] = []
     dialogue_lines: list[DialogueLine] = []
     prev_text = ''
     line_start_ms = 0
 
     for i, (pts_ms, img, _width, _height) in enumerate(images):
-        # Save image temporarily for Vision OCR
-        import cv2
+        text, boxes = _ocr_grayscale_image(img)
 
-        img_path = pgs_dir / f'sub_{i:04d}.png'
-        cv2.imwrite(str(img_path), img)
-
-        # OCR
-        results = recognize_text_with_boxes(img_path, language='en')
-        text = '\n'.join(t for t, _ in results).strip()
-
-        # Collect OCR results (for potential inpainting later)
-        if results:
-            boxes = [box for _, box in results]
-            ocr_results.append(
-                OCRResult(
-                    timestamp_ms=int(pts_ms),
-                    text=text,
-                    boxes=boxes,
-                )
-            )
+        if text and boxes:
+            ocr_results.append(OCRResult(timestamp_ms=int(pts_ms), text=text, boxes=boxes))
 
         # Build dialogue lines by deduplicating consecutive identical text
         if text and text != prev_text:
@@ -259,7 +292,6 @@ def extract_pgs_track(
             line_start_ms = pts_ms
             prev_text = text
         elif not text and prev_text:
-            # Clear event — close the current line
             dialogue_lines.append(
                 DialogueLine(
                     start_ms=int(line_start_ms),
@@ -269,10 +301,7 @@ def extract_pgs_track(
             )
             prev_text = ''
 
-        # Clean up temp image
-        img_path.unlink(missing_ok=True)
-
-        if (i + 1) % 50 == 0:
+        if (i + 1) % 100 == 0:
             logger.info(f'OCR progress: {i + 1}/{len(images)}')
 
     # Close final line
