@@ -412,7 +412,7 @@ class TestSubtitleValidator:
 
         validator = SubtitleValidator(ref)
         score = validator.score_candidate(cand)
-        assert score < 0.3
+        assert score < 0.5
 
     def test_validate_candidates_filters_by_threshold(self, tmp_path: Path):
         ref = tmp_path / 'reference.srt'

@@ -297,10 +297,13 @@ class SubtitleValidator:
     def score_candidate(self, candidate_path: Path) -> float:
         """Score a single candidate subtitle file against the reference.
 
-        Uses dialogue density correlation: compares how many dialogue lines
-        start in each time window. Different episodes have different scenes
-        (talky vs action) at different times, producing different density
-        patterns even when overall dialogue volume is similar.
+        Uses line-level timing match: for each candidate line, finds the
+        nearest reference line by start time. A candidate line is "matched"
+        if the nearest reference line is within tolerance. The score is the
+        fraction of candidate lines matched.
+
+        This is robust to differences in OP/ED style filtering between
+        reference and candidate files.
 
         Args:
             candidate_path: Path to the candidate subtitle file.
@@ -313,11 +316,10 @@ class SubtitleValidator:
         if not cand_timestamps or not self._ref_timestamps:
             return 0.0
 
-        duration = max(self._ref_duration, cand_duration)
-        ref_density = build_density_vector(self._ref_timestamps, duration, self._window_ms)
-        cand_density = build_density_vector(cand_timestamps, duration, self._window_ms)
+        ref_starts = sorted(s for s, _ in self._ref_timestamps)
+        cand_starts = sorted(s for s, _ in cand_timestamps)
 
-        return compute_density_correlation(ref_density, cand_density)
+        return compute_line_match_score(ref_starts, cand_starts, tolerance_ms=2000)
 
     def validate_candidates(
         self,
