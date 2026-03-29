@@ -225,11 +225,10 @@ class SubtitleExtractor:
         return text_tracks, image_tracks
 
     def _handle_image_tracks(self, image_tracks: list[dict], total_count: int) -> dict | None:
-        logger.warning(
-            f'Found {total_count} English tracks, but only image-based dialogue tracks available'
+        logger.info(
+            f'Found {total_count} English track(s), but only image-based (PGS/DVD) — '
+            f'will fall back to OCR'
         )
-        logger.info('Image-based subtitle track OCR (PGS/DVD) is not supported')
-        logger.info('If the video has burned-in subtitles, use --enable-ocr flag')
         return None
 
     def get_subtitle_extension(self, track: dict[str, Any]) -> str:
