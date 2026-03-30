@@ -76,17 +76,18 @@ class ExtractReferenceStage:
 
         # Fall back to burned-in subtitle OCR if no track at all
         if ctx.reference_path is None and is_vision_ocr_available():
+            ctx.burned_in_probed = True
             with ctx.metrics.span('probe_burned_in') as s:
-                ctx.burned_in_probed = True
                 detected = probe_for_burned_in_subtitles(ctx.video_path)
                 s.detail('detected', detected)
             if detected:
-                with ctx.metrics.span('extract_burned_in'):
+                with ctx.metrics.span('extract_burned_in') as s:
                     try:
                         result = extract_burned_in_subtitles(ctx.video_path, ref_dir)
                         if result:
                             ctx.reference_path = result.srt_path
                             ctx.ocr_results = result.ocr_results
+                            s.detail('frames', len(result.ocr_results))
                             logger.info(f'Extracted OCR reference: {result.srt_path.name}')
                     except Exception as e:
                         logger.warning(f'OCR extraction failed: {e}')

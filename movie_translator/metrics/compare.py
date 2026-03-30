@@ -98,6 +98,11 @@ def compare_reports(
       spans (list of {name, before_ms, after_ms, delta_pct}),
       total_before_ms, total_after_ms
     """
+    bv_version = before.get('version', 1)
+    av_version = after.get('version', 1)
+    if bv_version != av_version:
+        raise ValueError(f'Report version mismatch: before={bv_version}, after={av_version}')
+
     before_videos = before.get('videos', [])
     after_videos = after.get('videos', [])
 
@@ -125,9 +130,24 @@ def compare_reports(
             span_after_totals[name] = span_after_totals.get(name, 0.0) + after_by_name[name]
             span_counts[name] = span_counts.get(name, 0) + 1
 
-    # Build averaged spans list
+    # Build averaged spans list, sorted by pipeline stage order then alphabetically
+    _STAGE_ORDER = [
+        'identify',
+        'extract_reference',
+        'fetch',
+        'extract',
+        'translate',
+        'create_tracks',
+        'mux',
+    ]
+    _stage_rank = {s: i for i, s in enumerate(_STAGE_ORDER)}
+
+    def _span_sort_key(name: str) -> tuple[int, str]:
+        top = name.split('.')[0]
+        return (_stage_rank.get(top, len(_STAGE_ORDER)), name)
+
     spans: list[dict[str, Any]] = []
-    for name in span_before_totals:
+    for name in sorted(span_before_totals, key=_span_sort_key):
         count = span_counts[name]
         b_avg = span_before_totals[name] / count
         a_avg = span_after_totals[name] / count
@@ -137,6 +157,7 @@ def compare_reports(
                 'name': name,
                 'before_ms': b_avg,
                 'after_ms': a_avg,
+                'delta_ms': a_avg - b_avg,
                 'delta_pct': delta_pct,
             }
         )

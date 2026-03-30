@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from typing import TYPE_CHECKING
 
 from ..context import FontInfo, PipelineContext
@@ -89,11 +90,14 @@ class TranslateStage:
                 tracker.set_stage_progress(lines_done, total_lines, rate)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            font_future = pool.submit(_check_fonts)
-            translate_future = pool.submit(_translate)
+            ctx_fonts = copy_context()
+            ctx_translate = copy_context()
+            font_future = pool.submit(ctx_fonts.run, _check_fonts)
+            translate_future = pool.submit(ctx_translate.run, _translate)
 
-            ctx.font_info = font_future.result()
-            translated = translate_future.result()
+            font_info: FontInfo = font_future.result()  # ty: ignore[invalid-assignment]
+            ctx.font_info = font_info
+            translated: list = translate_future.result()  # ty: ignore[invalid-assignment]
 
         if not translated:
             raise RuntimeError('Translation failed — empty result')
