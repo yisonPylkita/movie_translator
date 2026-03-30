@@ -14,6 +14,7 @@ from ..fonts import (
 )
 from ..logging import logger
 from ..translation import translate_dialogue_lines
+from ..translation.translator import _get_translator
 
 if TYPE_CHECKING:
     from ..progress import ProgressTracker
@@ -39,6 +40,15 @@ class TranslateStage:
         english_source = ctx.english_source
         tracker = self._tracker
         metrics = ctx.metrics
+
+        # Ensure model is loaded before parallelizing (only loads once, cached after)
+        with metrics.span('load_model') as s:
+            _translator, cached = _get_translator(
+                ctx.config.device, ctx.config.batch_size, ctx.config.model
+            )
+            s.detail('cached', cached)
+        if _translator is None:
+            raise RuntimeError('Failed to load translation model')
 
         def _check_fonts():
             with metrics.span('check_fonts') as s:
@@ -75,7 +85,6 @@ class TranslateStage:
                     ctx.config.batch_size,
                     ctx.config.model,
                     progress_callback=_on_progress,
-                    metrics=metrics,
                 )
                 if translated:
                     s.detail('output_lines', len(translated))
