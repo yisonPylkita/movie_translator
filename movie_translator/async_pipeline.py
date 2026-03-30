@@ -256,19 +256,20 @@ async def run_all(
             if root_dir != video_path.parent
             else video_path.name
         )
-        tracker.start_file(relative_name)
-
-        # Check for existing Polish subtitles (IO-bound)
-        has_polish = await asyncio.to_thread(extractor.has_polish_subtitles, video_path)
-        if has_polish:
-            tracker.complete_file(relative_name, 'skipped')
-            async with results_lock:
-                results.append((video_path, 'skipped'))
-            return
-
-        work_dir = create_work_dir(video_path, root_dir)
 
         async with semaphore:
+            tracker.start_file(relative_name)
+
+            # Check for existing Polish subtitles (IO-bound)
+            has_polish = await asyncio.to_thread(extractor.has_polish_subtitles, video_path)
+            if has_polish:
+                tracker.complete_file(relative_name, 'skipped')
+                async with results_lock:
+                    results.append((video_path, 'skipped'))
+                return
+
+            work_dir = create_work_dir(video_path, root_dir)
+
             success = await process_file(
                 video_path=video_path,
                 work_dir=work_dir,
@@ -279,10 +280,10 @@ async def run_all(
                 metrics=metrics,
             )
 
-        status = 'success' if success else 'failed'
-        tracker.complete_file(relative_name, status)
-        async with results_lock:
-            results.append((video_path, status))
+            status = 'success' if success else 'failed'
+            tracker.complete_file(relative_name, status)
+            async with results_lock:
+                results.append((video_path, status))
 
     await asyncio.gather(*[_process_one(vp) for vp in video_files])
     return results
