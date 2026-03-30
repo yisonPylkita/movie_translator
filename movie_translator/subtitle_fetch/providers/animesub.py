@@ -250,7 +250,7 @@ class AnimeSubProvider:
 
     def _search_page(self, title: str, title_type: str = 'en', page: int = 0) -> list[dict]:
         """Fetch and parse one page of search results."""
-        query = urllib.request.quote(title)
+        query = urllib.parse.quote(title)
         url = f'{BASE_URL}/szukaj.php?szukane={query}&pTitle={title_type}&od={page}'
 
         req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})

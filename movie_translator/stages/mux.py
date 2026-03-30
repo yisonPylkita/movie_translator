@@ -40,6 +40,9 @@ class MuxStage:
             original_sub_title = 'English (Original)'
 
         # Mux
+        assert ctx.subtitle_tracks is not None
+        assert ctx.font_info is not None
+
         temp_video = ctx.work_dir / f'{ctx.video_path.stem}_temp{ctx.video_path.suffix}'
         ops = VideoOperations()
         ops.create_clean_video(

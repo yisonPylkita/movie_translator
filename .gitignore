@@ -21,6 +21,10 @@ build/
 # Secrets
 .env
 
+# Coverage
+.coverage
+htmlcov/
+
 # Project specific
 movies/
 test_output.srt  # Test translation output

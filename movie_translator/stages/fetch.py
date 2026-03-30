@@ -8,6 +8,7 @@ from ..logging import logger
 from ..subtitle_fetch import SubtitleFetcher, SubtitleValidator, align_ilass
 from ..subtitle_fetch.align import align_to_reference as align_builtin
 from ..subtitle_fetch.providers.animesub import AnimeSubProvider
+from ..subtitle_fetch.providers.base import SubtitleProvider
 from ..subtitle_fetch.providers.napiprojekt import NapiProjektProvider
 from ..subtitle_fetch.providers.opensubtitles import OpenSubtitlesProvider
 from ..subtitle_fetch.providers.podnapisi import PodnapisiProvider
@@ -62,7 +63,7 @@ class FetchSubtitlesStage:
         return ctx
 
     def _build_fetcher(self, video_path):
-        providers = [AnimeSubProvider()]
+        providers: list[SubtitleProvider] = [AnimeSubProvider()]
         providers.append(PodnapisiProvider())
         napi = NapiProjektProvider()
         napi.set_video_path(video_path)

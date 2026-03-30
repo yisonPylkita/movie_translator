@@ -104,7 +104,7 @@ class TestVideoOperations:
 
         system_font = find_system_font_for_polish({'arial'})
         if system_font is None:
-            pytest.skip('No system font with Polish support available')
+            pytest.skip('No system font with Polish support available')  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
 
         font_path, _ = system_font
         subs = _make_subtitle_files(polish_ass, english_ass)
@@ -138,7 +138,7 @@ class TestMuxBackendSelection:
 
     def test_mkv_uses_mkvmerge_when_available(self, create_test_mkv, create_ass_file, tmp_path):
         if get_mkvmerge() is None:
-            pytest.skip('mkvmerge not installed')
+            pytest.skip('mkvmerge not installed')  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
 
         mkv_file = create_test_mkv()
         subs = _make_subtitle_files(create_ass_file('pol.ass'), create_ass_file('eng.ass'))
@@ -186,7 +186,7 @@ class TestMuxBackendSelection:
 
     def test_mkvmerge_output_has_correct_tracks(self, create_test_mkv, create_ass_file, tmp_path):
         if get_mkvmerge() is None:
-            pytest.skip('mkvmerge not installed')
+            pytest.skip('mkvmerge not installed')  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
 
         mkv_file = create_test_mkv()
         subs = [
@@ -202,7 +202,7 @@ class TestMuxBackendSelection:
 
     def test_mkvmerge_strips_original_subtitles(self, create_test_mkv, create_ass_file, tmp_path):
         if get_mkvmerge() is None:
-            pytest.skip('mkvmerge not installed')
+            pytest.skip('mkvmerge not installed')  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
 
         mkv_file = create_test_mkv()
         subs = _make_subtitle_files(create_ass_file('pol.ass'), create_ass_file('eng.ass'))
@@ -222,7 +222,7 @@ class TestMuxBackendSelection:
 class TestOriginalTrackPreservation:
     def test_mkvmerge_preserves_original_english(self, create_test_mkv, create_ass_file, tmp_path):
         if get_mkvmerge() is None:
-            pytest.skip('mkvmerge not installed')
+            pytest.skip('mkvmerge not installed')  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
 
         mkv_file = create_test_mkv(language='eng', track_name='English')
         polish_ass = create_ass_file('polish.ass')
@@ -248,7 +248,7 @@ class TestOriginalTrackPreservation:
 
     def test_no_original_track_works(self, create_test_mkv, create_ass_file, tmp_path):
         if get_mkvmerge() is None:
-            pytest.skip('mkvmerge not installed')
+            pytest.skip('mkvmerge not installed')  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
 
         mkv_file = create_test_mkv()
         polish_ass = create_ass_file('polish.ass')

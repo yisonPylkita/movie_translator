@@ -87,17 +87,15 @@ def estimate_offset(
     max_shift_bins = max_shift_ms // bin_size_ms
     effective_max = min(max_shift_bins, max_len - 1)
 
-    best_score = -1.0
-    best_shift = 0
-
-    for shift in range(-effective_max, effective_max + 1):
-        if shift >= 0:
-            score = float(np.dot(ref[shift:], cand[: max_len - shift]))
-        else:
-            score = float(np.dot(ref[: max_len + shift], cand[-shift:]))
-        if score > best_score:
-            best_score = score
-            best_shift = shift
+    corr = np.correlate(ref, cand, mode='full')
+    # Zero-lag is at index len(ref) - 1; extract the slice for our shift range.
+    zero_lag = len(ref) - 1
+    lo = zero_lag - effective_max
+    hi = zero_lag + effective_max + 1  # exclusive
+    corr_slice = corr[lo:hi]
+    best_idx = int(np.argmax(corr_slice))
+    best_shift = best_idx - effective_max
+    best_score = float(corr_slice[best_idx])
 
     # Quality check: reject if the peak overlap is too low.
     ref_energy = float(np.dot(ref, ref))
@@ -200,17 +198,14 @@ def _estimate_segment_offset(
     max_shift_bins = max_shift_ms // bin_size_ms
     effective_max = min(max_shift_bins, max_len - 1)
 
-    best_score = -1.0
-    best_shift = 0
-
-    for shift in range(-effective_max, effective_max + 1):
-        if shift >= 0:
-            score = float(np.dot(ref[shift:], cand[: max_len - shift]))
-        else:
-            score = float(np.dot(ref[: max_len + shift], cand[-shift:]))
-        if score > best_score:
-            best_score = score
-            best_shift = shift
+    corr = np.correlate(ref, cand, mode='full')
+    zero_lag = len(ref) - 1
+    lo = zero_lag - effective_max
+    hi = zero_lag + effective_max + 1  # exclusive
+    corr_slice = corr[lo:hi]
+    best_idx = int(np.argmax(corr_slice))
+    best_shift = best_idx - effective_max
+    best_score = float(corr_slice[best_idx])
 
     # Quality check
     ref_energy = float(np.dot(ref, ref))
@@ -371,6 +366,10 @@ def _align_piecewise(
         pre_offset = post_offset
     if post_offset is None:
         post_offset = pre_offset
+
+    # Both cannot be None here (early return above handles that case)
+    assert pre_offset is not None
+    assert post_offset is not None
 
     # Check if the offsets are actually different (piecewise needed)
     if abs(pre_offset - post_offset) < min_offset_ms:

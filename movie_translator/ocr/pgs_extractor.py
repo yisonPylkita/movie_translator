@@ -17,12 +17,24 @@ from __future__ import annotations
 import struct
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
 from ..logging import logger
 from ..types import BoundingBox, DialogueLine, OCRResult
 from .vision_ocr import is_available as is_ocr_available
+
+_VISION_AVAILABLE = False
+Quartz: Any = None
+Vision: Any = None
+try:
+    import Quartz  # type: ignore[no-redef]
+    import Vision  # type: ignore[no-redef]
+
+    _VISION_AVAILABLE = True
+except ImportError:
+    pass
 
 # ---------------------------------------------------------------------------
 # PGS binary format parsing
@@ -166,26 +178,23 @@ def _extract_subtitle_images(
 
 def _ocr_grayscale_image(img: np.ndarray) -> tuple[str, list[BoundingBox]]:
     """OCR a grayscale numpy array directly via Apple Vision, no disk I/O."""
-    try:
-        import Quartz
-        import Vision
-    except ImportError:
+    if not _VISION_AVAILABLE:
         return '', []
 
     h, w = img.shape[:2]
-    color_space = Quartz.CGColorSpaceCreateDeviceGray()
-    provider = Quartz.CGDataProviderCreateWithData(None, img.tobytes(), w * h, None)
-    cg_image = Quartz.CGImageCreate(w, h, 8, 8, w, color_space, 0, provider, None, False, 0)
+    color_space = Quartz.CGColorSpaceCreateDeviceGray()  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
+    provider = Quartz.CGDataProviderCreateWithData(None, img.tobytes(), w * h, None)  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
+    cg_image = Quartz.CGImageCreate(w, h, 8, 8, w, color_space, 0, provider, None, False, 0)  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
 
     if not cg_image:
         return '', []
 
-    request = Vision.VNRecognizeTextRequest.alloc().init()
-    request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+    request = Vision.VNRecognizeTextRequest.alloc().init()  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
+    request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
     request.setRecognitionLanguages_(['en'])
     request.setUsesLanguageCorrection_(True)
 
-    handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(cg_image, None)
+    handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(cg_image, None)  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
     success = handler.performRequests_error_([request], None)
     if not success[0]:
         return '', []

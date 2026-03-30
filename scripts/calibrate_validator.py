@@ -63,7 +63,7 @@ def main():
     print(f'Found {len(videos)} videos (processing up to {args.max_videos})')
 
     extractor = SubtitleExtractor()
-    providers = [AnimeSubProvider()]
+    providers: list[AnimeSubProvider | OpenSubtitlesProvider] = [AnimeSubProvider()]
     api_key = os.environ.get('OPENSUBTITLES_API_KEY', '')
     if api_key:
         providers.append(OpenSubtitlesProvider(api_key=api_key))

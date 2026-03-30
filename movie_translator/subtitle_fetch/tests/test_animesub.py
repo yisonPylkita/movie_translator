@@ -79,7 +79,7 @@ def _make_identity(**overrides):
         'raw_filename': 'Naruto.ep001.mkv',
     }
     defaults.update(overrides)
-    return MediaIdentity(**defaults)
+    return MediaIdentity(**defaults)  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type]
 
 
 class TestResultParser:

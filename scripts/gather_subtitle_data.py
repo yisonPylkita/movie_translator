@@ -196,7 +196,7 @@ def analyze_subtitle_file(path: Path, include_events: bool = True) -> dict:
                 'margin_v': style_obj.marginv,
             }
 
-    result = {
+    result: dict = {
         'path': str(path),
         'format': path.suffix.lstrip('.'),
         'event_count': len(events),
@@ -225,7 +225,10 @@ def download_polish_candidates(
     except Exception as e:
         return [{'error': f'identify failed: {e}'}]
 
-    providers = [AnimeSubProvider(), PodnapisiProvider()]
+    providers: list[AnimeSubProvider | PodnapisiProvider | NapiProjektProvider] = [
+        AnimeSubProvider(),
+        PodnapisiProvider(),
+    ]
     napi = NapiProjektProvider()
     napi.set_video_path(video_path)
     providers.append(napi)
@@ -241,7 +244,7 @@ def download_polish_candidates(
     for i, match in enumerate(matches):
         filename = f'{match.source}_{match.language}_{i}.{match.format}'
         output_path = work_dir / filename
-        candidate_info = {
+        candidate_info: dict = {
             'source': match.source,
             'subtitle_id': match.subtitle_id,
             'release_name': match.release_name,
@@ -271,7 +274,7 @@ def process_video(video_path: Path, work_dir: Path, include_events: bool = True)
     """Process a single video file: extract English subs, download Polish candidates."""
     print(f'  Processing: {video_path.name}')
 
-    result = {
+    result: dict = {
         'video_path': str(video_path),
         'video_name': video_path.name,
         'video_size_bytes': video_path.stat().st_size,

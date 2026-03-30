@@ -11,6 +11,7 @@ class TestInpainter:
         # Create a red image with a white rectangle (simulating subtitle text)
         image = Image.new('RGB', (256, 256), (180, 60, 60))
         pixels = image.load()
+        assert pixels is not None
         for x in range(80, 176):
             for y in range(200, 240):
                 pixels[x, y] = (255, 255, 255)
@@ -18,6 +19,7 @@ class TestInpainter:
         # Mask covers the white rectangle
         mask = Image.new('L', (256, 256), 0)
         mask_pixels = mask.load()
+        assert mask_pixels is not None
         for x in range(70, 186):
             for y in range(190, 250):
                 mask_pixels[x, y] = 255

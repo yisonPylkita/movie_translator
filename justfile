@@ -28,6 +28,6 @@ run dir *args:
 # Install git pre-commit hook
 install-hooks:
     @echo '#!/bin/sh' > .git/hooks/pre-commit
-    @echo 'uv run ruff check . && uv run ruff format --check .' >> .git/hooks/pre-commit
+    @echo 'uv run ruff check . && uv run ruff format --check . && uv run ty check' >> .git/hooks/pre-commit
     @chmod +x .git/hooks/pre-commit
-    @echo 'Pre-commit hook installed.'
+    @echo 'Pre-commit hook installed (ruff check + format + ty).'

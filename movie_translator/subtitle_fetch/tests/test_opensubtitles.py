@@ -17,7 +17,7 @@ def _make_identity(**overrides):
         'raw_filename': 'Breaking.Bad.S01E03.mkv',
     }
     defaults.update(overrides)
-    return MediaIdentity(**defaults)
+    return MediaIdentity(**defaults)  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type]
 
 
 class TestOpenSubtitlesProvider:

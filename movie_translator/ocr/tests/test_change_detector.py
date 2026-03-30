@@ -41,7 +41,7 @@ def create_test_frame(tmp_path):
             ]
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            pytest.skip(f'Could not create test frame: {result.stderr}')
+            pytest.skip(f'Could not create test frame: {result.stderr}')  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
         return output
 
     return _create

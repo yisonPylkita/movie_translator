@@ -1,5 +1,9 @@
+from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
+
+# Callback receives (lines_done, total_lines, lines_per_second)
+ProgressCallback = Callable[[int, int, float], None]
 
 # Styles that indicate non-dialogue content (signs, songs, etc.)
 # Covers common fansub naming: OP/ED/IN (insert song) layers with

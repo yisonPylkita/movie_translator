@@ -24,9 +24,9 @@ class NapiProjektProvider:
     def __init__(self):
         self._video_path: Path | None = None
 
-    def set_video_path(self, path: Path) -> None:
+    def set_video_path(self, path: str | Path) -> None:
         """Set the video file path (needed for hash computation)."""
-        self._video_path = path
+        self._video_path = Path(path)
 
     @property
     def name(self) -> str:
@@ -80,6 +80,7 @@ class NapiProjektProvider:
             if content is None:
                 raise RuntimeError(f'NapiProjekt: subtitle not found for hash {file_hash}')
 
+        assert content is not None
         output_path.write_bytes(content)
         logger.info(f'Downloaded subtitle: {output_path.name} (napiprojekt)')
         return output_path

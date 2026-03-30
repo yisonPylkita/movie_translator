@@ -24,7 +24,7 @@ class TestIdentifyStage:
             result = IdentifyStage().run(ctx)
 
         assert result.identity is not None
-        assert result.identity.title == 'Test'
+        assert result.identity.title == 'Test'  # ty: ignore[unresolved-attribute]
 
     def test_returns_same_context_object(self, tmp_path):
         ctx = self._make_ctx(tmp_path)

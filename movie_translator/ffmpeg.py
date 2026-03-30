@@ -57,6 +57,7 @@ def get_ffprobe() -> str:
     return get_ffmpeg_paths()[1]
 
 
+@lru_cache(maxsize=128)
 def get_video_info(video_path: Path) -> dict[str, Any]:
     ffprobe = get_ffprobe()
 

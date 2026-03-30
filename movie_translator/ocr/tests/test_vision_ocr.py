@@ -33,7 +33,7 @@ def image_with_text(tmp_path):
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        pytest.skip(f'Could not create test image: {result.stderr}')
+        pytest.skip(f'Could not create test image: {result.stderr}')  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
 
     return output
 

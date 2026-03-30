@@ -44,7 +44,7 @@ def _load_simple_lama(device):
     def _patched_jit_load(f, map_location=None, **kwargs):
         return original_jit_load(f, map_location=torch.device('cpu'), **kwargs)
 
-    torch.jit.load = _patched_jit_load
+    torch.jit.load = _patched_jit_load  # type: ignore[invalid-assignment]  # ty:ignore[invalid-assignment]
     try:
         instance = SimpleLama(device=torch.device('cpu'))
     finally:
@@ -122,5 +122,5 @@ def create_backend(name: str, device: str = 'cpu') -> InpaintBackend:
         raise ValueError(f'Unknown backend: {name!r}. Choose from: {", ".join(BACKENDS)}')
     cls = BACKENDS[name]
     if name == 'lama':
-        return cls(device=device)
+        return cls(device=device)  # type: ignore[unknown-argument]  # ty:ignore[unknown-argument]
     return cls()

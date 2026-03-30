@@ -52,6 +52,7 @@ class TestCreateTracksStage:
         with patch('movie_translator.stages.create_tracks.SubtitleProcessor') as _MockProc:
             result = CreateTracksStage().run(ctx)
 
+        assert result.subtitle_tracks is not None
         titles = [t.title for t in result.subtitle_tracks]
         assert 'Polish (animesub)' in titles
         assert 'Polish (AI)' in titles
@@ -64,6 +65,7 @@ class TestCreateTracksStage:
         with patch('movie_translator.stages.create_tracks.SubtitleProcessor') as _MockProc:
             result = CreateTracksStage().run(ctx)
 
+        assert result.subtitle_tracks is not None
         defaults = [t for t in result.subtitle_tracks if t.is_default]
         assert len(defaults) == 1
         assert defaults[0].title == 'Polish (podnapisi)'
@@ -74,6 +76,7 @@ class TestCreateTracksStage:
         with patch('movie_translator.stages.create_tracks.SubtitleProcessor') as _MockProc:
             result = CreateTracksStage().run(ctx)
 
+        assert result.subtitle_tracks is not None
         defaults = [t for t in result.subtitle_tracks if t.is_default]
         assert len(defaults) == 1
         assert defaults[0].title == 'Polish (AI)'

@@ -31,25 +31,28 @@ def recognize_text_with_boxes(
         import Quartz
         import Vision
 
-        url = Quartz.CFURLCreateWithFileSystemPath(
-            None, str(image_path), Quartz.kCFURLPOSIXPathStyle, False
+        url = Quartz.CFURLCreateWithFileSystemPath(  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
+            None,
+            str(image_path),
+            Quartz.kCFURLPOSIXPathStyle,  # ty: ignore[unresolved-attribute]
+            False,
         )
-        image_source = Quartz.CGImageSourceCreateWithURL(url, None)
+        image_source = Quartz.CGImageSourceCreateWithURL(url, None)  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
         if image_source is None:
             logger.debug(f'Could not create image source for {image_path}')
             return []
 
-        cg_image = Quartz.CGImageSourceCreateImageAtIndex(image_source, 0, None)
+        cg_image = Quartz.CGImageSourceCreateImageAtIndex(image_source, 0, None)  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
         if cg_image is None:
             logger.debug(f'Could not load image from {image_path}')
             return []
 
-        request = Vision.VNRecognizeTextRequest.alloc().init()
-        request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+        request = Vision.VNRecognizeTextRequest.alloc().init()  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
+        request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
         request.setRecognitionLanguages_([language])
         request.setUsesLanguageCorrection_(True)
 
-        handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(cg_image, None)
+        handler = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(cg_image, None)  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
         success = handler.performRequests_error_([request], None)
         if not success[0]:
             logger.debug(f'Vision request failed for {image_path}')

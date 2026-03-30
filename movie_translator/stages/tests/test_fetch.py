@@ -107,6 +107,7 @@ class TestFetchSubtitlesStage:
             ]
             result = FetchSubtitlesStage().run(ctx)
 
+        assert result.fetched_subtitles is not None
         assert len(result.fetched_subtitles['pol']) == 2
         assert result.fetched_subtitles['pol'][0].source == 'opensubtitles'
         assert result.fetched_subtitles['pol'][1].source == 'podnapisi'
@@ -139,4 +140,5 @@ class TestFetchSubtitlesStage:
             ]
             result = FetchSubtitlesStage().run(ctx)
 
+        assert result.fetched_subtitles is not None
         assert len(result.fetched_subtitles['pol']) == 1

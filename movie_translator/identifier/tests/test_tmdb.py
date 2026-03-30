@@ -65,4 +65,5 @@ class TestTmdbLookup:
             result = lookup_tmdb('Breaking Bad', year=2008, media_type='episode')
 
         assert '/search/tv' in called_with['endpoint']
+        assert result is not None
         assert result['tmdb_id'] == 1399

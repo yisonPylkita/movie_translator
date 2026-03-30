@@ -13,6 +13,10 @@ class CreateTracksStage:
         is_mkv = ctx.video_path.suffix.lower() == '.mkv'
         replace_chars = False
 
+        assert ctx.font_info is not None
+        assert ctx.english_source is not None
+        assert ctx.translated_lines is not None
+
         if not ctx.font_info.supports_polish:
             if is_mkv and ctx.font_info.font_attachments:
                 logger.info(f'Will embed font "{ctx.font_info.font_attachments[0].name}"')

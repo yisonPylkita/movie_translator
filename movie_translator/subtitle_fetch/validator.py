@@ -91,17 +91,14 @@ def compute_similarity(
     ref[: len(reference)] = reference
     cand[: len(candidate)] = candidate
 
-    best = 0.0
     # Clamp shift range so we don't exceed vector length.
     effective_max = min(max_shift_bins, max_len - 1)
-    for shift in range(-effective_max, effective_max + 1):
-        if shift >= 0:
-            overlap = np.dot(ref[shift:], cand[: max_len - shift])
-        else:
-            overlap = np.dot(ref[: max_len + shift], cand[-shift:])
-        score = float(overlap) / norm
-        if score > best:
-            best = score
+
+    corr = np.correlate(ref, cand, mode='full')
+    zero_lag = len(ref) - 1
+    lo = zero_lag - effective_max
+    hi = zero_lag + effective_max + 1  # exclusive
+    best = float(np.max(corr[lo:hi])) / norm
 
     return min(best, 1.0)
 

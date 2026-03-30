@@ -52,7 +52,7 @@ build-backend = "hatchling.build"
 packages = ["movie_translator"]
 
 [dependency-groups]
-dev = ["ruff~=0.14", "pytest~=8.0", "pytest-xdist~=3.5", "ty"]
+dev = ["ruff~=0.14", "pytest~=8.0", "pytest-xdist~=3.5", "pytest-cov~=6.0", "ty"]
 
 [tool.ruff]
 line-length = 100
@@ -74,10 +74,21 @@ quote-style = "single"
 testpaths = ["tests", "movie_translator"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-addopts = "-n auto"
+addopts = "-n auto --cov=movie_translator --cov-report=term-missing:skip-covered"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks integration tests requiring FFmpeg",
+]
+
+[tool.coverage.run]
+source = ["movie_translator"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
 ]
 
 [tool.ty.environment]

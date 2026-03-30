@@ -123,8 +123,8 @@ def _inpaint_frame(
     if scale < 1.0:
         small_w = int(crop_w * scale)
         small_h = int(crop_h * scale)
-        small_crop = crop.resize((small_w, small_h), Image.LANCZOS)
-        small_mask = mask.resize((small_w, small_h), Image.NEAREST)
+        small_crop = crop.resize((small_w, small_h), Image.LANCZOS)  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
+        small_mask = mask.resize((small_w, small_h), Image.NEAREST)  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
     else:
         small_crop = crop
         small_mask = mask
@@ -134,7 +134,7 @@ def _inpaint_frame(
 
     # Step 5: Upscale back to original crop size if we downscaled
     if scale < 1.0:
-        result = result.resize((crop_w, crop_h), Image.LANCZOS)
+        result = result.resize((crop_w, crop_h), Image.LANCZOS)  # type: ignore[unresolved-attribute]  # ty:ignore[unresolved-attribute]
 
     # Step 6: Paste inpainted region back onto original frame
     output = image.copy()
@@ -403,6 +403,7 @@ def remove_burned_in_subtitles(
 
     def _decoder_reader():
         try:
+            assert decoder.stdout is not None
             while True:
                 data = decoder.stdout.read(frame_size)
                 if len(data) < frame_size:
@@ -415,6 +416,7 @@ def remove_burned_in_subtitles(
 
     def _stderr_reader():
         try:
+            assert encoder.stderr is not None
             for line in encoder.stderr:
                 encoder_stderr_lines.append(line.decode(errors='replace').rstrip())
         except Exception:
@@ -440,9 +442,11 @@ def remove_burned_in_subtitles(
                 if inpainted_count % 100 == 0:
                     logger.info(f'  Inpainted {inpainted_count}/{total_subtitle_frames} frames...')
 
+            assert encoder.stdin is not None
             encoder.stdin.write(raw)
             frame_idx += 1
     finally:
+        assert encoder.stdin is not None
         encoder.stdin.close()
         decoder_thread.join(timeout=10)
         stderr_thread.join(timeout=10)

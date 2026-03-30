@@ -1,6 +1,7 @@
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -155,7 +156,7 @@ class OpenSubtitlesProvider:
 
         url = f'{API_BASE}{endpoint}'
         if params:
-            query = '&'.join(f'{k}={urllib.request.quote(str(v))}' for k, v in params.items())
+            query = '&'.join(f'{k}={urllib.parse.quote(str(v))}' for k, v in params.items())
             url = f'{url}?{query}'
 
         headers = {
