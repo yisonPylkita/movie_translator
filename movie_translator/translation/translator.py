@@ -1,4 +1,5 @@
 import gc
+import re
 import time
 import warnings
 
@@ -155,8 +156,23 @@ class SubtitleTranslator:
                 placeholder_mappings.append(mapping)
             texts = protected_texts
 
+        # If a line is nothing but a placeholder tag + punctuation (e.g.
+        # "__NM0__..." from "Lord Boscone..."), skip the model — it would
+        # hallucinate random text for the meaningless input.  Restore the
+        # placeholder immediately and treat it like a cache hit.
+        _placeholder_only_re = re.compile(r'^__\w+__[.!?,;:\u2026\s]*$')
+        placeholder_skip_indices: set[int] = set()
+        placeholder_cached: dict[int, str] = {}
+        for i, text in enumerate(texts):
+            if placeholder_mappings and _placeholder_only_re.match(text.strip()):
+                restored = restore_placeholders(text, placeholder_mappings[i])
+                placeholder_cached[i] = restored
+                placeholder_skip_indices.add(i)
+
         if self.enable_enhancements:
             enhanced_texts, skip_indices, cached_translations = self._apply_preprocessing(texts)
+            skip_indices |= placeholder_skip_indices
+            cached_translations.update(placeholder_cached)
         else:
             enhanced_texts = texts
             skip_indices = set()
@@ -345,14 +361,22 @@ def translate_dialogue_lines(
     if metrics is None:
         metrics = NullCollector()
 
-    with metrics.span('load_model') as s:
-        translator, cached = _get_translator(device, batch_size, model)
-        s.detail('cached', cached)
-    if translator is None:
-        return []
+    if model == 'apple':
+        from .apple_backend import _get_apple_backend
 
-    texts = [line.text for line in dialogue_lines]
-    translated_texts = translator.translate_texts(texts, progress_callback)
+        backend = _get_apple_backend(batch_size)
+        if backend is None:
+            return []
+        texts = [line.text for line in dialogue_lines]
+        translated_texts = backend.translate_texts(texts, progress_callback)
+    else:
+        with metrics.span('load_model') as s:
+            translator, cached = _get_translator(device, batch_size, model)
+            s.detail('cached', cached)
+        if translator is None:
+            return []
+        texts = [line.text for line in dialogue_lines]
+        translated_texts = translator.translate_texts(texts, progress_callback)
 
     return [
         DialogueLine(line.start_ms, line.end_ms, text)

@@ -53,7 +53,12 @@ def parse_args():
         default='mps' if sys.platform == 'darwin' else 'cpu',
     )
     parser.add_argument('--batch-size', type=int, default=16)
-    parser.add_argument('--model', choices=['allegro'], default='allegro')
+    parser.add_argument(
+        '--model',
+        choices=['allegro', 'apple'],
+        default=None,
+        help='Translation backend (default: auto-detect, prefers apple on macOS 26+)',
+    )
     parser.add_argument('--no-fetch', action='store_true')
     parser.add_argument(
         '--inpaint',
@@ -86,9 +91,30 @@ def show_summary(results: list[tuple[str, str]], dry_run: bool = False) -> None:
         console.print('[yellow]Dry run - originals not modified[/yellow]')
 
 
+def _resolve_model(explicit_choice: str | None) -> str:
+    """Pick translation backend: explicit choice, or auto-detect Apple, or Allegro."""
+    if explicit_choice is not None:
+        return explicit_choice
+
+    try:
+        from movie_translator.translation.apple_backend import (
+            check_languages_installed,
+            is_available,
+        )
+
+        if is_available() and check_languages_installed():
+            logger.info('Apple Translation available — using on-device backend')
+            return 'apple'
+    except Exception:
+        pass
+
+    return 'allegro'
+
+
 def main():
     args = parse_args()
     set_verbose(args.verbose)
+    args.model = _resolve_model(args.model)
 
     input_path = Path(args.input)
     if not input_path.exists():

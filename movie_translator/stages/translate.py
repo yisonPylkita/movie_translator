@@ -41,14 +41,21 @@ class TranslateStage:
         tracker = self._tracker
         metrics = ctx.metrics
 
-        # Ensure model is loaded before parallelizing (only loads once, cached after)
-        with metrics.span('load_model') as s:
-            _translator, cached = _get_translator(
-                ctx.config.device, ctx.config.batch_size, ctx.config.model
-            )
-            s.detail('cached', cached)
-        if _translator is None:
-            raise RuntimeError('Failed to load translation model')
+        # Ensure model/backend is loaded before parallelizing (only loads once, cached after)
+        if ctx.config.model == 'apple':
+            from ..translation.apple_backend import _get_apple_backend
+
+            _backend = _get_apple_backend(ctx.config.batch_size)
+            if _backend is None:
+                raise RuntimeError('Failed to load translation model')
+        else:
+            with metrics.span('load_model') as s:
+                _translator, cached = _get_translator(
+                    ctx.config.device, ctx.config.batch_size, ctx.config.model
+                )
+                s.detail('cached', cached)
+            if _translator is None:
+                raise RuntimeError('Failed to load translation model')
 
         def _check_fonts():
             with metrics.span('check_fonts') as s:

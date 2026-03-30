@@ -36,6 +36,9 @@ test_workdir/
 # Vendor build artifacts (Rust)
 vendor/ilass/target/
 
+# Compiled Swift binary (auto-built from source)
+movie_translator/translation/swift/translate_bridge
+
 # Media files (never commit these)
 *.mkv
 *.mp4

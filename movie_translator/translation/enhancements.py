@@ -22,6 +22,27 @@ PHRASE_BASE_MAP = {
     'hi': 'cześć',
     'bye': 'pa',
     'goodbye': 'do widzenia',
+    # Common anime interjections — these are trivial for a cache but
+    # problematic when batched with longer lines via || in the merger.
+    'huh': 'co',
+    'what': 'co',
+    'right': 'racja',
+    'really': 'naprawdę',
+    'seriously': 'poważnie',
+    'exactly': 'dokładnie',
+    'understood': 'zrozumiałem',
+    'impossible': 'niemożliwe',
+    'damn': 'cholera',
+    'dunno': 'nie wiem',
+    'yo': 'hej',
+    'hey': 'hej',
+    'listen': 'słuchaj',
+    'look': 'patrz',
+    'run': 'uciekaj',
+    'enough': 'wystarczy',
+    'idiot': 'idioto',
+    'liar': 'kłamca',
+    'unbelievable': 'niewiarygodne',
 }
 
 MULTI_WORD_PHRASES = {
@@ -31,6 +52,24 @@ MULTI_WORD_PHRASES = {
     'of course': 'oczywiście',
     'excuse me': 'przepraszam',
     'good luck': 'powodzenia',
+    # Common anime short phrases — bypass the model entirely.
+    'come on': 'no dalej',
+    'no way': 'nie ma mowy',
+    'damn it': 'cholera',
+    'what the hell': 'co do cholery',
+    'got it': 'rozumiem',
+    'hold on': 'chwileczkę',
+    'not at all': 'wcale nie',
+    'no doubt': 'bez dwóch zdań',
+    'give me a break': 'daj spokój',
+    'shut up': 'zamknij się',
+    'how dare you': 'jak śmiesz',
+    'calm down': 'spokojnie',
+    'let me go': 'puść mnie',
+    'you idiot': 'ty idioto',
+    'are you okay': 'wszystko dobrze',
+    'good morning': 'dzień dobry',
+    'good night': 'dobranoc',
 }
 
 IDIOM_PATTERNS = [
@@ -47,12 +86,14 @@ IDIOM_PATTERNS = [
 ]
 
 # Patterns for content that should pass through translation untouched.
-# Each tuple: (compiled regex, group name for the placeholder tag).
+# Each tuple: (compiled regex, placeholder tag prefix).
+# Tags use short non-English abbreviations (PH, TM, UR, NM) to prevent the
+# translation model from translating the tag itself (e.g. NAME→NAZWA).
 _PLACEHOLDER_PATTERNS = [
-    (re.compile(r'\b\d{1,3}([-.)\s]\d{2,4}){2,}\b'), 'PHONE'),  # phone numbers
-    (re.compile(r'\b\d{1,2}[/:]\d{2}(?:[/:]\d{2,4})?\b'), 'TIME'),  # 12:30, 1/01/2025
-    (re.compile(r'https?://\S+'), 'URL'),  # URLs
-    (re.compile(r'\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b'), 'NAME'),  # Title Case names
+    (re.compile(r'\b\d{1,3}([-.)\s]\d{2,4}){2,}\b'), 'PH'),  # phone numbers
+    (re.compile(r'\b\d{1,2}[/:]\d{2}(?:[/:]\d{2,4})?\b'), 'TM'),  # 12:30, 1/01/2025
+    (re.compile(r'https?://\S+'), 'UR'),  # URLs
+    (re.compile(r'\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b'), 'NM'),  # Title Case names
 ]
 
 

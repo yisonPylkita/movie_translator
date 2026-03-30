@@ -102,8 +102,21 @@ class TestGroupLines:
         assert groups[0].line_indices == [0]
         assert groups[0].is_fragment_merge is False
 
-    def test_two_independent_sentences(self):
+    def test_two_short_independent_sentences_are_solo(self):
+        # Short lines (<=3 words) get solo groups to avoid model garbling
         groups = group_lines(['Hello world.', 'Goodbye world.'])
+        assert len(groups) == 2
+        assert groups[0].line_indices == [0]
+        assert groups[1].line_indices == [1]
+
+    def test_two_longer_independent_sentences_batched(self):
+        # Lines above SHORT_LINE_MAX_WORDS still get batched with ||
+        groups = group_lines(
+            [
+                'The Empire declared total war.',
+                'The Republic responded in kind.',
+            ]
+        )
         assert len(groups) == 1
         assert groups[0].line_indices == [0, 1]
         assert groups[0].is_fragment_merge is False
@@ -273,17 +286,21 @@ class TestSplitOutput:
 
 class TestRoundTrip:
     def test_round_trip_independent(self):
-        texts = ['Hello world.', 'Goodbye world.']
+        # Use longer sentences so they get batched (short ones are solo now)
+        texts = [
+            'The Empire declared total war.',
+            'The Republic responded in kind.',
+        ]
         merged, groups = merge_for_translation(texts)
         assert len(merged) == 1
         assert '||' in merged[0]
 
         # Simulate translation preserving ||
-        translated = ['Witaj świecie. || Do widzenia świecie.']
+        translated = ['Imperium wypowiedziało totalną wojnę. || Republika odpowiedziała tym samym.']
         result = unmerge_translations(translated, groups, texts)
         assert len(result) == 2
-        assert result[0] == 'Witaj świecie.'
-        assert result[1] == 'Do widzenia świecie.'
+        assert result[0] == 'Imperium wypowiedziało totalną wojnę.'
+        assert result[1] == 'Republika odpowiedziała tym samym.'
 
     def test_round_trip_fragments(self):
         texts = ['The Empire', 'declared war.']

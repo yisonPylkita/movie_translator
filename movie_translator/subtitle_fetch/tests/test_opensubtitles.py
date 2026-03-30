@@ -26,8 +26,13 @@ class TestOpenSubtitlesProvider:
         assert provider.name == 'opensubtitles'
 
     def test_search_returns_empty_without_api_key(self):
-        provider = OpenSubtitlesProvider(api_key='')
-        result = provider.search(_make_identity(), ['eng'])
+        with patch.dict('os.environ', {}, clear=False):
+            # Remove the key if present so the fallback also returns ''
+            import os
+
+            os.environ.pop('OPENSUBTITLES_API_KEY', None)
+            provider = OpenSubtitlesProvider(api_key='')
+            result = provider.search(_make_identity(), ['eng'])
         assert result == []
 
     def test_search_parses_api_response(self):
