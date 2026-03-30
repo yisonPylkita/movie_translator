@@ -52,7 +52,7 @@ build-backend = "hatchling.build"
 packages = ["movie_translator"]
 
 [dependency-groups]
-dev = ["ruff~=0.14", "pytest~=8.0", "pytest-xdist~=3.5", "pytest-cov~=6.0", "ty"]
+dev = ["ruff~=0.14", "pytest~=8.0", "pytest-xdist~=3.5", "pytest-cov~=6.0", "pytest-asyncio>=0.24", "ty"]
 
 [tool.ruff]
 line-length = 100
@@ -75,6 +75,7 @@ testpaths = ["tests", "movie_translator"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-n auto --cov=movie_translator --cov-report=term-missing:skip-covered"
+asyncio_mode = "auto"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks integration tests requiring FFmpeg",
