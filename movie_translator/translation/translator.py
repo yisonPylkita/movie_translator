@@ -1,14 +1,12 @@
 import gc
 import time
 import warnings
-from collections.abc import Callable
 
 import torch
-from rich.progress import Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeElapsedColumn
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-from ..logging import console, logger
-from ..types import DialogueLine
+from ..logging import logger
+from ..types import DialogueLine, ProgressCallback
 from .enhancements import (
     PreprocessingStats,
     extract_placeholders,
@@ -29,9 +27,6 @@ from .sentence_merger import merge_for_translation, unmerge_translations
 # Suppress the repeated "pip install sacremoses" warning from the Marian
 # tokenizer. sacremoses is optional and not needed for our use case.
 warnings.filterwarnings('ignore', message='.*sacremoses.*')
-
-# Callback receives (batch_num, total_batches, lines_per_second)
-ProgressCallback = Callable[[int, int, float], None]
 
 
 class SubtitleTranslator:
@@ -113,21 +108,22 @@ class SubtitleTranslator:
         )
 
         translations = []
-        total_batches = (len(merged_texts) + self.batch_size - 1) // self.batch_size
+        total_lines = len(texts)
         start_time = time.time()
 
         for i in range(0, len(merged_texts), self.batch_size):
-            batch_num = i // self.batch_size + 1
             batch_texts = merged_texts[i : i + self.batch_size]
 
             batch_translations = self._translate_batch(batch_texts)
             translations.extend(batch_translations)
 
             if progress_callback:
+                # Count original lines covered so far across all completed groups
+                units_done = min(i + self.batch_size, len(merged_texts))
+                lines_done = sum(len(g.line_indices) for g in groups[:units_done])
                 elapsed = time.time() - start_time
-                lines_processed = min(batch_num * self.batch_size, len(merged_texts))
-                rate = lines_processed / elapsed if elapsed > 0 else 0
-                progress_callback(batch_num, total_batches, rate)
+                rate = lines_done / elapsed if elapsed > 0 else 0
+                progress_callback(lines_done, total_lines, rate)
 
             self._periodic_memory_cleanup(i)
 
@@ -147,10 +143,10 @@ class SubtitleTranslator:
     def _translate_batch(self, texts: list[str]) -> list[str]:
         self._validate_inputs(texts)
 
-        # Extract placeholders (numbers, URLs, proper nouns) before translation
-        # so the model doesn't mangle them.
         placeholder_mappings: list[dict[str, str]] = []
         if self.enable_enhancements:
+            # Extract placeholders (numbers, URLs, proper nouns) before
+            # translation so the model doesn't mangle them.
             protected_texts = []
             for text in texts:
                 protected, mapping = extract_placeholders(text, self.preprocessing_stats)
@@ -169,9 +165,6 @@ class SubtitleTranslator:
         encoded = self._encode_texts(processed_texts)
         outputs = self._generate_translations(encoded)
         decoded = self._decode_outputs(outputs)
-
-        del encoded
-        del outputs
 
         if self.enable_enhancements:
             decoded = self._apply_postprocessing(decoded)
@@ -268,7 +261,8 @@ class SubtitleTranslator:
         return texts
 
     def _encode_texts(self, texts: list[str]) -> dict:
-        assert self.tokenizer is not None
+        if self.tokenizer is None:
+            raise RuntimeError('Tokenizer not loaded — call load_model() first')
         encoded = self.tokenizer.batch_encode_plus(
             texts,
             return_tensors='pt',
@@ -281,7 +275,8 @@ class SubtitleTranslator:
         return encoded
 
     def _generate_translations(self, encoded: dict) -> torch.Tensor:
-        assert self.model is not None
+        if self.model is None:
+            raise RuntimeError('Model not loaded — call load_model() first')
         with torch.inference_mode():
             return self.model.generate(
                 **encoded,
@@ -292,7 +287,8 @@ class SubtitleTranslator:
             )
 
     def _decode_outputs(self, outputs: torch.Tensor) -> list[str]:
-        assert self.tokenizer is not None
+        if self.tokenizer is None:
+            raise RuntimeError('Tokenizer not loaded — call load_model() first')
         return self.tokenizer.batch_decode(
             outputs,
             skip_special_tokens=True,
@@ -300,11 +296,7 @@ class SubtitleTranslator:
         )
 
     def cleanup(self):
-        logger.info('🧹 Cleaning up AI Translator...')
-        if self.model:
-            del self.model
-        if self.tokenizer:
-            del self.tokenizer
+        logger.info('Cleaning up AI Translator...')
         self.model = None
         self.tokenizer = None
         self._clear_memory()
@@ -341,35 +333,14 @@ def translate_dialogue_lines(
     device: str,
     batch_size: int,
     model: str,
+    progress_callback: ProgressCallback | None = None,
 ) -> list[DialogueLine]:
     translator = _get_translator(device, batch_size, model)
     if translator is None:
         return []
 
     texts = [line.text for line in dialogue_lines]
-    total_batches = (len(texts) + batch_size - 1) // batch_size
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn('[progress.description]{task.description}'),
-        TaskProgressColumn(),
-        TextColumn('•'),
-        TimeElapsedColumn(),
-        TextColumn('•'),
-        TextColumn('{task.fields[rate]}'),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task(
-            f'[cyan]Translating {len(texts)} lines...[/cyan]',
-            total=total_batches,
-            rate='',
-        )
-
-        def on_progress(batch_num: int, total_batches: int, rate: float) -> None:
-            progress.update(task, advance=1, rate=f'{rate:.1f}/s')
-
-        translated_texts = translator.translate_texts(texts, on_progress)
+    translated_texts = translator.translate_texts(texts, progress_callback)
 
     return [
         DialogueLine(line.start_ms, line.end_ms, text)

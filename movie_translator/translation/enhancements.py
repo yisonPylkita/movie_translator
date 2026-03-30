@@ -34,16 +34,25 @@ MULTI_WORD_PHRASES = {
 }
 
 IDIOM_PATTERNS = [
-    (r'\bbreak a leg\b', 'good luck', re.IGNORECASE),
-    (r'\braining cats and dogs\b', 'raining heavily', re.IGNORECASE),
-    (r'\bpiece of cake\b', 'very easy', re.IGNORECASE),
-    (r'\bhit the nail on the head\b', 'exactly right', re.IGNORECASE),
-    (r'\blet the cat out of the bag\b', 'reveal a secret', re.IGNORECASE),
-    (r'\bonce in a blue moon\b', 'very rarely', re.IGNORECASE),
-    (r'\bunder the weather\b', 'feeling sick', re.IGNORECASE),
-    (r'\bspill the beans\b', 'reveal a secret', re.IGNORECASE),
-    (r'\bbarking up the wrong tree\b', 'looking in the wrong place', re.IGNORECASE),
-    (r'\bcost an arm and a leg\b', 'very expensive', re.IGNORECASE),
+    (re.compile(r'\bbreak a leg\b', re.IGNORECASE), 'good luck'),
+    (re.compile(r'\braining cats and dogs\b', re.IGNORECASE), 'raining heavily'),
+    (re.compile(r'\bpiece of cake\b', re.IGNORECASE), 'very easy'),
+    (re.compile(r'\bhit the nail on the head\b', re.IGNORECASE), 'exactly right'),
+    (re.compile(r'\blet the cat out of the bag\b', re.IGNORECASE), 'reveal a secret'),
+    (re.compile(r'\bonce in a blue moon\b', re.IGNORECASE), 'very rarely'),
+    (re.compile(r'\bunder the weather\b', re.IGNORECASE), 'feeling sick'),
+    (re.compile(r'\bspill the beans\b', re.IGNORECASE), 'reveal a secret'),
+    (re.compile(r'\bbarking up the wrong tree\b', re.IGNORECASE), 'looking in the wrong place'),
+    (re.compile(r'\bcost an arm and a leg\b', re.IGNORECASE), 'very expensive'),
+]
+
+# Patterns for content that should pass through translation untouched.
+# Each tuple: (compiled regex, group name for the placeholder tag).
+_PLACEHOLDER_PATTERNS = [
+    (re.compile(r'\b\d{1,3}([-.)\s]\d{2,4}){2,}\b'), 'PHONE'),  # phone numbers
+    (re.compile(r'\b\d{1,2}[/:]\d{2}(?:[/:]\d{2,4})?\b'), 'TIME'),  # 12:30, 1/01/2025
+    (re.compile(r'https?://\S+'), 'URL'),  # URLs
+    (re.compile(r'\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b'), 'NAME'),  # Title Case names
 ]
 
 
@@ -52,6 +61,7 @@ class PreprocessingStats:
     single_word_hits: int = 0
     multi_word_hits: int = 0
     idiom_hits: int = 0
+    placeholder_hits: int = 0
     total_processed: int = 0
 
     def record_single_word(self):
@@ -64,6 +74,9 @@ class PreprocessingStats:
 
     def record_idiom(self):
         self.idiom_hits += 1
+
+    def record_placeholder(self):
+        self.placeholder_hits += 1
 
     def record_processed(self):
         self.total_processed += 1
@@ -81,6 +94,7 @@ class PreprocessingStats:
             f'  Single-word matches: {self.single_word_hits}',
             f'  Multi-word matches: {self.multi_word_hits}',
             f'  Idiom replacements: {self.idiom_hits}',
+            f'  Placeholder protections: {self.placeholder_hits}',
             f'  Direct translation rate: {hit_rate:.1f}% (skipped model)',
         ]
         return '\n'.join(lines)
@@ -89,6 +103,7 @@ class PreprocessingStats:
         self.single_word_hits = 0
         self.multi_word_hits = 0
         self.idiom_hits = 0
+        self.placeholder_hits = 0
         self.total_processed = 0
 
 
@@ -141,8 +156,8 @@ def preprocess_for_translation(
 
     processed = text
     idiom_matched = False
-    for pattern, replacement, flags in IDIOM_PATTERNS:
-        new_processed = re.sub(pattern, replacement, processed, flags=flags)
+    for compiled_pattern, replacement in IDIOM_PATTERNS:
+        new_processed = compiled_pattern.sub(replacement, processed)
         if new_processed != processed:
             idiom_matched = True
             processed = new_processed
@@ -200,3 +215,43 @@ def _normalize_punctuation(text: str) -> str:
     text = re.sub(r'\s+([.!?])', r'\1', text)
 
     return text
+
+
+# ---------------------------------------------------------------------------
+# Placeholder protection for untranslatable content
+# ---------------------------------------------------------------------------
+
+
+def extract_placeholders(
+    text: str, stats: PreprocessingStats | None = None
+) -> tuple[str, dict[str, str]]:
+    """Replace numbers, URLs, and Title Case names with placeholders.
+
+    Returns the modified text and a mapping from placeholder tags back to
+    original values so they can be restored after translation.
+    """
+    mapping: dict[str, str] = {}
+    result = text
+    counter = 0
+
+    for pattern, tag in _PLACEHOLDER_PATTERNS:
+        for match in pattern.finditer(result):
+            key = f'__{tag}{counter}__'
+            mapping[key] = match.group()
+            counter += 1
+            if stats:
+                stats.record_placeholder()
+
+    # Replace longest matches first to avoid partial overlap issues.
+    for key, original in sorted(mapping.items(), key=lambda kv: -len(kv[1])):
+        result = result.replace(original, key, 1)
+
+    return result, mapping
+
+
+def restore_placeholders(text: str, mapping: dict[str, str]) -> str:
+    """Restore placeholder tags with their original values."""
+    result = text
+    for key, original in mapping.items():
+        result = result.replace(key, original)
+    return result

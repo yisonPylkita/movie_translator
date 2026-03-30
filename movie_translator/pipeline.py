@@ -51,6 +51,9 @@ class TranslationPipeline:
             for stage in self.stages:
                 if self.tracker:
                     self.tracker.set_stage(stage.name)
+                    set_tracker = getattr(stage, 'set_tracker', None)
+                    if set_tracker is not None:
+                        set_tracker(self.tracker)
                 ctx = stage.run(ctx)
             return True
         except Exception as e:

@@ -1,6 +1,9 @@
 """AI translation and font checking stage."""
 
+from __future__ import annotations
+
 from concurrent.futures import ThreadPoolExecutor
+from typing import TYPE_CHECKING
 
 from ..context import FontInfo, PipelineContext
 from ..fonts import (
@@ -11,20 +14,36 @@ from ..fonts import (
 from ..logging import logger
 from ..translation import translate_dialogue_lines
 
+if TYPE_CHECKING:
+    from ..progress import ProgressTracker
+
 
 class TranslateStage:
     name = 'translate'
 
+    def __init__(self):
+        self._tracker: ProgressTracker | None = None
+
+    def set_tracker(self, tracker: ProgressTracker):
+        self._tracker = tracker
+
     def run(self, ctx: PipelineContext) -> PipelineContext:
-        logger.info(f'Translating {len(ctx.dialogue_lines)} lines...')
+        assert ctx.dialogue_lines is not None
+        assert ctx.english_source is not None
+
+        total = len(ctx.dialogue_lines)
+        logger.info(f'Translating {total} lines...')
+
+        english_source = ctx.english_source
+        tracker = self._tracker
 
         def _check_fonts():
-            supports = check_embedded_fonts_support_polish(ctx.video_path, ctx.english_source)
+            supports = check_embedded_fonts_support_polish(ctx.video_path, english_source)
             if supports:
                 return FontInfo(supports_polish=True)
             is_mkv = ctx.video_path.suffix.lower() == '.mkv'
             if is_mkv:
-                names = get_ass_font_names(ctx.english_source)
+                names = get_ass_font_names(english_source)
                 result = find_system_font_for_polish(names)
                 if result:
                     fp, fam = result
@@ -36,6 +55,10 @@ class TranslateStage:
                     )
             return FontInfo(supports_polish=False)
 
+        def _on_progress(lines_done: int, total_lines: int, rate: float) -> None:
+            if tracker:
+                tracker.set_stage_progress(lines_done, total_lines, rate)
+
         with ThreadPoolExecutor(max_workers=2) as pool:
             font_future = pool.submit(_check_fonts)
             translate_future = pool.submit(
@@ -44,6 +67,7 @@ class TranslateStage:
                 ctx.config.device,
                 ctx.config.batch_size,
                 ctx.config.model,
+                progress_callback=_on_progress,
             )
 
             ctx.font_info = font_future.result()

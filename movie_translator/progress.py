@@ -69,6 +69,7 @@ class ProgressTracker:
         self._log_lines: deque[tuple[str, str]] = deque(maxlen=24)
         self._file_start_time = 0.0
         self._batch_start_time = 0.0
+        self._stage_progress: tuple[int, int, float] | None = None  # (done, total, rate)
         self._live: Live | None = None
         self._log_handler: _LogCapture | None = None
 
@@ -118,8 +119,14 @@ class ProgressTracker:
         if self._current_stage and self._current_stage not in self._stages_done:
             self._stages_done.append(self._current_stage)
         self._current_stage = stage
+        self._stage_progress = None
         if info:
             self._stage_info[stage] = info
+        self._update()
+
+    def set_stage_progress(self, done: int, total: int, rate: float = 0.0):
+        """Update sub-progress for the current stage (e.g. translation lines)."""
+        self._stage_progress = (done, total, rate)
         self._update()
 
     def complete_file(self, status: str):
@@ -233,8 +240,24 @@ class ProgressTracker:
 
         stages_line = '  '.join(stage_parts)
 
-        content = Text.from_markup(f'[bold]{name}[/bold] [dim]{elapsed:.0f}s[/dim]\n{stages_line}')
-        return Panel(content, title='[cyan]Current File', padding=(0, 1))
+        renderables: list = [
+            Text.from_markup(f'[bold]{name}[/bold] [dim]{elapsed:.0f}s[/dim]\n{stages_line}')
+        ]
+
+        # Sub-progress bar for current stage (e.g. translation)
+        if self._stage_progress is not None:
+            done, total, rate = self._stage_progress
+            sub = Progress(
+                BarColumn(bar_width=40),
+                MofNCompleteColumn(),
+                TextColumn('•'),
+                TextColumn(f'{rate:.1f} lines/s'),
+                expand=False,
+            )
+            sub.add_task('', total=total, completed=done)
+            renderables.append(sub)
+
+        return Panel(Group(*renderables), title='[cyan]Current File', padding=(0, 1))
 
     def _render_logs(self):
         text = Text()

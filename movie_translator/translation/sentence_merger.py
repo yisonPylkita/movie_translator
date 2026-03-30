@@ -179,14 +179,20 @@ def _proportional_split(
 
     result: list[str] = []
     used = 0
-    for k, count in enumerate(orig_counts):
-        if k == len(orig_counts) - 1:
+    remaining_segments = len(orig_counts)
+    for _k, count in enumerate(orig_counts):
+        remaining_segments -= 1
+        if remaining_segments == 0:
             # Last segment gets everything remaining
             result.append(' '.join(words[used:]))
         else:
+            remaining_words = total_translated - used
             share = round(count / total_orig * total_translated)
-            share = max(share, 1)  # at least one word per segment
-            share = min(share, total_translated - used - (len(orig_counts) - 1 - k))
+            # Ensure at least 1 word if available, but leave enough for
+            # remaining segments (each needs at least 0 words — we only
+            # guarantee non-empty for the last segment).
+            share = max(share, min(1, remaining_words))
+            share = min(share, max(0, remaining_words - remaining_segments))
             result.append(' '.join(words[used : used + share]))
             used += share
 
