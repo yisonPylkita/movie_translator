@@ -1,0 +1,311 @@
+{
+  "version": 1,
+  "git_commit": "60c34d2",
+  "dirty": false,
+  "timestamp": "2026-03-30T16:01:34Z",
+  "config": {
+    "device": "mps",
+    "batch_size": 16,
+    "model": "allegro",
+    "enable_fetch": true,
+    "enable_inpaint": false
+  },
+  "videos": [
+    {
+      "path": "/Users/w/Downloads/translated/[Judas] Code Geass - S01E01.mkv",
+      "hash": "c8a07f552432c313",
+      "file_size_bytes": 345893277,
+      "duration_ms": 0,
+      "identity": {
+        "title": "Code Geass",
+        "parsed_title": "Code Geass",
+        "media_type": "episode",
+        "season": 1,
+        "episode": 1,
+        "year": null,
+        "is_anime": true,
+        "release_group": "Judas",
+        "imdb_id": null,
+        "tmdb_id": null
+      },
+      "entries": [
+        {
+          "name": "identify.record_identity",
+          "duration_ms": 0.0,
+          "details": {
+            "title": "Code Geass",
+            "media_type": "episode",
+            "is_anime": true,
+            "season": 1,
+            "episode": 1
+          }
+        },
+        {
+          "name": "identify",
+          "duration_ms": 45.9
+        },
+        {
+          "name": "extract_reference.get_track_info",
+          "duration_ms": 0.6
+        },
+        {
+          "name": "extract_reference.extract_pgs_track",
+          "duration_ms": 20328.2,
+          "details": {
+            "subtitle_count": 402
+          }
+        },
+        {
+          "name": "extract_reference",
+          "duration_ms": 20328.8
+        },
+        {
+          "name": "fetch.search_all",
+          "duration_ms": 11779.4,
+          "details": {
+            "candidates": 10
+          }
+        },
+        {
+          "name": "fetch.download_all",
+          "duration_ms": 7.7,
+          "details": {
+            "downloaded": 0,
+            "failed": 10
+          }
+        },
+        {
+          "name": "fetch",
+          "duration_ms": 11794.9
+        },
+        {
+          "name": "extract.select_source",
+          "duration_ms": 0.0,
+          "details": {
+            "source": "reference"
+          }
+        },
+        {
+          "name": "extract.extract_dialogue_lines",
+          "duration_ms": 24.2,
+          "details": {
+            "lines": 402,
+            "chars": 14723
+          }
+        },
+        {
+          "name": "extract",
+          "duration_ms": 24.6
+        },
+        {
+          "name": "translate.check_fonts",
+          "duration_ms": 240.4,
+          "details": {
+            "supports_polish": false,
+            "fallback_font": "Arial Narrow"
+          }
+        },
+        {
+          "name": "translate.batch",
+          "duration_ms": 17041.0,
+          "details": {
+            "input_lines": 402,
+            "input_chars": 14723,
+            "batch_size": 16,
+            "output_lines": 402,
+            "output_chars": 11397,
+            "batches": 26
+          }
+        },
+        {
+          "name": "translate",
+          "duration_ms": 17062.7
+        },
+        {
+          "name": "create_tracks.create_polish_subtitles",
+          "duration_ms": 7.2
+        },
+        {
+          "name": "create_tracks.override_font",
+          "duration_ms": 3.7
+        },
+        {
+          "name": "create_tracks.build_track_list",
+          "duration_ms": 0.0,
+          "details": {
+            "tracks": 1
+          }
+        },
+        {
+          "name": "create_tracks",
+          "duration_ms": 11.2
+        },
+        {
+          "name": "mux.create_clean_video",
+          "duration_ms": 1084.0,
+          "details": {
+            "tracks": 1,
+            "font_attachments": 1
+          }
+        },
+        {
+          "name": "mux.verify_result",
+          "duration_ms": 60.2
+        },
+        {
+          "name": "mux.replace_original",
+          "duration_ms": 101.4
+        },
+        {
+          "name": "mux",
+          "duration_ms": 1245.7
+        }
+      ],
+      "total_duration_ms": 50549.4
+    },
+    {
+      "path": "/Users/w/Downloads/translated/[Sokudo] One Punch Man - S01E01 [1080p BD AV1][dual audio].mkv",
+      "hash": "7cac21f403633ebf",
+      "file_size_bytes": 416957895,
+      "duration_ms": 0,
+      "identity": {
+        "title": "One Punch Man",
+        "parsed_title": "One Punch Man",
+        "media_type": "episode",
+        "season": 1,
+        "episode": 1,
+        "year": null,
+        "is_anime": true,
+        "release_group": "Sokudo",
+        "imdb_id": null,
+        "tmdb_id": null
+      },
+      "entries": [
+        {
+          "name": "identify.record_identity",
+          "duration_ms": 0.0,
+          "details": {
+            "title": "One Punch Man",
+            "media_type": "episode",
+            "is_anime": true,
+            "season": 1,
+            "episode": 1
+          }
+        },
+        {
+          "name": "identify",
+          "duration_ms": 11.5
+        },
+        {
+          "name": "extract_reference.get_track_info",
+          "duration_ms": 0.5
+        },
+        {
+          "name": "extract_reference.extract_subtitle",
+          "duration_ms": 169.8
+        },
+        {
+          "name": "extract_reference",
+          "duration_ms": 170.4
+        },
+        {
+          "name": "fetch.search_all",
+          "duration_ms": 10005.7,
+          "details": {
+            "candidates": 13
+          }
+        },
+        {
+          "name": "fetch.download_all",
+          "duration_ms": 58.7,
+          "details": {
+            "downloaded": 0,
+            "failed": 13
+          }
+        },
+        {
+          "name": "fetch",
+          "duration_ms": 10070.8
+        },
+        {
+          "name": "extract.select_source",
+          "duration_ms": 0.0,
+          "details": {
+            "source": "reference"
+          }
+        },
+        {
+          "name": "extract.extract_dialogue_lines",
+          "duration_ms": 6.7,
+          "details": {
+            "lines": 441,
+            "chars": 11848
+          }
+        },
+        {
+          "name": "extract",
+          "duration_ms": 6.9
+        },
+        {
+          "name": "translate.check_fonts",
+          "duration_ms": 409.8,
+          "details": {
+            "supports_polish": true
+          }
+        },
+        {
+          "name": "translate.batch",
+          "duration_ms": 13668.5,
+          "details": {
+            "input_lines": 441,
+            "input_chars": 11848,
+            "batch_size": 16,
+            "output_lines": 441,
+            "output_chars": 8517,
+            "batches": 28
+          }
+        },
+        {
+          "name": "translate",
+          "duration_ms": 13673.1
+        },
+        {
+          "name": "create_tracks.create_polish_subtitles",
+          "duration_ms": 7.5
+        },
+        {
+          "name": "create_tracks.build_track_list",
+          "duration_ms": 0.0,
+          "details": {
+            "tracks": 1
+          }
+        },
+        {
+          "name": "create_tracks",
+          "duration_ms": 7.6
+        },
+        {
+          "name": "mux.create_clean_video",
+          "duration_ms": 654.7,
+          "details": {
+            "tracks": 1,
+            "font_attachments": 0
+          }
+        },
+        {
+          "name": "mux.verify_result",
+          "duration_ms": 47.3
+        },
+        {
+          "name": "mux.replace_original",
+          "duration_ms": 118.6
+        },
+        {
+          "name": "mux",
+          "duration_ms": 820.7
+        }
+      ],
+      "total_duration_ms": 24809.9
+    }
+  ]
+}
