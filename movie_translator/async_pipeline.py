@@ -48,6 +48,7 @@ async def _handle_pending_ocr(
     ctx: PipelineContext,
     gpu_queue: GpuQueue,
     file_tag: str,
+    tracker_key: str,
     tracker: ProgressTracker,
     stage_label: str,
 ) -> None:
@@ -59,7 +60,7 @@ async def _handle_pending_ocr(
     ocr_type = ocr_info['type']
     output_dir = Path(ocr_info['output_dir'])
 
-    tracker.set_gpu_status(file_tag, 'queued')
+    tracker.set_gpu_status(tracker_key, 'queued')
 
     if ocr_type == 'pgs':
         task = OcrTask(
@@ -78,7 +79,7 @@ async def _handle_pending_ocr(
         )
 
     result = await gpu_queue.submit(task)
-    tracker.set_gpu_status(file_tag, 'none')
+    tracker.set_gpu_status(tracker_key, 'none')
 
     # Apply results based on which stage deferred the OCR
     if stage_label == 'extract_ref':
@@ -113,12 +114,16 @@ async def process_file(
     gpu_queue: GpuQueue,
     tracker: ProgressTracker,
     metrics: MetricsCollector | NullCollector | None = None,
+    display_name: str = '',
 ) -> bool:
     """Process a single video file through the async pipeline.
 
     Returns True on success, False on failure.
     """
+    # display_name is the tracker key (set by run_all via start_file).
+    # file_tag is a short name for log message tagging via ContextVar.
     file_tag = _make_file_tag(video_path)
+    tracker_key = display_name or file_tag
     token = current_file_tag.set(file_tag)
 
     ctx = PipelineContext(
@@ -130,28 +135,30 @@ async def process_file(
 
     try:
         # Stage 1 - Identify (IO)
-        tracker.set_stage(file_tag, 'identify')
+        tracker.set_stage(tracker_key, 'identify')
         with ctx.metrics.span('identify'):
             await asyncio.to_thread(stages['identify'].run, ctx)
 
         # Stage 2 - Extract Reference (IO + deferred OCR)
-        tracker.set_stage(file_tag, 'extract')
+        tracker.set_stage(tracker_key, 'extract')
         with ctx.metrics.span('extract_reference'):
             await asyncio.to_thread(stages['extract_ref'].run_io, ctx)
         if ctx.pending_ocr:
-            await _handle_pending_ocr(ctx, gpu_queue, file_tag, tracker, 'extract_ref')
+            await _handle_pending_ocr(ctx, gpu_queue, file_tag, tracker_key, tracker, 'extract_ref')
 
         # Stage 3 - Fetch (IO)
-        tracker.set_stage(file_tag, 'fetch')
+        tracker.set_stage(tracker_key, 'fetch')
         with ctx.metrics.span('fetch'):
             await asyncio.to_thread(stages['fetch'].run, ctx)
 
         # Stage 4 - Extract English (IO + deferred OCR)
-        tracker.set_stage(file_tag, 'extract')
+        tracker.set_stage(tracker_key, 'extract')
         with ctx.metrics.span('extract'):
             await asyncio.to_thread(stages['extract_english'].run_io, ctx)
         if ctx.pending_ocr:
-            await _handle_pending_ocr(ctx, gpu_queue, file_tag, tracker, 'extract_english')
+            await _handle_pending_ocr(
+                ctx, gpu_queue, file_tag, tracker_key, tracker, 'extract_english'
+            )
 
         if ctx.english_source is None:
             raise RuntimeError(f'No English subtitle source found for {video_path.name}')
@@ -159,7 +166,7 @@ async def process_file(
             raise RuntimeError(f'No dialogue lines extracted for {video_path.name}')
 
         # Stage 5 - Translate (font check IO + GPU translation concurrently)
-        tracker.set_stage(file_tag, 'translate')
+        tracker.set_stage(tracker_key, 'translate')
 
         translate_stage = stages['translate']
         translate_stage.set_tracker(tracker)
@@ -170,10 +177,10 @@ async def process_file(
                 ctx.font_info = font_info
 
         async def _translate_gpu():
-            tracker.set_gpu_status(file_tag, 'queued')
+            tracker.set_gpu_status(tracker_key, 'queued')
 
             def _on_progress(lines_done: int, total_lines: int, rate: float) -> None:
-                tracker.set_stage_progress(file_tag, lines_done, total_lines, rate=rate)
+                tracker.set_stage_progress(tracker_key, lines_done, total_lines, rate=rate)
 
             assert ctx.dialogue_lines is not None
             task = TranslateTask(
@@ -186,7 +193,7 @@ async def process_file(
             )
             with ctx.metrics.span('translate.batch'):
                 result = await gpu_queue.submit(task)
-            tracker.set_gpu_status(file_tag, 'none')
+            tracker.set_gpu_status(tracker_key, 'none')
             ctx.translated_lines = result
 
         await asyncio.gather(_check_fonts(), _translate_gpu())
@@ -195,14 +202,14 @@ async def process_file(
             raise RuntimeError('Translation failed -- empty result')
 
         # Stage 6 - Create Tracks (IO)
-        tracker.set_stage(file_tag, 'create')
+        tracker.set_stage(tracker_key, 'create')
         with ctx.metrics.span('create_tracks'):
             await asyncio.to_thread(stages['create_tracks'].run, ctx)
 
         # Stage 7 - Inpaint (optional GPU) then Mux (IO)
-        tracker.set_stage(file_tag, 'mux')
+        tracker.set_stage(tracker_key, 'mux')
         if ctx.ocr_results and config.enable_inpaint and ctx.inpainted_video is None:
-            tracker.set_gpu_status(file_tag, 'queued')
+            tracker.set_gpu_status(tracker_key, 'queued')
             inpainted = work_dir / f'{video_path.stem}_inpainted{video_path.suffix}'
             task = InpaintTask(
                 video_path=video_path,
@@ -213,7 +220,7 @@ async def process_file(
             )
             with ctx.metrics.span('inpaint'):
                 await gpu_queue.submit(task)
-            tracker.set_gpu_status(file_tag, 'none')
+            tracker.set_gpu_status(tracker_key, 'none')
             ctx.inpainted_video = inpainted
 
         with ctx.metrics.span('mux'):
@@ -278,6 +285,7 @@ async def run_all(
                 gpu_queue=gpu_queue,
                 tracker=tracker,
                 metrics=metrics,
+                display_name=relative_name,
             )
 
             status = 'success' if success else 'failed'

@@ -270,7 +270,7 @@ class TestRunAll:
 
         # Mock process_file to just record the call and succeed
         async def mock_process_file(
-            video_path, work_dir, config, stages, gpu_queue, tracker, metrics=None
+            video_path, work_dir, config, stages, gpu_queue, tracker, metrics=None, display_name=''
         ):
             processed_files.append(video_path)
             return True
@@ -318,7 +318,7 @@ class TestRunAll:
         processed = []
 
         async def mock_process_file(
-            video_path, work_dir, config, stages, gpu_queue, tracker, metrics=None
+            video_path, work_dir, config, stages, gpu_queue, tracker, metrics=None, display_name=''
         ):
             processed.append(video_path)
             return True
@@ -366,7 +366,7 @@ class TestRunAll:
         lock = asyncio.Lock()
 
         async def mock_process_file(
-            video_path, work_dir, config, stages, gpu_queue, tracker, metrics=None
+            video_path, work_dir, config, stages, gpu_queue, tracker, metrics=None, display_name=''
         ):
             nonlocal max_concurrent, current_concurrent
             async with lock:
@@ -420,7 +420,7 @@ class TestRunAll:
         barrier = asyncio.Barrier(3)
 
         async def mock_process_file(
-            video_path, work_dir, config, stages, gpu_queue, tracker, metrics=None
+            video_path, work_dir, config, stages, gpu_queue, tracker, metrics=None, display_name=''
         ):
             nonlocal max_concurrent, current_concurrent
             async with lock:
