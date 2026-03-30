@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from movie_translator.metrics.collector import MetricsCollector, NullCollector
 from movie_translator.types import DialogueLine, OCRResult, SubtitleFile
 
 
@@ -63,3 +64,4 @@ class PipelineContext:
     ocr_results: list[OCRResult] | None = None
     inpainted_video: Path | None = None
     burned_in_probed: bool = False  # True after burned-in subtitle probe has run
+    metrics: MetricsCollector | NullCollector = field(default_factory=NullCollector)

@@ -5,6 +5,9 @@ from pathlib import Path
 
 from .discovery import create_work_dir, find_videos
 from .logging import console, logger, set_verbose
+from .metrics.collector import MetricsCollector, NullCollector
+from .metrics.listeners import ReportBuilder
+from .metrics.report import build_report, save_report
 from .pipeline import TranslationPipeline
 from .progress import ProgressTracker
 from .subtitles import SubtitleExtractor
@@ -59,6 +62,7 @@ def parse_args():
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--keep-artifacts', action='store_true')
     parser.add_argument('--verbose', '-v', action='store_true')
+    parser.add_argument('--metrics', action='store_true', help='Collect performance metrics')
     return parser.parse_args()
 
 
@@ -105,6 +109,15 @@ def main():
         console.print('[yellow]Dry run mode - originals will not be modified[/yellow]')
 
     logging.getLogger('transformers').setLevel(logging.ERROR)
+
+    if args.metrics:
+        collector = MetricsCollector()
+        report_builder = ReportBuilder()
+        collector.add_listener(report_builder.on_event)
+    else:
+        collector = NullCollector()
+        report_builder = None
+
     extractor = SubtitleExtractor()
 
     with ProgressTracker(len(video_files), console=console) as tracker:
@@ -115,6 +128,7 @@ def main():
             enable_fetch=not args.no_fetch,
             enable_inpaint=args.inpaint,
             tracker=tracker,
+            metrics=collector,
         )
 
         for video_path in video_files:
@@ -126,6 +140,15 @@ def main():
             tracker.start_file(relative_name)
             work_dir = create_work_dir(video_path, root_dir)
             success = False
+
+            if report_builder is not None:
+                report_builder.start_video(
+                    path=str(video_path),
+                    hash='',
+                    file_size_bytes=video_path.stat().st_size if video_path.exists() else 0,
+                    duration_ms=0,
+                    identity={},
+                )
 
             try:
                 if extractor.has_polish_subtitles(video_path):
@@ -139,6 +162,27 @@ def main():
             except Exception as e:
                 logger.error(f'Unexpected error: {e}')
                 tracker.complete_file('failed')
+
+            if report_builder is not None:
+                identity = getattr(pipeline, 'last_identity', None)
+                if identity is not None:
+                    identity_dict = {
+                        'title': identity.title,
+                        'parsed_title': identity.parsed_title,
+                        'media_type': identity.media_type,
+                        'season': identity.season,
+                        'episode': identity.episode,
+                        'year': identity.year,
+                        'is_anime': identity.is_anime,
+                        'release_group': identity.release_group,
+                        'imdb_id': identity.imdb_id,
+                        'tmdb_id': identity.tmdb_id,
+                    }
+                    report_builder.update_current_video(
+                        identity=identity_dict,
+                        hash=identity.oshash,
+                    )
+                report_builder.end_video()
 
             if success and not args.keep_artifacts and work_dir.exists():
                 try:
@@ -155,6 +199,21 @@ def main():
                         temp_root.rmdir()
                 except OSError as e:
                     logger.debug(f'Failed to clean up {work_dir}: {e}')
+
+    if report_builder is not None:
+        report = build_report(
+            videos=report_builder.videos,
+            config={
+                'device': args.device,
+                'batch_size': args.batch_size,
+                'model': args.model,
+                'enable_fetch': not args.no_fetch,
+                'enable_inpaint': args.inpaint,
+            },
+        )
+        report_path = root_dir / '.translate_temp' / 'metrics.json'
+        save_report(report, report_path)
+        console.print(f'[dim]Metrics saved to {report_path}[/dim]')
 
 
 if __name__ == '__main__':

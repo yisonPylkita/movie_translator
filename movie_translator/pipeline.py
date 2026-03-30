@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .context import PipelineConfig, PipelineContext
 from .logging import logger
+from .metrics.collector import NullCollector
 from .stages import (
     CreateTracksStage,
     ExtractEnglishStage,
@@ -24,6 +25,7 @@ class TranslationPipeline:
         enable_fetch: bool = True,
         enable_inpaint: bool = False,
         tracker=None,
+        metrics=None,
     ):
         self.config = PipelineConfig(
             device=device,
@@ -33,6 +35,8 @@ class TranslationPipeline:
             enable_inpaint=enable_inpaint,
         )
         self.tracker = tracker
+        self.metrics = metrics
+        self.last_identity = None
         self.stages = [
             IdentifyStage(),
             ExtractReferenceStage(),
@@ -45,7 +49,12 @@ class TranslationPipeline:
 
     def process_video_file(self, video_path: Path, work_dir: Path, dry_run: bool = False) -> bool:
         self.config.dry_run = dry_run
-        ctx = PipelineContext(video_path=video_path, work_dir=work_dir, config=self.config)
+        ctx = PipelineContext(
+            video_path=video_path,
+            work_dir=work_dir,
+            config=self.config,
+            metrics=self.metrics or NullCollector(),
+        )
 
         try:
             for stage in self.stages:
@@ -54,8 +63,11 @@ class TranslationPipeline:
                     set_tracker = getattr(stage, 'set_tracker', None)
                     if set_tracker is not None:
                         set_tracker(self.tracker)
-                ctx = stage.run(ctx)
+                with ctx.metrics.span(stage.name):
+                    ctx = stage.run(ctx)
+            self.last_identity = ctx.identity
             return True
         except Exception as e:
+            self.last_identity = ctx.identity
             logger.error(f'Failed: {video_path.name} - {e}')
             return False
