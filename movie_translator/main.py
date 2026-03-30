@@ -1,8 +1,10 @@
+import asyncio
 import logging
 import shutil
 import sys
 from pathlib import Path
 
+from .context import PipelineConfig
 from .discovery import create_work_dir, find_videos
 from .ffmpeg import get_video_info
 from .logging import console, logger, set_verbose
@@ -117,40 +119,8 @@ def _resolve_model(explicit_choice: str | None) -> str:
     return 'allegro'
 
 
-def main():
-    args = parse_args()
-    set_verbose(args.verbose)
-    args.model = _resolve_model(args.model)
-
-    input_path = Path(args.input)
-    if not input_path.exists():
-        console.print(f'[red]❌ Not found: {input_path}[/red]')
-        sys.exit(1)
-
-    if not check_dependencies():
-        sys.exit(1)
-
-    video_files = find_videos(input_path)
-    if not video_files:
-        console.print(f'[red]❌ No video files found in {input_path}[/red]')
-        sys.exit(1)
-
-    # Determine root directory for work dir creation
-    root_dir = input_path if input_path.is_dir() else input_path.parent
-
-    if args.dry_run:
-        console.print('[yellow]Dry run mode - originals will not be modified[/yellow]')
-
-    logging.getLogger('transformers').setLevel(logging.ERROR)
-
-    if args.metrics:
-        collector = MetricsCollector()
-        report_builder = ReportBuilder()
-        collector.add_listener(report_builder.on_event)
-    else:
-        collector = NullCollector()
-        report_builder = None
-
+def _sync_main(video_files, root_dir, args, collector, report_builder):
+    """Run the pipeline sequentially for each video file (workers == 1)."""
     extractor = SubtitleExtractor()
 
     with ProgressTracker(len(video_files), console=console) as tracker:
@@ -241,6 +211,85 @@ def main():
                         temp_root.rmdir()
                 except OSError as e:
                     logger.debug(f'Failed to clean up {work_dir}: {e}')
+
+
+async def _async_main(video_files, root_dir, args, collector, report_builder, workers):
+    """Run the pipeline concurrently via async orchestration."""
+    from .async_pipeline import run_all
+    from .gpu_queue import GpuQueue
+
+    config = PipelineConfig(
+        device=args.device,
+        batch_size=args.batch_size,
+        model=args.model,
+        enable_fetch=not args.no_fetch,
+        enable_inpaint=args.inpaint,
+        dry_run=args.dry_run,
+        workers=workers,
+    )
+
+    gpu_queue = GpuQueue()
+    gpu_worker = asyncio.create_task(gpu_queue.run_worker())
+
+    with ProgressTracker(len(video_files), console=console) as tracker:
+        results = await run_all(video_files, root_dir, config, collector, gpu_queue, tracker)
+
+    await gpu_queue.shutdown()
+    await gpu_worker
+
+    # Feed results into report_builder if active
+    if report_builder is not None:
+        for video_path, _status in results:
+            report_builder.start_video(
+                path=str(video_path),
+                hash='',
+                file_size_bytes=video_path.stat().st_size if video_path.exists() else 0,
+                duration_ms=0,
+                identity={},
+            )
+            report_builder.end_video()
+
+
+def main():
+    args = parse_args()
+    set_verbose(args.verbose)
+    args.model = _resolve_model(args.model)
+
+    input_path = Path(args.input)
+    if not input_path.exists():
+        console.print(f'[red]❌ Not found: {input_path}[/red]')
+        sys.exit(1)
+
+    if not check_dependencies():
+        sys.exit(1)
+
+    video_files = find_videos(input_path)
+    if not video_files:
+        console.print(f'[red]❌ No video files found in {input_path}[/red]')
+        sys.exit(1)
+
+    # Determine root directory for work dir creation
+    root_dir = input_path if input_path.is_dir() else input_path.parent
+
+    if args.dry_run:
+        console.print('[yellow]Dry run mode - originals will not be modified[/yellow]')
+
+    logging.getLogger('transformers').setLevel(logging.ERROR)
+
+    if args.metrics:
+        collector = MetricsCollector()
+        report_builder = ReportBuilder()
+        collector.add_listener(report_builder.on_event)
+    else:
+        collector = NullCollector()
+        report_builder = None
+
+    workers = args.workers if args.workers > 0 else min(len(video_files), 4)
+
+    if workers > 1:
+        asyncio.run(_async_main(video_files, root_dir, args, collector, report_builder, workers))
+    else:
+        _sync_main(video_files, root_dir, args, collector, report_builder)
 
     if report_builder is not None:
         report = build_report(
