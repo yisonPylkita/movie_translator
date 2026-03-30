@@ -18,25 +18,34 @@ class ExtractEnglishStage:
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
         # Priority: fetched English > reference > embedded > OCR
-        fetched_eng = None
-        if ctx.fetched_subtitles:
-            eng_subs = ctx.fetched_subtitles.get('eng')
-            if eng_subs:
-                fetched_eng = eng_subs[0].path
+        with ctx.metrics.span('select_source') as s:
+            fetched_eng = None
+            if ctx.fetched_subtitles:
+                eng_subs = ctx.fetched_subtitles.get('eng')
+                if eng_subs:
+                    fetched_eng = eng_subs[0].path
 
-        if fetched_eng:
-            ctx.english_source = fetched_eng
-        elif ctx.reference_path:
-            ctx.english_source = ctx.reference_path
-        else:
-            ctx.english_source = self._extract_from_video(ctx)
+            if fetched_eng:
+                ctx.english_source = fetched_eng
+                s.detail('source', 'fetched')
+            elif ctx.reference_path:
+                ctx.english_source = ctx.reference_path
+                s.detail('source', 'reference')
+            else:
+                ctx.english_source = self._extract_from_video(ctx)
+                if ctx.english_source is not None:
+                    source_label = 'ocr' if ctx.ocr_results else 'embedded'
+                    s.detail('source', source_label)
 
         if ctx.english_source is None:
             raise RuntimeError(f'No English subtitle source found for {ctx.video_path.name}')
 
-        ctx.dialogue_lines = SubtitleProcessor.extract_dialogue_lines(ctx.english_source)
-        if not ctx.dialogue_lines:
-            raise RuntimeError(f'No dialogue lines found in {ctx.english_source.name}')
+        with ctx.metrics.span('extract_dialogue_lines') as s:
+            ctx.dialogue_lines = SubtitleProcessor.extract_dialogue_lines(ctx.english_source)
+            if not ctx.dialogue_lines:
+                raise RuntimeError(f'No dialogue lines found in {ctx.english_source.name}')
+            s.detail('lines', len(ctx.dialogue_lines))
+            s.detail('chars', sum(len(line.text) for line in ctx.dialogue_lines))
 
         logger.info(f'English source: {ctx.english_source.name} ({len(ctx.dialogue_lines)} lines)')
         return ctx

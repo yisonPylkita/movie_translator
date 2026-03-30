@@ -25,12 +25,14 @@ class FetchSubtitlesStage:
         if fetcher is None:
             return ctx
 
-        try:
-            all_matches = fetcher.search_all(ctx.identity, ['eng', 'pol'])
-        except Exception as e:
-            logger.warning(f'Subtitle search failed: {e}')
-            ctx.fetched_subtitles = {}
-            return ctx
+        with ctx.metrics.span('search_all') as s:
+            try:
+                all_matches = fetcher.search_all(ctx.identity, ['eng', 'pol'])
+            except Exception as e:
+                logger.warning(f'Subtitle search failed: {e}')
+                ctx.fetched_subtitles = {}
+                return ctx
+            s.detail('candidates', len(all_matches))
 
         if not all_matches:
             logger.info('No subtitles found from any provider')
@@ -42,7 +44,10 @@ class FetchSubtitlesStage:
         # Download all candidates
         candidates_dir = ctx.work_dir / 'candidates'
         candidates_dir.mkdir(parents=True, exist_ok=True)
-        downloaded = self._download_all(fetcher, all_matches, candidates_dir)
+        with ctx.metrics.span('download_all') as s:
+            downloaded = self._download_all(fetcher, all_matches, candidates_dir)
+            s.detail('downloaded', len(downloaded))
+            s.detail('failed', len(all_matches) - len(downloaded))
 
         if not downloaded:
             logger.warning('All candidate downloads failed')
@@ -50,15 +55,22 @@ class FetchSubtitlesStage:
             return ctx
 
         # Validate and select per language
-        ctx.fetched_subtitles = self._validate_and_select(
-            downloaded,
-            ctx.reference_path,
-        )
+        with ctx.metrics.span('validate_and_select') as s:
+            ctx.fetched_subtitles = self._validate_and_select(
+                downloaded,
+                ctx.reference_path,
+            )
+            passed = sum(len(v) for v in ctx.fetched_subtitles.values())
+            s.detail('passed', passed)
+            s.detail('rejected', len(downloaded) - passed)
 
         # Realign fetched Polish subtitles against the English reference
         if ctx.reference_path and 'pol' in ctx.fetched_subtitles:
             for sub in ctx.fetched_subtitles['pol']:
-                self._align_subtitle(sub.path, ctx.reference_path)
+                with ctx.metrics.span('align') as s:
+                    method = 'ilass' if align_ilass.is_available() else 'builtin'
+                    s.detail('method', method)
+                    self._align_subtitle(sub.path, ctx.reference_path)
 
         return ctx
 

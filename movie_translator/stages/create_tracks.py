@@ -27,38 +27,45 @@ class CreateTracksStage:
                 replace_chars = True
 
         # Create AI Polish subtitle file
-        ai_polish_ass = ctx.work_dir / f'{ctx.video_path.stem}_polish_ai.ass'
-        SubtitleProcessor.create_polish_subtitles(
-            ctx.english_source,
-            ctx.translated_lines,
-            ai_polish_ass,
-            replace_chars,
-        )
+        with ctx.metrics.span('create_polish_subtitles'):
+            ai_polish_ass = ctx.work_dir / f'{ctx.video_path.stem}_polish_ai.ass'
+            SubtitleProcessor.create_polish_subtitles(
+                ctx.english_source,
+                ctx.translated_lines,
+                ai_polish_ass,
+                replace_chars,
+            )
 
         if ctx.font_info.fallback_font_family:
-            SubtitleProcessor.override_font_name(ai_polish_ass, ctx.font_info.fallback_font_family)
-
-        # Build track list
-        fetched_pol_list = ctx.fetched_subtitles.get('pol', []) if ctx.fetched_subtitles else []
-        tracks: list[SubtitleFile] = []
-
-        for i, fetched_pol in enumerate(fetched_pol_list):
-            pol_title = f'Polish ({fetched_pol.source})'
-            tracks.append(SubtitleFile(fetched_pol.path, 'pol', pol_title, is_default=(i == 0)))
-            if ctx.font_info.fallback_font_family:
+            with ctx.metrics.span('override_font'):
                 SubtitleProcessor.override_font_name(
-                    fetched_pol.path,
-                    ctx.font_info.fallback_font_family,
+                    ai_polish_ass, ctx.font_info.fallback_font_family
                 )
 
-        tracks.append(
-            SubtitleFile(
-                ai_polish_ass,
-                'pol',
-                'Polish (AI)',
-                is_default=not bool(fetched_pol_list),
+        # Build track list
+        with ctx.metrics.span('build_track_list') as s:
+            fetched_pol_list = ctx.fetched_subtitles.get('pol', []) if ctx.fetched_subtitles else []
+            tracks: list[SubtitleFile] = []
+
+            for i, fetched_pol in enumerate(fetched_pol_list):
+                pol_title = f'Polish ({fetched_pol.source})'
+                tracks.append(SubtitleFile(fetched_pol.path, 'pol', pol_title, is_default=(i == 0)))
+                if ctx.font_info.fallback_font_family:
+                    SubtitleProcessor.override_font_name(
+                        fetched_pol.path,
+                        ctx.font_info.fallback_font_family,
+                    )
+
+            tracks.append(
+                SubtitleFile(
+                    ai_polish_ass,
+                    'pol',
+                    'Polish (AI)',
+                    is_default=not bool(fetched_pol_list),
+                )
             )
-        )
+
+            s.detail('tracks', len(tracks))
 
         ctx.subtitle_tracks = tracks
         return ctx
