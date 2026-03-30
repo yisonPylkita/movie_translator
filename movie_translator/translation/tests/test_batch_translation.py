@@ -6,8 +6,10 @@ from movie_translator.types import DialogueLine
 
 class TestBatchTranslation:
     def test_translation_across_batch_boundary_size_3_lines_8(self):
-        texts = [f'Line {i}' for i in range(1, 9)]
-        expected_translations = [f'Linia {i}' for i in range(1, 9)]
+        # Speaker-dash lines each get their own translation group (no merging),
+        # so all 8 lines become 8 translation units that span batch boundaries.
+        texts = [f'- Line {i}.' for i in range(1, 9)]
+        expected_translations = [f'- Linia {i}.' for i in range(1, 9)]
 
         translator = SubtitleTranslator(model_key='allegro', device='cpu', batch_size=3)
         translator.tokenizer = MagicMock()
@@ -37,12 +39,11 @@ class TestBatchTranslation:
         assert len(result) == 8
         for i in range(8):
             assert result[i] == expected_translations[i], f'Line {i} incorrect: {result[i]}'
-        for text in result:
-            assert 'Line' not in text, f'Found untranslated English text: {text}'
 
     def test_translation_across_batch_boundary_size_5_lines_7(self):
-        texts = [f'English {i}' for i in range(1, 8)]
-        expected_translations = [f'Polski {i}' for i in range(1, 8)]
+        # Speaker-dash lines prevent merging, giving 7 translation units.
+        texts = [f'- English {i}.' for i in range(1, 8)]
+        expected_translations = [f'- Polski {i}.' for i in range(1, 8)]
 
         translator = SubtitleTranslator(model_key='allegro', device='cpu', batch_size=5)
         translator.tokenizer = MagicMock()
@@ -72,12 +73,11 @@ class TestBatchTranslation:
         assert len(result) == 7
         for i in range(7):
             assert result[i] == expected_translations[i]
-        for text in result:
-            assert 'English' not in text, f'Found untranslated English text: {text}'
 
     def test_translation_batch_size_1_worst_case(self):
-        texts = ['Good', 'World', 'Test']
-        expected = ['Dobry', 'Swiat', 'Testuj']
+        # Speaker-dash lines prevent merging, giving 3 individual units.
+        texts = ['- Good.', '- World.', '- Test.']
+        expected = ['- Dobry.', '- Swiat.', '- Testuj.']
 
         translator = SubtitleTranslator(model_key='allegro', device='cpu', batch_size=1)
         translator.tokenizer = MagicMock()
@@ -106,8 +106,9 @@ class TestBatchTranslation:
         assert result == expected
 
     def test_translation_exact_batch_multiple(self):
-        texts = [f'Line {i}' for i in range(1, 9)]
-        expected = [f'Linia {i}' for i in range(1, 9)]
+        # Speaker-dash lines prevent merging, giving 8 individual units.
+        texts = [f'- Line {i}.' for i in range(1, 9)]
+        expected = [f'- Linia {i}.' for i in range(1, 9)]
 
         translator = SubtitleTranslator(model_key='allegro', device='cpu', batch_size=4)
         translator.tokenizer = MagicMock()
@@ -138,7 +139,7 @@ class TestBatchTranslation:
         assert result == expected
 
     def test_translation_single_line_edge_case(self):
-        texts = ['Single line']
+        texts = ['Single line.']
 
         translator = SubtitleTranslator(model_key='allegro', device='cpu', batch_size=10)
         translator.tokenizer = MagicMock()
@@ -146,12 +147,12 @@ class TestBatchTranslation:
 
         translator.tokenizer.batch_encode_plus.return_value = {'input_ids': MagicMock()}
         translator.model.generate.return_value = MagicMock()
-        translator.tokenizer.batch_decode.return_value = ['Pojedyncza linia']
+        translator.tokenizer.batch_decode.return_value = ['Pojedyncza linia.']
 
         result = translator.translate_texts(texts)
 
         assert len(result) == 1
-        assert result[0] == 'Pojedyncza linia'
+        assert result[0] == 'Pojedyncza linia.'
 
     def test_translation_empty_list(self):
         translator = SubtitleTranslator(model_key='allegro', device='cpu', batch_size=3)
@@ -159,8 +160,18 @@ class TestBatchTranslation:
         assert result == []
 
     def test_all_lines_translated_no_english_remainder(self):
-        texts = ['Good', 'World', 'How', 'Are', 'You', 'Today', 'Friend']
-        expected = ['Dobry', 'Swiat', 'Jak', 'Sie', 'Masz', 'Dzisiaj', 'Przyjaciel']
+        # Speaker-dash lines prevent merging, giving 7 individual translation units
+        # that span batch boundaries (batch_size=3 -> 3 batches).
+        texts = ['- Good.', '- World.', '- How?', '- Are.', '- You.', '- Today.', '- Friend.']
+        expected = [
+            '- Dobry.',
+            '- Swiat.',
+            '- Jak?',
+            '- Sie.',
+            '- Masz.',
+            '- Dzisiaj.',
+            '- Przyjaciel.',
+        ]
 
         translator = SubtitleTranslator(model_key='allegro', device='cpu', batch_size=3)
         translator.tokenizer = MagicMock()
@@ -191,8 +202,82 @@ class TestBatchTranslation:
         assert result == expected
         for original in texts:
             assert original not in result, (
-                f'Original English word "{original}" found in translated output'
+                f'Original English text "{original}" found in translated output'
             )
+
+
+class TestSentenceMerging:
+    def test_fragment_lines_merged_before_translation(self):
+        """When two lines form one sentence, the model should receive one merged string."""
+        texts = ['The Empire', 'declared war.']
+
+        # Disable enhancements to avoid placeholder extraction altering the text
+        translator = SubtitleTranslator(
+            model_key='allegro', device='cpu', batch_size=10, enable_enhancements=False
+        )
+        translator.tokenizer = MagicMock()
+        translator.model = MagicMock()
+
+        # Capture what texts the model receives
+        received_texts = []
+
+        def mock_encode(texts_list, **kwargs):
+            received_texts.extend(texts_list)
+            return {'input_ids': MagicMock(), 'attention_mask': MagicMock()}
+
+        def mock_generate(**kwargs):
+            return MagicMock()
+
+        def mock_decode(outputs, **kwargs):
+            # Return a translation for the single merged unit
+            return ['Imperium wypowiedzialo wojne.']
+
+        translator.tokenizer.batch_encode_plus.side_effect = mock_encode
+        translator.model.generate.side_effect = mock_generate
+        translator.tokenizer.batch_decode.side_effect = mock_decode
+
+        result = translator.translate_texts(texts)
+
+        # Model should have received 1 merged text, not 2 separate lines.
+        # The BiDi model adds '>>pol<< ' prefix during preprocessing.
+        assert len(received_texts) == 1
+        assert 'The Empire declared war.' in received_texts[0]
+
+        # Result must have 2 lines (split back to original count)
+        assert len(result) == 2
+
+    def test_speaker_lines_not_merged(self):
+        """Speaker dash lines must be translated individually."""
+        texts = ["- I'll go.", '- No, stay!']
+
+        translator = SubtitleTranslator(model_key='allegro', device='cpu', batch_size=10)
+        translator.tokenizer = MagicMock()
+        translator.model = MagicMock()
+
+        received_texts = []
+
+        def mock_encode(texts_list, **kwargs):
+            received_texts.extend(texts_list)
+            return {'input_ids': MagicMock(), 'attention_mask': MagicMock()}
+
+        def mock_generate(**kwargs):
+            return MagicMock()
+
+        def mock_decode(outputs, **kwargs):
+            # Each speaker line is its own group, so model receives 2 texts
+            # in one batch and must return 2 translations.
+            return ['- Pojde.', '- Nie, zostań!']
+
+        translator.tokenizer.batch_encode_plus.side_effect = mock_encode
+        translator.model.generate.side_effect = mock_generate
+        translator.tokenizer.batch_decode.side_effect = mock_decode
+
+        result = translator.translate_texts(texts)
+
+        # Speaker lines should each be in their own group, meaning the model
+        # receives 2 separate texts (not space-joined into one).
+        assert len(received_texts) == 2
+        assert len(result) == 2
 
 
 class TestDialogueLineBatchTranslation:

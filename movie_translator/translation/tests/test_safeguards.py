@@ -17,22 +17,22 @@ class TestTranslationSafeguards:
 
     def test_empty_translation_fallback(self, translator):
         """Test that empty translations fall back to original text."""
-        texts = ['Hello world', 'Test line', 'Another line']
+        texts = ['- Hello world.', '- Test line.', '- Another line.']
 
         translator.tokenizer.batch_encode_plus.return_value = {'input_ids': MagicMock()}
         translator.model.generate.return_value = MagicMock()
-        translator.tokenizer.batch_decode.return_value = ['Witaj świecie', '', 'Inna linia']
+        translator.tokenizer.batch_decode.return_value = ['Witaj swiecie.', '', 'Inna linia.']
 
         result = translator.translate_texts(texts)
 
         assert len(result) == 3
-        assert result[0] == 'Witaj świecie'
-        assert result[1] == 'Test line'
-        assert result[2] == 'Inna linia'
+        assert result[0] == 'Witaj swiecie.'
+        assert result[1] == '- Test line.'
+        assert result[2] == 'Inna linia.'
 
     def test_all_empty_translations_fallback(self, translator):
         """Test that all empty translations fall back to originals."""
-        texts = ['Line one', 'Line two', 'Line three']
+        texts = ['- Line one.', '- Line two.', '- Line three.']
 
         translator.tokenizer.batch_encode_plus.return_value = {'input_ids': MagicMock()}
         translator.model.generate.return_value = MagicMock()
@@ -44,7 +44,7 @@ class TestTranslationSafeguards:
 
     def test_suspiciously_short_translation_fallback(self, translator):
         """Test that suspiciously short translations fall back to original."""
-        texts = ['This is a longer sentence', 'Short']
+        texts = ['- This is a longer sentence.', '- Hi.']
 
         translator.tokenizer.batch_encode_plus.return_value = {'input_ids': MagicMock()}
         translator.model.generate.return_value = MagicMock()
@@ -52,40 +52,42 @@ class TestTranslationSafeguards:
 
         result = translator.translate_texts(texts)
 
-        assert result[0] == 'This is a longer sentence'
+        # Long original + short translation -> fallback to original
+        assert result[0] == '- This is a longer sentence.'
+        # Short original (4 chars stripped) + short translation -> kept as-is
         assert result[1] == 'X'
 
     def test_whitespace_only_translation_fallback(self, translator):
         """Test that whitespace-only translations fall back to original."""
-        texts = ['Hello', 'World']
+        texts = ['- Hello.', '- World.']
 
         translator.tokenizer.batch_encode_plus.return_value = {'input_ids': MagicMock()}
         translator.model.generate.return_value = MagicMock()
-        translator.tokenizer.batch_decode.return_value = ['Cześć', '   \n\t  ']
+        translator.tokenizer.batch_decode.return_value = ['Czesc.', '   \n\t  ']
 
         result = translator.translate_texts(texts)
 
-        assert result[0] == 'Cześć'
-        assert result[1] == 'World'
+        assert result[0] == 'Czesc.'
+        assert result[1] == '- World.'
 
     def test_valid_short_translations_preserved(self, translator):
         """Test that valid short translations are not incorrectly flagged."""
-        texts = ['Yes', 'No', 'Ok']
+        texts = ['- Yes.', '- No.', '- Ok.']
 
         translator.tokenizer.batch_encode_plus.return_value = {'input_ids': MagicMock()}
         translator.model.generate.return_value = MagicMock()
-        translator.tokenizer.batch_decode.return_value = ['Tak', 'Nie', 'Ok']
+        translator.tokenizer.batch_decode.return_value = ['Tak.', 'Nie.', 'Ok.']
 
         result = translator.translate_texts(texts)
 
-        assert result == ['Tak', 'Nie', 'Ok']
+        assert result == ['Tak.', 'Nie.', 'Ok.']
 
     def test_mixed_empty_and_valid_translations(self, translator):
         """Test batch with mix of empty and valid translations."""
-        texts = ['First line', 'Second line', 'Third line', 'Fourth line']
+        texts = ['- First line.', '- Second line.', '- Third line.', '- Fourth line.']
 
         batch_index = [0]
-        expected_batches = [['Pierwsza linia', '', 'Trzecia linia'], ['']]
+        expected_batches = [['Pierwsza linia.', '', 'Trzecia linia.'], ['']]
 
         def mock_encode(texts_list, **kwargs):
             return {'input_ids': MagicMock(), 'attention_mask': MagicMock()}
@@ -104,14 +106,14 @@ class TestTranslationSafeguards:
 
         result = translator.translate_texts(texts)
 
-        assert result[0] == 'Pierwsza linia'
-        assert result[1] == 'Second line'
-        assert result[2] == 'Trzecia linia'
-        assert result[3] == 'Fourth line'
+        assert result[0] == 'Pierwsza linia.'
+        assert result[1] == '- Second line.'
+        assert result[2] == 'Trzecia linia.'
+        assert result[3] == '- Fourth line.'
 
     def test_fallback_preserves_original_formatting(self, translator):
         """Test that fallback preserves original text including whitespace."""
-        texts = ['  Morning  ', '\tEvening\n']
+        texts = ['- Morning.', '- Evening.']
 
         translator.tokenizer.batch_encode_plus.return_value = {'input_ids': MagicMock()}
         translator.model.generate.return_value = MagicMock()
@@ -119,5 +121,5 @@ class TestTranslationSafeguards:
 
         result = translator.translate_texts(texts)
 
-        assert result[0] == '  Morning  '
-        assert result[1] == '\tEvening\n'
+        assert result[0] == '- Morning.'
+        assert result[1] == '- Evening.'

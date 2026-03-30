@@ -9,7 +9,13 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from ..logging import console, logger
 from ..types import DialogueLine
-from .enhancements import PreprocessingStats, postprocess_translation, preprocess_for_translation
+from .enhancements import (
+    PreprocessingStats,
+    extract_placeholders,
+    postprocess_translation,
+    preprocess_for_translation,
+    restore_placeholders,
+)
 from .models import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_DEVICE,
@@ -18,6 +24,7 @@ from .models import (
     ModelConfig,
     get_local_model_path,
 )
+from .sentence_merger import merge_for_translation, unmerge_translations
 
 # Suppress the repeated "pip install sacremoses" warning from the Marian
 # tokenizer. sacremoses is optional and not needed for our use case.
@@ -99,20 +106,26 @@ class SubtitleTranslator:
         if not texts:
             return []
 
+        # Merge subtitle fragments into sentence-level translation units
+        merged_texts, groups = merge_for_translation(texts)
+        logger.debug(
+            f'Sentence merging: {len(texts)} lines \u2192 {len(merged_texts)} translation units'
+        )
+
         translations = []
-        total_batches = (len(texts) + self.batch_size - 1) // self.batch_size
+        total_batches = (len(merged_texts) + self.batch_size - 1) // self.batch_size
         start_time = time.time()
 
-        for i in range(0, len(texts), self.batch_size):
+        for i in range(0, len(merged_texts), self.batch_size):
             batch_num = i // self.batch_size + 1
-            batch_texts = texts[i : i + self.batch_size]
+            batch_texts = merged_texts[i : i + self.batch_size]
 
             batch_translations = self._translate_batch(batch_texts)
             translations.extend(batch_translations)
 
             if progress_callback:
                 elapsed = time.time() - start_time
-                lines_processed = min(batch_num * self.batch_size, len(texts))
+                lines_processed = min(batch_num * self.batch_size, len(merged_texts))
                 rate = lines_processed / elapsed if elapsed > 0 else 0
                 progress_callback(batch_num, total_batches, rate)
 
@@ -124,7 +137,8 @@ class SubtitleTranslator:
         if self.enable_enhancements and self.preprocessing_stats.total_processed > 0:
             logger.info(self.preprocessing_stats.get_summary())
 
-        return translations
+        # Split merged translations back to original line count
+        return unmerge_translations(translations, groups, texts)
 
     def _periodic_memory_cleanup(self, index: int):
         if index > 0 and index % (self.batch_size * 50) == 0:
@@ -132,6 +146,17 @@ class SubtitleTranslator:
 
     def _translate_batch(self, texts: list[str]) -> list[str]:
         self._validate_inputs(texts)
+
+        # Extract placeholders (numbers, URLs, proper nouns) before translation
+        # so the model doesn't mangle them.
+        placeholder_mappings: list[dict[str, str]] = []
+        if self.enable_enhancements:
+            protected_texts = []
+            for text in texts:
+                protected, mapping = extract_placeholders(text, self.preprocessing_stats)
+                protected_texts.append(protected)
+                placeholder_mappings.append(mapping)
+            texts = protected_texts
 
         if self.enable_enhancements:
             enhanced_texts, skip_indices, cached_translations = self._apply_preprocessing(texts)
@@ -150,6 +175,13 @@ class SubtitleTranslator:
 
         if self.enable_enhancements:
             decoded = self._apply_postprocessing(decoded)
+
+        # Restore placeholders in translated output.
+        if placeholder_mappings:
+            decoded = [
+                restore_placeholders(text, mapping)
+                for text, mapping in zip(decoded, placeholder_mappings, strict=True)
+            ]
 
         return self._apply_fallbacks(texts, decoded, skip_indices, cached_translations)
 
@@ -278,15 +310,40 @@ class SubtitleTranslator:
         self._clear_memory()
 
 
+_cached_translator: SubtitleTranslator | None = None
+
+
+def _get_translator(device: str, batch_size: int, model: str) -> SubtitleTranslator | None:
+    """Return a cached translator, reloading only when config changes."""
+    global _cached_translator
+    if (
+        _cached_translator is not None
+        and _cached_translator.model is not None
+        and _cached_translator.device == ('mps' if device == 'mps' else 'cpu')
+        and _cached_translator.batch_size == batch_size
+        and _cached_translator.model_key == model
+    ):
+        _cached_translator.preprocessing_stats.reset()
+        return _cached_translator
+
+    if _cached_translator is not None:
+        _cached_translator.cleanup()
+
+    translator = SubtitleTranslator(device=device, batch_size=batch_size, model_key=model)
+    if not translator.load_model():
+        return None
+    _cached_translator = translator
+    return translator
+
+
 def translate_dialogue_lines(
     dialogue_lines: list[DialogueLine],
     device: str,
     batch_size: int,
     model: str,
 ) -> list[DialogueLine]:
-    translator = SubtitleTranslator(device=device, batch_size=batch_size, model_key=model)
-
-    if not translator.load_model():
+    translator = _get_translator(device, batch_size, model)
+    if translator is None:
         return []
 
     texts = [line.text for line in dialogue_lines]
@@ -313,9 +370,6 @@ def translate_dialogue_lines(
             progress.update(task, advance=1, rate=f'{rate:.1f}/s')
 
         translated_texts = translator.translate_texts(texts, on_progress)
-
-    translator.cleanup()
-    gc.collect()
 
     return [
         DialogueLine(line.start_ms, line.end_ms, text)
