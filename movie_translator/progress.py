@@ -47,7 +47,12 @@ class _LogCapture(logging.Handler):
 
     def emit(self, record):
         try:
+            from .logging import current_file_tag
+
             msg = record.getMessage()
+            tag = current_file_tag.get('')
+            if tag:
+                msg = f'[dim]\\[{tag}][/dim] {msg}'
             self._tracker._add_log(msg, record.levelname)
         except Exception:
             pass

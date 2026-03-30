@@ -67,6 +67,12 @@ def parse_args():
     )
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--keep-artifacts', action='store_true')
+    parser.add_argument(
+        '--workers',
+        type=int,
+        default=0,
+        help='Concurrent pipeline workers (default: auto, min(files, 4))',
+    )
     parser.add_argument('--verbose', '-v', action='store_true')
     parser.add_argument('--metrics', action='store_true', help='Collect performance metrics')
     return parser.parse_args()

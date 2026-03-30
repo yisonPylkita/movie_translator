@@ -21,6 +21,7 @@ class PipelineConfig:
     enable_fetch: bool = True
     enable_inpaint: bool = False
     dry_run: bool = False
+    workers: int = 4
 
 
 @dataclass
@@ -64,4 +65,5 @@ class PipelineContext:
     ocr_results: list[OCRResult] | None = None
     inpainted_video: Path | None = None
     burned_in_probed: bool = False  # True after burned-in subtitle probe has run
+    pending_ocr: dict | None = None  # Set by run_io() when OCR is deferred to GPU queue
     metrics: MetricsCollector | NullCollector = field(default_factory=NullCollector)
