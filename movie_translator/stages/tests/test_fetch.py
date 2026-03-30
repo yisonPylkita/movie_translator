@@ -71,7 +71,9 @@ class TestFetchSubtitlesStage:
         with (
             patch('movie_translator.stages.fetch.SubtitleFetcher', return_value=mock_fetcher),
             patch('movie_translator.stages.fetch.SubtitleValidator') as MockValidator,
-            patch.object(FetchSubtitlesStage, '_align_subtitle') as mock_align,
+            patch.object(
+                FetchSubtitlesStage, '_align_subtitle', return_value=('builtin', 0)
+            ) as mock_align,
         ):
             mock_validator = MockValidator.return_value
             mock_validator.validate_candidates.return_value = [(mock_match, pol_path, 0.9)]
@@ -97,7 +99,7 @@ class TestFetchSubtitlesStage:
         with (
             patch('movie_translator.stages.fetch.SubtitleFetcher', return_value=mock_fetcher),
             patch('movie_translator.stages.fetch.SubtitleValidator') as MockValidator,
-            patch.object(FetchSubtitlesStage, '_align_subtitle'),
+            patch.object(FetchSubtitlesStage, '_align_subtitle', return_value=('builtin', 0)),
         ):
             mock_validator = MockValidator.return_value
             # Both score above 0.8 quality threshold
@@ -130,7 +132,7 @@ class TestFetchSubtitlesStage:
         with (
             patch('movie_translator.stages.fetch.SubtitleFetcher', return_value=mock_fetcher),
             patch('movie_translator.stages.fetch.SubtitleValidator') as MockValidator,
-            patch.object(FetchSubtitlesStage, '_align_subtitle'),
+            patch.object(FetchSubtitlesStage, '_align_subtitle', return_value=('builtin', 0)),
         ):
             mock_validator = MockValidator.return_value
             # First is best (always kept), second below 0.8 threshold

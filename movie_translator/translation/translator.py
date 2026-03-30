@@ -6,6 +6,7 @@ import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from ..logging import logger
+from ..metrics.collector import MetricsCollector, NullCollector
 from ..types import DialogueLine, ProgressCallback
 from .enhancements import (
     PreprocessingStats,
@@ -305,8 +306,13 @@ class SubtitleTranslator:
 _cached_translator: SubtitleTranslator | None = None
 
 
-def _get_translator(device: str, batch_size: int, model: str) -> SubtitleTranslator | None:
-    """Return a cached translator, reloading only when config changes."""
+def _get_translator(
+    device: str, batch_size: int, model: str
+) -> tuple[SubtitleTranslator | None, bool]:
+    """Return a cached translator, reloading only when config changes.
+
+    Returns (translator, cached) where cached is True if the model was already loaded.
+    """
     global _cached_translator
     if (
         _cached_translator is not None
@@ -316,16 +322,16 @@ def _get_translator(device: str, batch_size: int, model: str) -> SubtitleTransla
         and _cached_translator.model_key == model
     ):
         _cached_translator.preprocessing_stats.reset()
-        return _cached_translator
+        return _cached_translator, True
 
     if _cached_translator is not None:
         _cached_translator.cleanup()
 
     translator = SubtitleTranslator(device=device, batch_size=batch_size, model_key=model)
     if not translator.load_model():
-        return None
+        return None, False
     _cached_translator = translator
-    return translator
+    return translator, False
 
 
 def translate_dialogue_lines(
@@ -334,8 +340,14 @@ def translate_dialogue_lines(
     batch_size: int,
     model: str,
     progress_callback: ProgressCallback | None = None,
+    metrics: MetricsCollector | NullCollector | None = None,
 ) -> list[DialogueLine]:
-    translator = _get_translator(device, batch_size, model)
+    if metrics is None:
+        metrics = NullCollector()
+
+    with metrics.span('load_model') as s:
+        translator, cached = _get_translator(device, batch_size, model)
+        s.detail('cached', cached)
     if translator is None:
         return []
 

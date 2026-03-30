@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from .discovery import create_work_dir, find_videos
+from .ffmpeg import get_video_info
 from .logging import console, logger, set_verbose
 from .metrics.collector import MetricsCollector, NullCollector
 from .metrics.listeners import ReportBuilder
@@ -178,9 +179,18 @@ def main():
                         'imdb_id': identity.imdb_id,
                         'tmdb_id': identity.tmdb_id,
                     }
+                    # Get video duration from ffprobe
+                    video_duration_ms = 0
+                    try:
+                        info = get_video_info(video_path)
+                        duration_s = float(info.get('format', {}).get('duration', 0))
+                        video_duration_ms = int(duration_s * 1000)
+                    except Exception:
+                        pass
                     report_builder.update_current_video(
                         identity=identity_dict,
                         hash=identity.oshash,
+                        duration_ms=video_duration_ms,
                     )
                 report_builder.end_video()
 

@@ -27,7 +27,7 @@ class FetchSubtitlesStage:
 
         with ctx.metrics.span('search_all') as s:
             try:
-                all_matches = fetcher.search_all(ctx.identity, ['eng', 'pol'])
+                all_matches = fetcher.search_all(ctx.identity, ['eng', 'pol'], metrics=ctx.metrics)
             except Exception as e:
                 logger.warning(f'Subtitle search failed: {e}')
                 ctx.fetched_subtitles = {}
@@ -56,21 +56,24 @@ class FetchSubtitlesStage:
 
         # Validate and select per language
         with ctx.metrics.span('validate_and_select') as s:
-            ctx.fetched_subtitles = self._validate_and_select(
+            ctx.fetched_subtitles, best_score = self._validate_and_select(
                 downloaded,
                 ctx.reference_path,
             )
             passed = sum(len(v) for v in ctx.fetched_subtitles.values())
             s.detail('passed', passed)
             s.detail('rejected', len(downloaded) - passed)
+            if best_score is not None:
+                s.detail('best_score', round(best_score, 3))
 
         # Realign fetched Polish subtitles against the English reference
         if ctx.reference_path and 'pol' in ctx.fetched_subtitles:
             for sub in ctx.fetched_subtitles['pol']:
                 with ctx.metrics.span('align') as s:
-                    method = 'ilass' if align_ilass.is_available() else 'builtin'
+                    method, offset = self._align_subtitle(sub.path, ctx.reference_path)
                     s.detail('method', method)
-                    self._align_subtitle(sub.path, ctx.reference_path)
+                    if offset is not None:
+                        s.detail('offset_ms', offset)
 
         return ctx
 
@@ -108,19 +111,25 @@ class FetchSubtitlesStage:
         return downloaded
 
     @staticmethod
-    def _align_subtitle(subtitle_path, reference_path):
-        """Align a subtitle file to a reference, trying ilass first."""
+    def _align_subtitle(subtitle_path, reference_path) -> tuple[str, int | None]:
+        """Align a subtitle file to a reference, trying ilass first.
+
+        Returns (method, offset_ms) where offset_ms may be None for ilass.
+        """
         if align_ilass.is_available():
             if align_ilass.align_to_reference(subtitle_path, reference_path):
-                return
+                return 'ilass', None
             logger.info('ilass alignment failed, falling back to built-in')
-        align_builtin(subtitle_path, reference_path)
+        offset = align_builtin(subtitle_path, reference_path)
+        return 'builtin', offset
 
     # Keep all Polish subs scoring at or above this threshold.
     _QUALITY_THRESHOLD = 0.8
 
     def _validate_and_select(self, downloaded, reference_path):
+        """Returns (result_dict, best_score) where best_score may be None."""
         result: dict[str, list[FetchedSubtitle]] = {}
+        best_score = None
 
         if reference_path is not None:
             try:
@@ -134,6 +143,7 @@ class FetchSubtitlesStage:
 
         if validated is not None:
             if validated:
+                best_score = validated[0][2]
                 logger.info(f'{len(validated)} candidate(s) passed validation')
                 for match, path, score in validated:
                     sub = FetchedSubtitle(path=path, source=match.source)
@@ -163,4 +173,4 @@ class FetchSubtitlesStage:
                         f'(source: {match.source})'
                     )
 
-        return result
+        return result, best_score

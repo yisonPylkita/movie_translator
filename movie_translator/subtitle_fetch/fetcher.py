@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import copy_context
 from pathlib import Path
 
 from ..logging import logger
+from ..metrics.collector import MetricsCollector, NullCollector
 from .types import SubtitleMatch
 
 
@@ -11,18 +15,30 @@ class SubtitleFetcher:
     def __init__(self, providers: list):
         self._providers = providers
 
-    def search_all(self, identity, languages: list[str]) -> list[SubtitleMatch]:
+    def search_all(
+        self,
+        identity,
+        languages: list[str],
+        metrics: MetricsCollector | NullCollector | None = None,
+    ) -> list[SubtitleMatch]:
         """Search all providers in parallel, return ALL plausible matches sorted by score."""
+        if metrics is None:
+            metrics = NullCollector()
         all_matches: list[SubtitleMatch] = []
 
         def _search_provider(provider):
-            return provider.name, provider.search(identity, languages)
+            with metrics.span(provider.name) as s:
+                matches = provider.search(identity, languages)
+                s.detail('candidates', len(matches))
+                return provider.name, matches
 
         with ThreadPoolExecutor(max_workers=len(self._providers)) as pool:
-            futures = {pool.submit(_search_provider, p): p for p in self._providers}
+            futures = {
+                pool.submit(copy_context().run, _search_provider, p): p for p in self._providers
+            }
             for future in as_completed(futures):
                 try:
-                    name, matches = future.result()
+                    name, matches = future.result()  # ty: ignore[not-iterable]
                     all_matches.extend(matches)
                     logger.debug(f'{name}: found {len(matches)} matches')
                 except Exception as e:

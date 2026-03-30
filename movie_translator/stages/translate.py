@@ -75,6 +75,7 @@ class TranslateStage:
                     ctx.config.batch_size,
                     ctx.config.model,
                     progress_callback=_on_progress,
+                    metrics=metrics,
                 )
                 if translated:
                     s.detail('output_lines', len(translated))

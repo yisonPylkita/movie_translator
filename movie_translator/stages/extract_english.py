@@ -1,5 +1,7 @@
 """Determine English subtitle source and extract dialogue lines."""
 
+from pathlib import Path
+
 from ..context import PipelineContext
 from ..logging import logger
 from ..ocr import (
@@ -11,6 +13,14 @@ from ..ocr.pgs_extractor import extract_pgs_track
 from ..subtitles import SubtitleExtractor, SubtitleProcessor
 
 _IMAGE_CODECS = ('hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle')
+
+
+def _count_srt_entries(path: Path) -> int:
+    """Count numbered entries in an SRT file."""
+    try:
+        return sum(1 for line in path.read_text().splitlines() if line.strip().isdigit())
+    except Exception:
+        return 0
 
 
 class ExtractEnglishStage:
@@ -63,23 +73,33 @@ class ExtractEnglishStage:
 
             if is_image:
                 # PGS/DVD — extract via OCR
-                srt = extract_pgs_track(ctx.video_path, eng_track['id'], ctx.work_dir)
-                if srt:
-                    return srt
+                with ctx.metrics.span('extract_pgs_track') as s:
+                    srt = extract_pgs_track(ctx.video_path, eng_track['id'], ctx.work_dir)
+                    if srt:
+                        s.detail('subtitle_count', _count_srt_entries(srt))
+                        return srt
             else:
-                subtitle_ext = extractor.get_subtitle_extension(eng_track)
-                output = ctx.work_dir / f'{ctx.video_path.stem}_extracted{subtitle_ext}'
-                subtitle_index = eng_track.get('subtitle_index', 0)
-                extractor.extract_subtitle(ctx.video_path, eng_track['id'], output, subtitle_index)
-                return output
+                with ctx.metrics.span('extract_subtitle'):
+                    subtitle_ext = extractor.get_subtitle_extension(eng_track)
+                    output = ctx.work_dir / f'{ctx.video_path.stem}_extracted{subtitle_ext}'
+                    subtitle_index = eng_track.get('subtitle_index', 0)
+                    extractor.extract_subtitle(
+                        ctx.video_path, eng_track['id'], output, subtitle_index
+                    )
+                    return output
 
         # OCR fallback — only probe if the reference stage didn't already
         if not ctx.burned_in_probed and is_vision_ocr_available():
             ctx.burned_in_probed = True
-            if probe_for_burned_in_subtitles(ctx.video_path):
-                result = extract_burned_in_subtitles(ctx.video_path, ctx.work_dir)
-                if result:
-                    ctx.ocr_results = result.ocr_results
-                    return result.srt_path
+            with ctx.metrics.span('probe_burned_in') as s:
+                detected = probe_for_burned_in_subtitles(ctx.video_path)
+                s.detail('detected', detected)
+            if detected:
+                with ctx.metrics.span('extract_burned_in') as s:
+                    result = extract_burned_in_subtitles(ctx.video_path, ctx.work_dir)
+                    if result:
+                        ctx.ocr_results = result.ocr_results
+                        s.detail('frames', len(result.ocr_results))
+                        return result.srt_path
 
         return None

@@ -10,7 +10,7 @@ class IdentifyStage:
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
         logger.info(f'Identifying: {ctx.video_path.name}')
-        ctx.identity = identify_media(ctx.video_path)
+        ctx.identity = identify_media(ctx.video_path, metrics=ctx.metrics)
 
         if ctx.identity is not None and hasattr(ctx.identity, 'media_type'):
             identity = ctx.identity
