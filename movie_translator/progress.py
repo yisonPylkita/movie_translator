@@ -2,15 +2,18 @@
 
 Provides a live-updating display with:
 - Overall progress bar (files processed / total)
-- Current file stage tracker (identify → fetch → extract → translate → mux)
+- Per-file stage tracker (identify → fetch → extract → translate → mux)
+- GPU queue status per file
 - Scrolling log panel with color-coded messages
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections import deque
+from dataclasses import dataclass, field
 
 from rich.console import Console, Group
 from rich.live import Live
@@ -36,6 +39,16 @@ LEVEL_STYLES = {
     'WARNING': 'yellow',
     'ERROR': 'bold red',
 }
+
+
+@dataclass
+class FileState:
+    name: str
+    start_time: float
+    current_stage: str = ''
+    stages_done: list[str] = field(default_factory=list)
+    gpu_status: str = 'none'  # 'none' | 'queued' | 'running'
+    stage_progress: tuple[int, int, float] | None = None
 
 
 class _LogCapture(logging.Handler):
@@ -67,14 +80,12 @@ class ProgressTracker:
         self._completed = 0
         self._failed = 0
         self._skipped = 0
+        self._active_files: dict[str, FileState] = {}
+        self._lock = threading.Lock()
+        # _current_file tracks the most recently started file for backward compat
         self._current_file = ''
-        self._current_stage = ''
-        self._stages_done: list[str] = []
-        self._stage_info: dict[str, str] = {}  # Extra info per stage
         self._log_lines: deque[tuple[str, str]] = deque(maxlen=24)
-        self._file_start_time = 0.0
         self._batch_start_time = 0.0
-        self._stage_progress: tuple[int, int, float] | None = None  # (done, total, rate)
         self._live: Live | None = None
         self._log_handler: _LogCapture | None = None
 
@@ -112,64 +123,148 @@ class ProgressTracker:
         # Print final summary
         self._print_summary()
 
+    # ------------------------------------------------------------------
+    # Public API — all methods accept an optional file_name as first arg.
+    # When omitted (old single-arg API), _current_file is used instead.
+    # ------------------------------------------------------------------
+
     def start_file(self, name: str):
-        self._current_file = name
-        self._current_stage = ''
-        self._stages_done = []
-        self._stage_info = {}
-        self._file_start_time = time.monotonic()
+        """Register a new file as active."""
+        state = FileState(name=name, start_time=time.monotonic())
+        with self._lock:
+            self._active_files[name] = state
+            self._current_file = name
         self._update()
 
-    def set_stage(self, stage: str, info: str = ''):
-        if self._current_stage and self._current_stage not in self._stages_done:
-            self._stages_done.append(self._current_stage)
-        self._current_stage = stage
-        self._stage_progress = None
-        if info:
-            self._stage_info[stage] = info
+    def set_stage(self, name_or_stage: str, stage: str = ''):
+        """Update the current stage for a file.
+
+        Two-arg form (new API):  set_stage('ep01', 'identify')
+        One-arg form (old API):  set_stage('identify')   — uses _current_file
+        """
+        if stage:
+            file_name = name_or_stage
+            new_stage = stage
+        else:
+            file_name = self._current_file
+            new_stage = name_or_stage
+
+        with self._lock:
+            state = self._active_files.get(file_name)
+            if state is None:
+                return
+            if state.current_stage and state.current_stage not in state.stages_done:
+                state.stages_done.append(state.current_stage)
+            state.current_stage = new_stage
+            state.stage_progress = None
+
         self._update()
 
-    def set_stage_progress(self, done: int, total: int, rate: float = 0.0):
-        """Update sub-progress for the current stage (e.g. translation lines)."""
-        self._stage_progress = (done, total, rate)
+    def set_gpu_status(self, file_name: str, status: str):
+        """Set the GPU queue status for a file: 'none' | 'queued' | 'running'."""
+        with self._lock:
+            state = self._active_files.get(file_name)
+            if state is None:
+                return
+            state.gpu_status = status
         self._update()
 
-    def complete_file(self, status: str):
-        """Mark current file as done. Status: 'success', 'failed', 'skipped'."""
-        if self._current_stage and self._current_stage not in self._stages_done:
-            self._stages_done.append(self._current_stage)
+    def set_stage_progress(
+        self, name_or_done, done_or_total=None, total_or_rate=None, rate: float = 0.0
+    ):
+        """Update sub-progress for a stage (e.g. translation lines).
 
-        elapsed = time.monotonic() - self._file_start_time
-        if status == 'success':
-            self._completed += 1
+        Two-call forms:
+          New API: set_stage_progress('ep01', done, total, rate)
+          Old API: set_stage_progress(done, total, rate)
+        """
+        if done_or_total is None:
+            # Called as set_stage_progress(done, total, rate=...) — shouldn't happen
+            # but guard against it
+            return
+
+        if total_or_rate is None:
+            # set_stage_progress(done, total) — old API without rate
+            file_name = self._current_file
+            done = int(name_or_done)
+            total = int(done_or_total)
+            r = rate
+        elif isinstance(name_or_done, str):
+            # set_stage_progress('ep01', done, total, rate)
+            file_name = name_or_done
+            done = int(done_or_total)
+            total = int(total_or_rate)
+            r = rate
+        else:
+            # set_stage_progress(done, total, rate) — old API
+            file_name = self._current_file
+            done = int(name_or_done)
+            total = int(done_or_total)
+            r = float(total_or_rate)
+
+        with self._lock:
+            state = self._active_files.get(file_name)
+            if state is None:
+                return
+            state.stage_progress = (done, total, r)
+
+        self._update()
+
+    def complete_file(self, name_or_status: str, status: str = ''):
+        """Mark a file as done. Status: 'success' | 'failed' | 'skipped'.
+
+        Two-arg form (new API):  complete_file('ep01', 'success')
+        One-arg form (old API):  complete_file('success')   — uses _current_file
+        """
+        if status:
+            file_name = name_or_status
+            final_status = status
+        else:
+            file_name = self._current_file
+            final_status = name_or_status
+
+        with self._lock:
+            state = self._active_files.pop(file_name, None)
+
+        if state is None:
+            return
+
+        elapsed = time.monotonic() - state.start_time
+
+        if final_status == 'success':
+            with self._lock:
+                self._completed += 1
             self._add_log(
-                f'[green]✓[/green] {self._short_name(self._current_file)} '
-                f'[dim]({elapsed:.0f}s)[/dim]',
+                f'[green]✓[/green] {self._short_name(file_name)} [dim]({elapsed:.0f}s)[/dim]',
                 'DONE',
             )
-        elif status == 'failed':
-            self._failed += 1
+        elif final_status == 'failed':
+            with self._lock:
+                self._failed += 1
             self._add_log(
-                f'[red]✗[/red] {self._short_name(self._current_file)} [dim]({elapsed:.0f}s)[/dim]',
+                f'[red]✗[/red] {self._short_name(file_name)} [dim]({elapsed:.0f}s)[/dim]',
                 'DONE',
             )
-        elif status == 'skipped':
-            self._skipped += 1
+        elif final_status == 'skipped':
+            with self._lock:
+                self._skipped += 1
             self._add_log(
-                f'[yellow]→[/yellow] {self._short_name(self._current_file)} [dim](skipped)[/dim]',
+                f'[yellow]→[/yellow] {self._short_name(file_name)} [dim](skipped)[/dim]',
                 'DONE',
             )
 
-        self._current_file = ''
-        self._current_stage = ''
         self._update()
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
     def _add_log(self, message: str, level: str):
-        # Clean up rich markup that logger might not produce
         clean = message.strip()
         if not clean:
             return
-        self._log_lines.append((clean, level))
+        with self._lock:
+            self._log_lines.append((clean, level))
         self._update()
 
     def _update(self):
@@ -183,18 +278,29 @@ class ProgressTracker:
         # Overall progress
         parts.append(self._render_overall())
 
-        # Current file (if processing)
-        if self._current_file:
-            parts.append(self._render_current_file())
+        # Copy active files under lock, then render without lock
+        with self._lock:
+            active = dict(self._active_files)
+
+        if active:
+            parts.append(self._render_active_files(active))
 
         # Log panel
-        if self._log_lines:
-            parts.append(self._render_logs())
+        with self._lock:
+            log_lines = list(self._log_lines)
+
+        if log_lines:
+            parts.append(self._render_logs(log_lines))
 
         return Group(*parts)
 
     def _render_overall(self):
-        done = self._completed + self._failed + self._skipped
+        with self._lock:
+            done = self._completed + self._failed + self._skipped
+            completed = self._completed
+            failed = self._failed
+            skipped = self._skipped
+
         elapsed = time.monotonic() - self._batch_start_time
 
         table = Table.grid(padding=(0, 2))
@@ -212,12 +318,12 @@ class ProgressTracker:
 
         # Status counts
         status_parts = []
-        if self._completed:
-            status_parts.append(f'[green]{self._completed} done[/green]')
-        if self._failed:
-            status_parts.append(f'[red]{self._failed} failed[/red]')
-        if self._skipped:
-            status_parts.append(f'[yellow]{self._skipped} skipped[/yellow]')
+        if completed:
+            status_parts.append(f'[green]{completed} done[/green]')
+        if failed:
+            status_parts.append(f'[red]{failed} failed[/red]')
+        if skipped:
+            status_parts.append(f'[yellow]{skipped} skipped[/yellow]')
 
         status = '  '.join(status_parts) if status_parts else '[dim]starting...[/dim]'
         elapsed_str = f'[dim]{elapsed:.0f}s[/dim]'
@@ -225,55 +331,61 @@ class ProgressTracker:
         table.add_row(progress, Text.from_markup(f'{status}  {elapsed_str}'))
         return Panel(table, style='blue', padding=(0, 1))
 
-    def _render_current_file(self):
-        name = self._short_name(self._current_file)
-        elapsed = time.monotonic() - self._file_start_time
+    def _render_active_files(self, active: dict[str, FileState]):
+        """Render all active files, each with stage indicators and GPU status."""
+        renderables = []
 
-        # Stage indicators
-        stage_parts = []
-        for stage in STAGES:
-            label = STAGE_LABELS[stage]
-            info = self._stage_info.get(stage, '')
-            info_str = f' ({info})' if info else ''
+        for file_name, state in active.items():
+            name = self._short_name(file_name)
+            elapsed = time.monotonic() - state.start_time
 
-            if stage in self._stages_done:
-                stage_parts.append(f'[green]✓ {label}{info_str}[/green]')
-            elif stage == self._current_stage:
-                stage_parts.append(f'[bold yellow]▸ {label}{info_str}[/bold yellow]')
-            else:
-                stage_parts.append(f'[dim]○ {label}[/dim]')
+            stage_parts = []
+            for stage in STAGES:
+                label = STAGE_LABELS[stage]
 
-        stages_line = '  '.join(stage_parts)
+                if stage in state.stages_done:
+                    stage_parts.append(f'[green]✓ {label}[/green]')
+                elif stage == state.current_stage:
+                    if state.gpu_status == 'running':
+                        stage_parts.append(f'[bold yellow]▸ {label} [gpu][/bold yellow]')
+                    elif state.gpu_status == 'queued':
+                        stage_parts.append(f'[yellow]⏳ {label} [queue][/yellow]')
+                    else:
+                        stage_parts.append(f'[bold yellow]▸ {label}[/bold yellow]')
+                else:
+                    stage_parts.append(f'[dim]○ {label}[/dim]')
 
-        renderables: list = [
-            Text.from_markup(f'[bold]{name}[/bold] [dim]{elapsed:.0f}s[/dim]\n{stages_line}')
-        ]
+            stages_line = '  '.join(stage_parts)
+            file_renderables: list = [
+                Text.from_markup(f'[bold]{name}[/bold] [dim]{elapsed:.0f}s[/dim]\n{stages_line}')
+            ]
 
-        # Sub-progress bar for current stage (e.g. translation)
-        if self._stage_progress is not None:
-            done, total, rate = self._stage_progress
-            sub = Progress(
-                BarColumn(bar_width=40),
-                MofNCompleteColumn(),
-                TextColumn('•'),
-                TextColumn(f'{rate:.1f} lines/s'),
-                expand=False,
-            )
-            sub.add_task('', total=total, completed=done)
-            renderables.append(sub)
+            # Sub-progress bar for current stage (e.g. translation)
+            if state.stage_progress is not None:
+                done, total, rate = state.stage_progress
+                sub = Progress(
+                    BarColumn(bar_width=40),
+                    MofNCompleteColumn(),
+                    TextColumn('•'),
+                    TextColumn(f'{rate:.1f} lines/s'),
+                    expand=False,
+                )
+                sub.add_task('', total=total, completed=done)
+                file_renderables.append(sub)
 
-        return Panel(Group(*renderables), title='[cyan]Current File', padding=(0, 1))
+            renderables.append(Group(*file_renderables))
 
-    def _render_logs(self):
+        title = f'[cyan]Active Files ({len(active)})'
+        return Panel(Group(*renderables), title=title, padding=(0, 1))
+
+    def _render_logs(self, log_lines: list[tuple[str, str]]):
         text = Text()
         max_width = (self._console.width or 120) - 6
-        for msg, level in self._log_lines:
+        for msg, level in log_lines:
             display_msg = msg[:max_width] + '...' if len(msg) > max_width else msg
             base_style = LEVEL_STYLES.get(level, 'white')
             if level == 'DONE':
                 base_style = 'white'
-            # Parse Rich markup in the message (e.g. [green]✓[/green])
-            # so existing colors are preserved; the level style is the default.
             try:
                 line = Text.from_markup(display_msg + '\n', style=base_style)
             except Exception:
@@ -295,7 +407,7 @@ class ProgressTracker:
         self._console.print(' | '.join(parts) + f'  [dim]({elapsed:.0f}s total)[/dim]')
 
     def _short_name(self, name: str) -> str:
-        max_len = (self._console.width or 80) - 20  # leave room for elapsed time + padding
+        max_len = (self._console.width or 80) - 20
         if len(name) <= max_len:
             return name
         return name[: max_len - 3] + '...'
