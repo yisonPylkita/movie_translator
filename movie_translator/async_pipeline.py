@@ -181,6 +181,7 @@ async def process_file(
 
             def _on_progress(lines_done: int, total_lines: int, rate: float) -> None:
                 tracker.set_stage_progress(tracker_key, lines_done, total_lines, rate=rate)
+                tracker.gpu_task_progress(lines_done, total_lines, rate)
 
             assert ctx.dialogue_lines is not None
             task = TranslateTask(

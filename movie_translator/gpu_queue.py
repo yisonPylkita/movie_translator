@@ -131,11 +131,12 @@ _SENTINEL: None = None
 class GpuQueue:
     """Single-worker async queue that serialises GPU-bound tasks."""
 
-    def __init__(self) -> None:
+    def __init__(self, tracker=None) -> None:
         self._queue: asyncio.Queue[tuple[GpuTask, asyncio.Future[Any]] | None] = asyncio.Queue()
         self._worker_task: asyncio.Task[None] | None = None
         self._last_model_type: str | None = None
         self._model_cache: dict[str, Any] = {}
+        self._tracker = tracker  # ProgressTracker for GPU panel updates
 
     @property
     def pending(self) -> int:
@@ -151,6 +152,8 @@ class GpuQueue:
         loop = asyncio.get_event_loop()
         future: asyncio.Future[Any] = loop.create_future()
         await self._queue.put((task, future))
+        if self._tracker:
+            self._tracker.gpu_queue_size(self._queue.qsize())
         return await future
 
     async def run_worker(self) -> None:
@@ -164,6 +167,10 @@ class GpuQueue:
             task, future = item
             # Set context var for log tagging
             token = current_file_tag.set(task.file_tag)
+
+            if self._tracker:
+                self._tracker.gpu_task_started(task.model_type, task.file_tag)
+
             try:
                 result = await asyncio.to_thread(
                     task.execute, self._model_cache, self._last_model_type
@@ -171,9 +178,13 @@ class GpuQueue:
                 self._last_model_type = task.model_type
                 if not future.cancelled():
                     future.set_result(result)
+                if self._tracker:
+                    self._tracker.gpu_task_completed(task.model_type, task.file_tag)
             except Exception as exc:
                 if not future.cancelled():
                     future.set_exception(exc)
+                if self._tracker:
+                    self._tracker.gpu_task_failed(task.model_type, task.file_tag)
             finally:
                 current_file_tag.reset(token)
                 self._queue.task_done()

@@ -51,6 +51,18 @@ class FileState:
     stage_progress: tuple[int, int, float] | None = None
 
 
+@dataclass
+class GpuWorkerState:
+    """Tracks the GPU worker's current activity for the TUI."""
+
+    current_task_type: str = ''  # 'translate' | 'ocr' | 'inpaint' | ''
+    current_file: str = ''
+    progress: tuple[int, int, float] | None = None  # (done, total, rate)
+    queue_depth: int = 0
+    start_time: float = 0.0
+    recent: deque[str] = field(default_factory=lambda: deque(maxlen=6))
+
+
 class _LogCapture(logging.Handler):
     """Captures log records and feeds them to the progress tracker."""
 
@@ -81,6 +93,7 @@ class ProgressTracker:
         self._failed = 0
         self._skipped = 0
         self._active_files: dict[str, FileState] = {}
+        self._gpu: GpuWorkerState = GpuWorkerState()
         self._lock = threading.Lock()
         # _current_file tracks the most recently started file for backward compat
         self._current_file = ''
@@ -256,6 +269,64 @@ class ProgressTracker:
         self._update()
 
     # ------------------------------------------------------------------
+    # GPU worker panel API
+    # ------------------------------------------------------------------
+
+    def gpu_task_started(self, task_type: str, file_tag: str):
+        """Called by the GPU worker when it picks up a task."""
+        with self._lock:
+            self._gpu.current_task_type = task_type
+            self._gpu.current_file = file_tag
+            self._gpu.progress = None
+            self._gpu.start_time = time.monotonic()
+            self._gpu.queue_depth = max(0, self._gpu.queue_depth - 1)
+        self._update()
+
+    def gpu_task_progress(self, done: int, total: int, rate: float = 0.0):
+        """Update sub-progress for the running GPU task."""
+        with self._lock:
+            self._gpu.progress = (done, total, rate)
+        self._update()
+
+    def gpu_task_completed(self, task_type: str, file_tag: str):
+        """Called by the GPU worker when a task finishes."""
+        with self._lock:
+            elapsed = time.monotonic() - self._gpu.start_time
+            label = {'translate': 'Translated', 'ocr': 'OCR', 'inpaint': 'Inpainted'}.get(
+                task_type, task_type
+            )
+            detail = ''
+            if self._gpu.progress:
+                done, total, rate = self._gpu.progress
+                detail = f' ({total} lines, {elapsed:.1f}s)'
+            else:
+                detail = f' ({elapsed:.1f}s)'
+            self._gpu.recent.append(f'[green]✓[/green] {label} {file_tag}{detail}')
+            self._gpu.current_task_type = ''
+            self._gpu.current_file = ''
+            self._gpu.progress = None
+        self._update()
+
+    def gpu_task_failed(self, task_type: str, file_tag: str):
+        """Called by the GPU worker when a task fails."""
+        with self._lock:
+            elapsed = time.monotonic() - self._gpu.start_time
+            label = {'translate': 'Translate', 'ocr': 'OCR', 'inpaint': 'Inpaint'}.get(
+                task_type, task_type
+            )
+            self._gpu.recent.append(f'[red]✗[/red] {label} {file_tag} ({elapsed:.1f}s)')
+            self._gpu.current_task_type = ''
+            self._gpu.current_file = ''
+            self._gpu.progress = None
+        self._update()
+
+    def gpu_queue_size(self, size: int):
+        """Update the GPU queue depth display."""
+        with self._lock:
+            self._gpu.queue_depth = size
+        self._update()
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
@@ -278,12 +349,25 @@ class ProgressTracker:
         # Overall progress
         parts.append(self._render_overall())
 
-        # Copy active files under lock, then render without lock
+        # Copy state under lock, then render without lock
         with self._lock:
             active = dict(self._active_files)
+            gpu_task_type = self._gpu.current_task_type
+            gpu_file = self._gpu.current_file
+            gpu_progress = self._gpu.progress
+            gpu_queue_depth = self._gpu.queue_depth
+            gpu_recent = list(self._gpu.recent)
 
         if active:
             parts.append(self._render_active_files(active))
+
+        # GPU worker panel — show whenever there's activity or history
+        if gpu_task_type or gpu_recent or gpu_queue_depth:
+            parts.append(
+                self._render_gpu_panel(
+                    gpu_task_type, gpu_file, gpu_progress, gpu_queue_depth, gpu_recent
+                )
+            )
 
         # Log panel
         with self._lock:
@@ -377,6 +461,53 @@ class ProgressTracker:
 
         title = f'[cyan]Active Files ({len(active)})'
         return Panel(Group(*renderables), title=title, padding=(0, 1))
+
+    def _render_gpu_panel(
+        self,
+        task_type: str,
+        file_tag: str,
+        progress: tuple[int, int, float] | None,
+        queue_depth: int,
+        recent: list[str],
+    ):
+        """Render the dedicated GPU worker panel."""
+        renderables: list = []
+
+        if task_type:
+            label = {'translate': 'Translating', 'ocr': 'Running OCR', 'inpaint': 'Inpainting'}.get(
+                task_type, task_type
+            )
+            line = f'[bold magenta]▸[/bold magenta] {label} [bold]{file_tag}[/bold]'
+            renderables.append(Text.from_markup(line))
+
+            if progress:
+                done, total, rate = progress
+                sub = Progress(
+                    BarColumn(bar_width=40),
+                    MofNCompleteColumn(),
+                    TextColumn('•'),
+                    TextColumn(f'{rate:.1f}/s'),
+                    expand=False,
+                )
+                sub.add_task('', total=total, completed=done)
+                renderables.append(sub)
+        else:
+            renderables.append(Text.from_markup('[dim]idle[/dim]'))
+
+        if queue_depth:
+            renderables.append(Text.from_markup(f'[dim]Queue: {queue_depth} pending[/dim]'))
+
+        if recent:
+            renderables.append(Text.from_markup(''))
+            for entry in recent:
+                try:
+                    renderables.append(Text.from_markup(entry))
+                except Exception:
+                    renderables.append(Text(entry))
+
+        return Panel(
+            Group(*renderables), title='[magenta]GPU Worker', border_style='magenta', padding=(0, 1)
+        )
 
     def _render_logs(self, log_lines: list[tuple[str, str]]):
         text = Text()

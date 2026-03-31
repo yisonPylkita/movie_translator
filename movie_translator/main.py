@@ -228,14 +228,12 @@ async def _async_main(video_files, root_dir, args, collector, report_builder, wo
         workers=workers,
     )
 
-    gpu_queue = GpuQueue()
-    gpu_worker = asyncio.create_task(gpu_queue.run_worker())
-
     with ProgressTracker(len(video_files), console=console) as tracker:
+        gpu_queue = GpuQueue(tracker=tracker)
+        gpu_worker = asyncio.create_task(gpu_queue.run_worker())
         results = await run_all(video_files, root_dir, config, collector, gpu_queue, tracker)
-
-    await gpu_queue.shutdown()
-    await gpu_worker
+        await gpu_queue.shutdown()
+        await gpu_worker
 
     # Feed results into report_builder if active
     if report_builder is not None:
