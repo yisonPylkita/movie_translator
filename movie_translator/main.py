@@ -42,7 +42,29 @@ def check_dependencies() -> bool:
     return True
 
 
-def parse_args():
+def _parse_extract_args(argv: list[str]):
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        prog='movie-translator extract',
+        description='Extract subtitles from video files (text tracks + OCR for burned-in)',
+    )
+    parser.add_argument('input', help='Video file or directory containing video files')
+    parser.add_argument(
+        '--output',
+        default=None,
+        help='Output directory for SRTs and manifest (default: <input_dir>/extracted_subs/)',
+    )
+    parser.add_argument(
+        '--ocr-language',
+        default='pl',
+        help='Language hint for burned-in subtitle OCR (default: pl)',
+    )
+    parser.add_argument('--verbose', '-v', action='store_true')
+    return parser.parse_args(argv)
+
+
+def _parse_translate_args(argv: list[str] | None = None):
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -75,9 +97,14 @@ def parse_args():
         default=0,
         help='Concurrent pipeline workers (default: auto, min(files, 4))',
     )
+    parser.add_argument(
+        '--external-subs',
+        default=None,
+        help='Directory with pre-extracted subtitles (from extract command) to add as additional tracks',
+    )
     parser.add_argument('--verbose', '-v', action='store_true')
     parser.add_argument('--metrics', action='store_true', help='Collect performance metrics')
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def show_summary(results: list[tuple[str, str]], dry_run: bool = False) -> None:
@@ -132,6 +159,7 @@ def _sync_main(video_files, root_dir, args, collector, report_builder):
             enable_inpaint=args.inpaint,
             tracker=tracker,
             metrics=collector,
+            external_subs_dir=Path(args.external_subs) if args.external_subs else None,
         )
 
         for video_path in video_files:
@@ -226,6 +254,7 @@ async def _async_main(video_files, root_dir, args, collector, report_builder, wo
         enable_inpaint=args.inpaint,
         dry_run=args.dry_run,
         workers=workers,
+        external_subs_dir=Path(args.external_subs) if args.external_subs else None,
     )
 
     with ProgressTracker(len(video_files), console=console) as tracker:
@@ -248,8 +277,30 @@ async def _async_main(video_files, root_dir, args, collector, report_builder, wo
             report_builder.end_video()
 
 
-def main():
-    args = parse_args()
+def _run_extract(argv: list[str]) -> None:
+    """Entry point for the extract subcommand."""
+    args = _parse_extract_args(argv)
+    set_verbose(args.verbose)
+
+    input_path = Path(args.input)
+    if not input_path.exists():
+        console.print(f'[red]❌ Not found: {input_path}[/red]')
+        sys.exit(1)
+
+    if args.output:
+        output_dir = Path(args.output)
+    else:
+        root = input_path if input_path.is_dir() else input_path.parent
+        output_dir = root / 'extracted_subs'
+
+    from .extract import run_extract
+
+    run_extract(input_path, output_dir, ocr_language=args.ocr_language)
+
+
+def _run_translate(argv: list[str] | None = None) -> None:
+    """Entry point for the translate flow (default command)."""
+    args = _parse_translate_args(argv)
     set_verbose(args.verbose)
     args.model = _resolve_model(args.model)
 
@@ -303,6 +354,13 @@ def main():
         report_path = root_dir / '.translate_temp' / 'metrics.json'
         save_report(report, report_path)
         console.print(f'[dim]Metrics saved to {report_path}[/dim]')
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == 'extract':
+        _run_extract(sys.argv[2:])
+    else:
+        _run_translate()
 
 
 if __name__ == '__main__':

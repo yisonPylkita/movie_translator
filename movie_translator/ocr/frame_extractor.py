@@ -20,6 +20,7 @@ def extract_subtitle_region_frames(
     output_dir: Path,
     fps: int = 10,
     crop_ratio: float = 0.25,
+    scale_width: int | None = None,
 ) -> list[tuple[Path, int]]:
     if not video_path.exists():
         raise FrameExtractionError(f'Video file not found: {video_path}')
@@ -28,10 +29,14 @@ def extract_subtitle_region_frames(
 
     ffmpeg = get_ffmpeg()
 
-    # Crop bottom portion of frame and extract at target fps
+    # Crop bottom portion of frame, optionally scale, extract at target fps
     crop_y_start = f'ih*{1 - crop_ratio}'
     crop_height = f'ih*{crop_ratio}'
-    vf = f'crop=iw:{crop_height}:0:{crop_y_start},fps={fps}'
+    vf_parts = [f'crop=iw:{crop_height}:0:{crop_y_start}']
+    if scale_width is not None:
+        vf_parts.append(f"scale='min({scale_width},iw)':-1")
+    vf_parts.append(f'fps={fps}')
+    vf = ','.join(vf_parts)
 
     pattern = str(output_dir / '%06d.jpg')
 

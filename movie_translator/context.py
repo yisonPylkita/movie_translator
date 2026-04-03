@@ -22,6 +22,7 @@ class PipelineConfig:
     enable_inpaint: bool = False
     dry_run: bool = False
     workers: int = 4
+    external_subs_dir: Path | None = None
 
 
 @dataclass

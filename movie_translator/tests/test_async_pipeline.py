@@ -70,7 +70,7 @@ class FakeTranslateStage:
 
 
 def _make_test_config(**overrides) -> PipelineConfig:
-    defaults = {
+    defaults: dict = {
         'device': 'cpu',
         'batch_size': 4,
         'model': 'allegro',
@@ -78,6 +78,7 @@ def _make_test_config(**overrides) -> PipelineConfig:
         'enable_inpaint': False,
         'dry_run': True,
         'workers': 2,
+        'external_subs_dir': None,
     }
     defaults.update(overrides)
     return PipelineConfig(**defaults)

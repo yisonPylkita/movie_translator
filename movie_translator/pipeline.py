@@ -26,6 +26,7 @@ class TranslationPipeline:
         enable_inpaint: bool = False,
         tracker=None,
         metrics=None,
+        external_subs_dir: Path | None = None,
     ):
         self.config = PipelineConfig(
             device=device,
@@ -33,6 +34,7 @@ class TranslationPipeline:
             model=model,
             enable_fetch=enable_fetch,
             enable_inpaint=enable_inpaint,
+            external_subs_dir=external_subs_dir,
         )
         self.tracker = tracker
         self.metrics = metrics
