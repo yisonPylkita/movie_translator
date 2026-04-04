@@ -34,7 +34,7 @@ Fetched subtitles are often timed to different video releases. The alignment sys
 - **Large offsets** (60-90s+) from OP/ED removal in the subtitle source video
 - **Piecewise alignment** with different offsets for pre-OP and post-OP segments
 
-Primary alignment uses [ilass](https://github.com/SandroHc/ilass) (DP algorithm with split penalties), with a built-in cross-correlation fallback.
+Primary alignment uses [ilass](https://github.com/yisonPylkita/ilass) (DP algorithm with split penalties), with a built-in cross-correlation fallback.
 
 ## Requirements
 
