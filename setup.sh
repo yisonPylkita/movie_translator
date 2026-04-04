@@ -10,6 +10,9 @@ brew bundle
 # Enable direnv for this directory
 direnv allow
 
+# Initialize submodules (ilass alignment engine)
+git submodule update --init --recursive
+
 # Fetch AI translation model
 git lfs install
 git lfs pull

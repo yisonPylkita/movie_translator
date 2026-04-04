@@ -1,0 +1,3 @@
+[submodule "vendor/ilass"]
+	path = vendor/ilass
+	url = https://github.com/SandroHc/ilass.git

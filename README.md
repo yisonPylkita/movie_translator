@@ -50,7 +50,7 @@ For burned-in subtitle OCR, macOS with Apple Silicon is required (uses Apple Vis
 ### 1. Setup
 
 ```bash
-git clone https://github.com/yisonPylkita/movie_translator.git
+git clone --recurse-submodules https://github.com/yisonPylkita/movie_translator.git
 cd movie_translator
 
 # Install Python dependencies
@@ -60,6 +60,8 @@ uv sync
 # macOS: brew install pkg-config ffmpeg
 cd vendor/ilass && cargo build --release && cd ../..
 ```
+
+> **Already cloned without `--recurse-submodules`?** Run `git submodule update --init --recursive` to fetch the ilass submodule.
 
 ### 2. Translate Videos
 
