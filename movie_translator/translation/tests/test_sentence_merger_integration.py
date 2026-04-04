@@ -21,6 +21,7 @@ import pytest
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
+from movie_translator.translation.models import get_local_model_path
 from movie_translator.translation.sentence_merger import (
     MAX_BATCH_SENTENCES,
     group_lines,
@@ -32,20 +33,22 @@ from movie_translator.translation.sentence_merger import (
 warnings.filterwarnings('ignore', message='.*sacremoses.*')
 
 MODEL_PATH = 'allegro/BiDi-eng-pol'
-LOCAL_MODEL_PATH = None  # Set in fixture
 
 _PIPE_RE = re.compile(r'\|')
+
+# Evaluate once at collection time so pytest-xdist can skip before distributing
+_local_model_path = get_local_model_path('allegro')
+needs_model = pytest.mark.skipif(
+    _local_model_path is None,
+    reason='Local allegro model not available',
+)
 
 
 @pytest.fixture(scope='module')
 def model_and_tokenizer():
     """Load the BiDi model once for all tests in this module."""
-    from movie_translator.translation.models import get_local_model_path
-
-    path = get_local_model_path('allegro')
-    if path is None:
-        pytest.skip('Local allegro model not available')  # ty:ignore[invalid-argument-type,too-many-positional-arguments]
-    path = str(path)
+    assert _local_model_path is not None
+    path = str(_local_model_path)
 
     device = 'mps' if torch.backends.mps.is_available() else 'cpu'
     tokenizer = AutoTokenizer.from_pretrained(path)
@@ -115,6 +118,7 @@ class TestGroupSizeCap:
         assert sorted(all_indices) == list(range(len(texts)))
 
 
+@needs_model
 class TestNoPipeLeaks:
     """Verify that no | or || characters appear in translated output."""
 
@@ -174,6 +178,7 @@ class TestNoPipeLeaks:
             assert not _PIPE_RE.search(text), f'Pipe character found in line {i}: "{text}"'
 
 
+@needs_model
 class TestSeparatorFidelity:
     """Verify that || separators work correctly with small groups."""
 
@@ -194,6 +199,7 @@ class TestSeparatorFidelity:
         assert len(parts) == 3, f'Expected 3 parts, got {len(parts)}: "{result}"'
 
 
+@needs_model
 class TestNoRepetitionLoops:
     """Verify the model doesn't enter repetition loops."""
 
@@ -221,6 +227,7 @@ class TestNoRepetitionLoops:
                         )
 
 
+@needs_model
 class TestLineCountPreservation:
     """Verify that merge/unmerge round-trip preserves line count."""
 
@@ -248,6 +255,7 @@ class TestLineCountPreservation:
         assert len(result) == len(texts), f'Expected {len(texts)} lines, got {len(result)}'
 
 
+@needs_model
 class TestTranslationQuality:
     """Verify basic translation quality with the real model."""
 

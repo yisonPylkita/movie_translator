@@ -1,47 +1,22 @@
-import subprocess
-
 import pytest
 
 
 @pytest.fixture
 def create_test_frame(tmp_path):
-    """Create test frames using FFmpeg drawtext."""
-    from movie_translator.ffmpeg import get_ffmpeg
-
-    ffmpeg = get_ffmpeg()
+    """Create test frames using Pillow (no font dependencies)."""
+    from PIL import Image, ImageDraw
 
     def _create(filename, text=None, bg_color='black'):
         output = tmp_path / filename
+        bg_val = 0 if bg_color == 'black' else 255
+        img = Image.new('L', (640, 120), bg_val)
         if text:
-            vf = f"drawtext=text='{text}':fontsize=36:fontcolor=white:x=(w-tw)/2:y=(h-th)/2"
-            cmd = [
-                ffmpeg,
-                '-y',
-                '-f',
-                'lavfi',
-                '-i',
-                f'color={bg_color}:s=640x120:d=1',
-                '-vf',
-                vf,
-                '-frames:v',
-                '1',
-                str(output),
-            ]
-        else:
-            cmd = [
-                ffmpeg,
-                '-y',
-                '-f',
-                'lavfi',
-                '-i',
-                f'color={bg_color}:s=640x120:d=1',
-                '-frames:v',
-                '1',
-                str(output),
-            ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            pytest.skip(f'Could not create test frame: {result.stderr}')  # type: ignore[invalid-argument-type]  # ty:ignore[invalid-argument-type, too-many-positional-arguments]
+            draw = ImageDraw.Draw(img)
+            # Draw white rectangles to simulate text — different text
+            # produces different rectangle positions so frame diffs are non-zero
+            x_offset = (len(text) * 17) % 100
+            draw.rectangle([50 + x_offset, 20, 490 + x_offset, 100], fill=255)
+        img.save(output, 'JPEG')
         return output
 
     return _create

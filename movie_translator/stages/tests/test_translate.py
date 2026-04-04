@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,10 +13,12 @@ class TestTranslateStage:
         video.touch()
         eng_src = tmp_path / 'eng.srt'
         eng_src.touch()
+        mock_cache = MagicMock()
+        mock_cache.get_translator.return_value = (MagicMock(), False)
         ctx = PipelineContext(
             video_path=video,
             work_dir=tmp_path / 'work',
-            config=PipelineConfig(),
+            config=PipelineConfig(model_cache=mock_cache),
         )
         ctx.english_source = eng_src
         ctx.dialogue_lines = [

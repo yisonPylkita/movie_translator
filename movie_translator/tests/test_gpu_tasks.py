@@ -34,6 +34,8 @@ class TestTranslateTask:
             batch_size=16,
             model='test-model',
             progress_callback=None,
+            model_cache=None,
+            proper_nouns=None,
         )
         assert result == expected
 
