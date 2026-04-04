@@ -102,7 +102,9 @@ python-version = "3.14"
 [tool.ty.rules]
 possibly-missing-import = "ignore"
 
+# Quartz/Vision are macOS-only (pyobjc); unresolved on Linux, ignore comments unused on Linux
 [[tool.ty.overrides]]
-include = ["movie_translator/ocr/vision_ocr.py"]
+include = ["movie_translator/ocr/vision_ocr.py", "movie_translator/ocr/pgs_extractor.py"]
 [tool.ty.overrides.rules]
+unresolved-import = "ignore"
 unused-ignore-comment = "ignore"
