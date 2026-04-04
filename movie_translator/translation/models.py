@@ -16,6 +16,16 @@ TRANSLATION_MODELS: dict[str, ModelConfig] = {
         'description': 'Allegro BiDi English-Polish',
         'max_length': 512,
     },
+    'nllb-600m': {
+        'huggingface_id': 'facebook/nllb-200-distilled-600M',
+        'description': 'NLLB-200 Distilled 600M (200 languages)',
+        'max_length': 512,
+    },
+    'nllb-1.3b': {
+        'huggingface_id': 'facebook/nllb-200-distilled-1.3B',
+        'description': 'NLLB-200 Distilled 1.3B (200 languages)',
+        'max_length': 512,
+    },
 }
 
 

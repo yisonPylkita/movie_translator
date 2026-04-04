@@ -88,8 +88,14 @@ class SubtitleTranslator:
             logger.error(f'Failed to load model: {e}')
             return False
 
+    @property
+    def _is_nllb(self) -> bool:
+        return 'nllb' in self.model_config.get('huggingface_id', '').lower()
+
     def _load_tokenizer(self):
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+        if self._is_nllb:
+            self.tokenizer.src_lang = 'eng_Latn'
 
     def _load_model(self):
         self.model = AutoModelForSeq2SeqLM.from_pretrained(
@@ -298,14 +304,19 @@ class SubtitleTranslator:
     def _generate_translations(self, encoded: dict) -> torch.Tensor:
         if self.model is None:
             raise RuntimeError('Model not loaded — call load_model() first')
-        with torch.inference_mode():
-            return self.model.generate(
-                **encoded,
-                max_new_tokens=128,
-                num_beams=1,
-                early_stopping=True,
-                do_sample=False,
+        generate_kwargs: dict = dict(
+            **encoded,
+            max_new_tokens=128,
+            num_beams=1,
+            early_stopping=True,
+            do_sample=False,
+        )
+        if self._is_nllb and self.tokenizer is not None:
+            generate_kwargs['forced_bos_token_id'] = self.tokenizer.convert_tokens_to_ids(
+                'pol_Latn'
             )
+        with torch.inference_mode():
+            return self.model.generate(**generate_kwargs)
 
     def _decode_outputs(self, outputs: torch.Tensor) -> list[str]:
         if self.tokenizer is None:
