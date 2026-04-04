@@ -38,8 +38,10 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install ffmpeg
 
-      - name: Install dependencies
+      - name: Install dependencies (CPU-only torch on Linux)
         run: uv sync --group dev
+        env:
+          UV_EXTRA_INDEX_URL: ${{ runner.os == 'Linux' && 'https://download.pytorch.org/whl/cpu' || '' }}
 
       - name: Run linter
         run: uv run ruff check .
