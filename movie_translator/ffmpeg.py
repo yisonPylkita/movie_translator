@@ -17,11 +17,9 @@ class VideoMuxError(Exception):
 
 @lru_cache(maxsize=1)
 def get_ffmpeg_paths() -> tuple[str, str]:
-    # First try to use system FFmpeg (for proper arm64 support on Apple Silicon)
-    ffmpeg_path = '/opt/homebrew/bin/ffmpeg' if os.path.exists('/opt/homebrew/bin/ffmpeg') else None
-    ffprobe_path = (
-        '/opt/homebrew/bin/ffprobe' if os.path.exists('/opt/homebrew/bin/ffprobe') else None
-    )
+    # Prefer system FFmpeg found on PATH or well-known locations
+    ffmpeg_path = shutil.which('ffmpeg')
+    ffprobe_path = shutil.which('ffprobe')
 
     # Fallback to static_ffmpeg if system FFmpeg is not available
     if not ffmpeg_path or not ffprobe_path:

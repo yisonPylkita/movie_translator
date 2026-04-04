@@ -250,7 +250,7 @@ def extract_pgs_ffmpeg(video_path: Path, sub_index: int, output_dir: Path) -> li
 
 def extract_pgs_pgsrip(sup_path: Path, output_dir: Path) -> list[dict]:
     """Extract PGS using pgsrip library."""
-    from pgsrip.pgs import MediaPath, PgsReader
+    from pgsrip.pgs import MediaPath, PgsReader  # ty: ignore[unresolved-import]
 
     data = sup_path.read_bytes()
     media_path = MediaPath(str(sup_path))

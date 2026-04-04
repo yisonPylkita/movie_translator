@@ -29,6 +29,9 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Install FFmpeg
+        uses: federicocarboni/setup-ffmpeg@v3
+
       - name: Install dependencies
         run: uv sync --group dev
 
@@ -39,7 +42,7 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Run type checker
-        run: uv run ty check
+        run: uv run ty check --error-on-warning
 
       - name: Run tests
         run: uv run pytest -v

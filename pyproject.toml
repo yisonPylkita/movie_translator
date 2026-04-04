@@ -93,8 +93,16 @@ exclude_lines = [
     "if TYPE_CHECKING:",
 ]
 
+[tool.ty.src]
+exclude = ["vendor/**"]
+
 [tool.ty.environment]
 python-version = "3.14"
 
 [tool.ty.rules]
-unresolved-import = "ignore"
+possibly-missing-import = "ignore"
+
+[[tool.ty.overrides]]
+include = ["movie_translator/ocr/vision_ocr.py"]
+[tool.ty.overrides.rules]
+unused-ignore-comment = "ignore"
