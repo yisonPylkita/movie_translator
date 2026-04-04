@@ -8,11 +8,11 @@ lint:
     uv run ruff check --fix .
     uv run ruff format .
 
-# Run all checks without modifying files
+# Run all checks without modifying files (mirrors CI)
 check:
     uv run ruff check .
     uv run ruff format --check .
-    uv run ty check
+    uv run ty check --error-on-warning
 
 # Run tests
 test *args:
@@ -28,6 +28,6 @@ run dir *args:
 # Install git pre-commit hook
 install-hooks:
     @echo '#!/bin/sh' > .git/hooks/pre-commit
-    @echo 'uv run ruff check . && uv run ruff format --check . && uv run ty check' >> .git/hooks/pre-commit
+    @echo 'just check' >> .git/hooks/pre-commit
     @chmod +x .git/hooks/pre-commit
-    @echo 'Pre-commit hook installed (ruff check + format + ty).'
+    @echo 'Pre-commit hook installed (runs just check).'
