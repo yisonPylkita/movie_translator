@@ -1,7 +1,10 @@
 import logging
+from contextvars import ContextVar
 
 from rich.console import Console
 from rich.logging import RichHandler
+
+current_file_tag: ContextVar[str] = ContextVar('current_file_tag', default='')
 
 console = Console()
 

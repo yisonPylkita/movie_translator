@@ -4,6 +4,7 @@ import pytest
 
 from movie_translator.context import FetchedSubtitle, PipelineConfig, PipelineContext
 from movie_translator.stages.extract_english import ExtractEnglishStage
+from movie_translator.subtitles import SubtitleProcessor
 from movie_translator.types import DialogueLine
 
 
@@ -70,3 +71,65 @@ class TestExtractEnglishStage:
 
             with pytest.raises(RuntimeError, match='No English subtitle source'):
                 ExtractEnglishStage().run(ctx)
+
+
+class TestExtractEnglishDeferredOcr:
+    def test_uses_fetched_source(self, tmp_path):
+        """Fetched English source used, no pending_ocr."""
+        video = tmp_path / 'ep01.mkv'
+        video.touch()
+        work = tmp_path / 'work'
+        work.mkdir(exist_ok=True)
+        eng_sub = tmp_path / 'eng.srt'
+        eng_sub.write_text('1\n00:00:01,000 --> 00:00:02,000\nHello\n')
+        ctx = PipelineContext(
+            video_path=video,
+            work_dir=work,
+            config=PipelineConfig(),
+        )
+        ctx.fetched_subtitles = {'eng': [FetchedSubtitle(path=eng_sub, source='test')]}
+
+        with patch.object(
+            SubtitleProcessor,
+            'extract_dialogue_lines',
+            return_value=[DialogueLine(1000, 2000, 'Hello')],
+        ):
+            result = ExtractEnglishStage().run(ctx)
+
+        assert result.english_source == eng_sub
+        assert result.pending_ocr is None
+        assert result.dialogue_lines is not None and len(result.dialogue_lines) == 1
+
+    def test_defers_ocr_when_no_source(self, tmp_path):
+        """No sources available, sets pending_ocr instead of raising."""
+        video = tmp_path / 'ep01.mkv'
+        video.touch()
+        work = tmp_path / 'work'
+        work.mkdir(exist_ok=True)
+        ctx = PipelineContext(
+            video_path=video,
+            work_dir=work,
+            config=PipelineConfig(),
+        )
+        ctx.fetched_subtitles = {}
+
+        with (
+            patch('movie_translator.stages.extract_english.SubtitleExtractor') as MockExtractor,
+            patch(
+                'movie_translator.stages.extract_english.is_vision_ocr_available',
+                return_value=True,
+            ),
+        ):
+            mock_ext = MagicMock()
+            mock_ext.get_track_info.return_value = {'tracks': []}
+            mock_ext.find_english_track.return_value = None
+            MockExtractor.return_value = mock_ext
+
+            result = ExtractEnglishStage().run(ctx)
+
+        assert result.pending_ocr is not None
+        assert result.pending_ocr.type == 'burned_in'
+        assert result.pending_ocr.track_id is None
+        assert result.pending_ocr.output_dir == work
+        assert result.english_source is None
+        assert result.dialogue_lines is None

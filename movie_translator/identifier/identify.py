@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 from ..logging import logger
+from ..metrics.collector import MetricsCollector, NullCollector
 from .hasher import compute_oshash
 from .metadata import extract_container_metadata
 from .parser import parse_filename
@@ -8,27 +11,35 @@ from .tmdb import lookup_tmdb
 from .types import MediaIdentity
 
 
-def identify_media(video_path: Path) -> MediaIdentity:
+def identify_media(
+    video_path: Path, metrics: MetricsCollector | NullCollector | None = None
+) -> MediaIdentity:
     """Identify a video file using filename, container metadata, and file hash.
 
     Combines multiple signals with priority:
     container metadata > filename > folder name.
     """
+    if metrics is None:
+        metrics = NullCollector()
+
     filename = video_path.name
     folder_name = video_path.parent.name
 
     # Signal 1: Parse filename (and folder as fallback context)
-    parsed = parse_filename(filename, folder_name=folder_name)
+    with metrics.span('parse_filename'):
+        parsed = parse_filename(filename, folder_name=folder_name)
 
     # Signal 2: Container metadata (overrides filename when present)
-    container = extract_container_metadata(video_path)
+    with metrics.span('extract_container_metadata'):
+        container = extract_container_metadata(video_path)
 
     # Signal 3: File hash
-    try:
-        oshash = compute_oshash(video_path)
-    except Exception as e:
-        logger.warning(f'Could not compute file hash: {e}')
-        oshash = ''
+    with metrics.span('compute_oshash'):
+        try:
+            oshash = compute_oshash(video_path)
+        except Exception as e:
+            logger.warning(f'Could not compute file hash: {e}')
+            oshash = ''
 
     file_size = video_path.stat().st_size
 
@@ -59,14 +70,19 @@ def identify_media(video_path: Path) -> MediaIdentity:
     # Signal 4: TMDB enrichment (optional, requires TMDB_API_KEY)
     imdb_id = None
     tmdb_id = None
-    try:
-        tmdb_result = lookup_tmdb(parsed_title, year, media_type)
-        if tmdb_result:
-            tmdb_id = tmdb_result.get('tmdb_id')
-            imdb_id = tmdb_result.get('imdb_id')
-            logger.debug(f'TMDB enrichment: tmdb_id={tmdb_id}, imdb_id={imdb_id}')
-    except Exception as e:
-        logger.debug(f'TMDB enrichment skipped: {e}')
+    with metrics.span('lookup_tmdb') as s:
+        try:
+            tmdb_result = lookup_tmdb(parsed_title, year, media_type)
+            if tmdb_result:
+                tmdb_id = tmdb_result.get('tmdb_id')
+                imdb_id = tmdb_result.get('imdb_id')
+                s.detail('hit', True)
+                logger.debug(f'TMDB enrichment: tmdb_id={tmdb_id}, imdb_id={imdb_id}')
+            else:
+                s.detail('hit', False)
+        except Exception as e:
+            s.detail('hit', False)
+            logger.debug(f'TMDB enrichment skipped: {e}')
 
     return MediaIdentity(
         title=title,

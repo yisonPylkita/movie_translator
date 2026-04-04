@@ -1,13 +1,8 @@
 """Extract reference subtitle and record original English track info."""
 
-from ..context import OriginalTrack, PipelineContext
+from ..context import OriginalTrack, PendingOcr, PipelineContext
 from ..logging import logger
-from ..ocr import (
-    extract_burned_in_subtitles,
-    is_vision_ocr_available,
-    probe_for_burned_in_subtitles,
-)
-from ..ocr.pgs_extractor import extract_pgs_track
+from ..ocr import is_vision_ocr_available
 from ..subtitles import SubtitleExtractor
 
 # PGS/DVD/DVB image-based codecs that need OCR extraction
@@ -23,12 +18,19 @@ class ExtractReferenceStage:
     name = 'extract_reference'
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
+        """Extract the English reference subtitle track.
+
+        Text-based tracks are extracted directly. Image-based (PGS/DVD)
+        and burned-in tracks set ctx.pending_ocr for the pipeline to
+        resolve (synchronously or via GPU queue).
+        """
         extractor = SubtitleExtractor()
         ref_dir = ctx.work_dir / 'reference'
         ref_dir.mkdir(parents=True, exist_ok=True)
 
-        track_info = extractor.get_track_info(ctx.video_path)
-        eng_track = extractor.find_english_track(track_info) if track_info else None
+        with ctx.metrics.span('get_track_info'):
+            track_info = extractor.get_track_info(ctx.video_path)
+            eng_track = extractor.find_english_track(track_info) if track_info else None
 
         if eng_track:
             ctx.original_english_track = OriginalTrack(
@@ -39,38 +41,33 @@ class ExtractReferenceStage:
             )
 
             if _is_image_codec(eng_track):
-                # PGS/DVD bitmap track — extract via OCR
-                srt_path = extract_pgs_track(ctx.video_path, eng_track['id'], ref_dir)
-                if srt_path:
-                    ctx.reference_path = srt_path
-                    logger.info(f'Extracted PGS reference via OCR: {srt_path.name}')
+                # Defer PGS/DVD OCR
+                ctx.pending_ocr = PendingOcr(
+                    type='pgs',
+                    track_id=eng_track['id'],
+                    output_dir=ref_dir,
+                )
             else:
-                # Text-based track — extract directly
-                subtitle_ext = extractor.get_subtitle_extension(eng_track)
-                ref_path = ref_dir / f'{ctx.video_path.stem}_reference{subtitle_ext}'
-                try:
-                    extractor.extract_subtitle(
-                        ctx.video_path,
-                        eng_track['id'],
-                        ref_path,
-                        eng_track.get('subtitle_index', 0),
-                    )
-                    ctx.reference_path = ref_path
-                    logger.info(f'Extracted reference: {ref_path.name}')
-                except Exception as e:
-                    logger.warning(f'Failed to extract reference: {e}')
+                with ctx.metrics.span('extract_subtitle'):
+                    subtitle_ext = extractor.get_subtitle_extension(eng_track)
+                    ref_path = ref_dir / f'{ctx.video_path.stem}_reference{subtitle_ext}'
+                    try:
+                        extractor.extract_subtitle(
+                            ctx.video_path,
+                            eng_track['id'],
+                            ref_path,
+                            eng_track.get('subtitle_index', 0),
+                        )
+                        ctx.reference_path = ref_path
+                        logger.info(f'Extracted reference: {ref_path.name}')
+                    except Exception as e:
+                        logger.warning(f'Failed to extract reference: {e}')
 
-        # Fall back to burned-in subtitle OCR if no track at all
-        if ctx.reference_path is None and is_vision_ocr_available():
-            ctx.burned_in_probed = True
-            if probe_for_burned_in_subtitles(ctx.video_path):
-                try:
-                    result = extract_burned_in_subtitles(ctx.video_path, ref_dir)
-                    if result:
-                        ctx.reference_path = result.srt_path
-                        ctx.ocr_results = result.ocr_results
-                        logger.info(f'Extracted OCR reference: {result.srt_path.name}')
-                except Exception as e:
-                    logger.warning(f'OCR extraction failed: {e}')
+        # If no track found and Vision is available, defer burned-in OCR
+        if ctx.reference_path is None and ctx.pending_ocr is None and is_vision_ocr_available():
+            ctx.pending_ocr = PendingOcr(
+                type='burned_in',
+                output_dir=ref_dir,
+            )
 
         return ctx

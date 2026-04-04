@@ -22,6 +22,32 @@ PHRASE_BASE_MAP = {
     'hi': 'cześć',
     'bye': 'pa',
     'goodbye': 'do widzenia',
+    # Common anime interjections — these are trivial for a cache but
+    # problematic when batched with longer lines via || in the merger.
+    'huh': 'co',
+    'what': 'co',
+    'right': 'racja',
+    'really': 'naprawdę',
+    'seriously': 'poważnie',
+    'exactly': 'dokładnie',
+    'understood': 'zrozumiałem',
+    'impossible': 'niemożliwe',
+    'damn': 'cholera',
+    'dunno': 'nie wiem',
+    'yo': 'hej',
+    'hey': 'hej',
+    'listen': 'słuchaj',
+    'look': 'patrz',
+    'run': 'uciekaj',
+    'enough': 'wystarczy',
+    'idiot': 'idioto',
+    'liar': 'kłamca',
+    'unbelievable': 'niewiarygodne',
+    # Military commands — context-dependent words that both models get wrong.
+    # "March!" → "Marzec!" (month) and "Charge!" → "Ładuj!" (load/battery).
+    # Discovered via Berserk translation experiments (2026-04-04).
+    'march': 'naprzód',
+    'charge': 'do ataku',
 }
 
 MULTI_WORD_PHRASES = {
@@ -31,6 +57,29 @@ MULTI_WORD_PHRASES = {
     'of course': 'oczywiście',
     'excuse me': 'przepraszam',
     'good luck': 'powodzenia',
+    # Common anime short phrases — bypass the model entirely.
+    'come on': 'no dalej',
+    'no way': 'nie ma mowy',
+    'damn it': 'cholera',
+    'what the hell': 'co do cholery',
+    'got it': 'rozumiem',
+    'hold on': 'chwileczkę',
+    'not at all': 'wcale nie',
+    'no doubt': 'bez dwóch zdań',
+    'give me a break': 'daj spokój',
+    'shut up': 'zamknij się',
+    'how dare you': 'jak śmiesz',
+    'calm down': 'spokojnie',
+    'let me go': 'puść mnie',
+    'you idiot': 'ty idioto',
+    'are you okay': 'wszystko dobrze',
+    'good morning': 'dzień dobry',
+    'good night': 'dobranoc',
+    # Idioms that both Allegro and Apple mistranslate literally.
+    # Discovered via Berserk translation experiments (2026-04-04).
+    'way to go': 'tak trzymaj',
+    'get it together': 'weź się w garść',
+    'son of a bitch': 'sukinsyn',
 }
 
 IDIOM_PATTERNS = [
@@ -47,12 +96,14 @@ IDIOM_PATTERNS = [
 ]
 
 # Patterns for content that should pass through translation untouched.
-# Each tuple: (compiled regex, group name for the placeholder tag).
+# Each tuple: (compiled regex, placeholder tag prefix).
+# Tags use short non-English abbreviations (PH, TM, UR, NM) to prevent the
+# translation model from translating the tag itself (e.g. NAME→NAZWA).
 _PLACEHOLDER_PATTERNS = [
-    (re.compile(r'\b\d{1,3}([-.)\s]\d{2,4}){2,}\b'), 'PHONE'),  # phone numbers
-    (re.compile(r'\b\d{1,2}[/:]\d{2}(?:[/:]\d{2,4})?\b'), 'TIME'),  # 12:30, 1/01/2025
-    (re.compile(r'https?://\S+'), 'URL'),  # URLs
-    (re.compile(r'\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b'), 'NAME'),  # Title Case names
+    (re.compile(r'\b\d{1,3}([-.)\s]\d{2,4}){2,}\b'), 'PH'),  # phone numbers
+    (re.compile(r'\b\d{1,2}[/:]\d{2}(?:[/:]\d{2,4})?\b'), 'TM'),  # 12:30, 1/01/2025
+    (re.compile(r'https?://\S+'), 'UR'),  # URLs
+    (re.compile(r'\b[A-Z][a-z]+(?:\s[A-Z][a-z]+)+\b'), 'NM'),  # Title Case names
 ]
 
 
@@ -170,6 +221,21 @@ def preprocess_for_translation(
     return processed, False
 
 
+# Known bad translations that both models produce consistently.
+# Each tuple: (compiled pattern, replacement).
+# Discovered via Berserk translation experiments (2026-04-04).
+_POST_TRANSLATION_FIXES = [
+    (re.compile(r'\bMarzec\b'), 'Naprzód'),  # "March" (month) → military command
+    (re.compile(r'\bDobra droga\b', re.IGNORECASE), 'Tak trzymaj'),  # "Way to go" literal
+    (re.compile(r'\bWnętrzności\b', re.IGNORECASE), 'Guts'),  # character name
+    (re.compile(r'\bKaska\b'), 'Casca'),  # character name
+    (re.compile(r'^Ładuj!$'), 'Do ataku!'),  # "Charge" as battery → attack
+    (re.compile(r'\bstrajk\b', re.IGNORECASE), 'cios'),  # labour strike → combat strike
+    (re.compile(r'Weź to razem', re.IGNORECASE), 'Weź się w garść'),  # "get it together"
+    (re.compile(r'\bDobra robota\b', re.IGNORECASE), 'Świetna robota'),  # slightly more natural
+]
+
+
 def postprocess_translation(text: str) -> str:
     if not text:
         return text
@@ -178,6 +244,10 @@ def postprocess_translation(text: str) -> str:
         return ''
 
     cleaned = text.strip()
+
+    # Apply known-bad-translation fixes
+    for pattern, replacement in _POST_TRANSLATION_FIXES:
+        cleaned = pattern.sub(replacement, cleaned)
 
     cleaned = _remove_dialogue_markers(cleaned)
     cleaned = _remove_repetition(cleaned)
@@ -223,29 +293,51 @@ def _normalize_punctuation(text: str) -> str:
 
 
 def extract_placeholders(
-    text: str, stats: PreprocessingStats | None = None
+    text: str,
+    stats: PreprocessingStats | None = None,
+    proper_nouns: set[str] | None = None,
 ) -> tuple[str, dict[str, str]]:
-    """Replace numbers, URLs, and Title Case names with placeholders.
+    """Replace numbers, URLs, Title Case names, and known proper nouns with placeholders.
 
     Returns the modified text and a mapping from placeholder tags back to
     original values so they can be restored after translation.
+
+    If *proper_nouns* is provided, those names are also protected from
+    translation. This is the primary mechanism for preventing character
+    name mistranslation (e.g. "Guts" → "Wnętrzności").
     """
     mapping: dict[str, str] = {}
     result = text
     counter = 0
 
+    # Protect known proper nouns first (longest match wins)
+    if proper_nouns:
+        for name in sorted(proper_nouns, key=len, reverse=True):
+            pattern = re.compile(r'\b' + re.escape(str(name)) + r'\b')
+            for match in pattern.finditer(result):
+                key = f'__PN{counter}__'
+                mapping[key] = match.group()
+                counter += 1
+                if stats:
+                    stats.record_placeholder()
+        # Replace longest matches first
+        for key, original in sorted(mapping.items(), key=lambda kv: -len(kv[1])):
+            result = result.replace(original, key, 1)
+
+    # Then apply regex-based placeholder patterns
+    regex_mapping: dict[str, str] = {}
     for pattern, tag in _PLACEHOLDER_PATTERNS:
         for match in pattern.finditer(result):
             key = f'__{tag}{counter}__'
-            mapping[key] = match.group()
+            regex_mapping[key] = match.group()
             counter += 1
             if stats:
                 stats.record_placeholder()
 
-    # Replace longest matches first to avoid partial overlap issues.
-    for key, original in sorted(mapping.items(), key=lambda kv: -len(kv[1])):
+    for key, original in sorted(regex_mapping.items(), key=lambda kv: -len(kv[1])):
         result = result.replace(original, key, 1)
 
+    mapping.update(regex_mapping)
     return result, mapping
 
 

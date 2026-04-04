@@ -1,4 +1,5 @@
 import gc
+import re
 import time
 import warnings
 
@@ -6,6 +7,7 @@ import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from ..logging import logger
+from ..metrics.collector import MetricsCollector, NullCollector
 from ..types import DialogueLine, ProgressCallback
 from .enhancements import (
     PreprocessingStats,
@@ -14,6 +16,7 @@ from .enhancements import (
     preprocess_for_translation,
     restore_placeholders,
 )
+from .model_cache import ModelCache
 from .models import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_DEVICE,
@@ -44,6 +47,7 @@ class SubtitleTranslator:
         self.batch_size = batch_size
         self.enable_enhancements = enable_enhancements
         self.preprocessing_stats = PreprocessingStats()
+        self.proper_nouns: set[str] = set()
         self.tokenizer = None
         self.model = None
 
@@ -149,13 +153,30 @@ class SubtitleTranslator:
             # translation so the model doesn't mangle them.
             protected_texts = []
             for text in texts:
-                protected, mapping = extract_placeholders(text, self.preprocessing_stats)
+                protected, mapping = extract_placeholders(
+                    text, self.preprocessing_stats, proper_nouns=self.proper_nouns or None
+                )
                 protected_texts.append(protected)
                 placeholder_mappings.append(mapping)
             texts = protected_texts
 
+        # If a line is nothing but a placeholder tag + punctuation (e.g.
+        # "__NM0__..." from "Lord Boscone..."), skip the model — it would
+        # hallucinate random text for the meaningless input.  Restore the
+        # placeholder immediately and treat it like a cache hit.
+        _placeholder_only_re = re.compile(r'^__\w+__[.!?,;:\u2026\s]*$')
+        placeholder_skip_indices: set[int] = set()
+        placeholder_cached: dict[int, str] = {}
+        for i, text in enumerate(texts):
+            if placeholder_mappings and _placeholder_only_re.match(text.strip()):
+                restored = restore_placeholders(text, placeholder_mappings[i])
+                placeholder_cached[i] = restored
+                placeholder_skip_indices.add(i)
+
         if self.enable_enhancements:
             enhanced_texts, skip_indices, cached_translations = self._apply_preprocessing(texts)
+            skip_indices |= placeholder_skip_indices
+            cached_translations.update(placeholder_cached)
         else:
             enhanced_texts = texts
             skip_indices = set()
@@ -302,45 +323,39 @@ class SubtitleTranslator:
         self._clear_memory()
 
 
-_cached_translator: SubtitleTranslator | None = None
-
-
-def _get_translator(device: str, batch_size: int, model: str) -> SubtitleTranslator | None:
-    """Return a cached translator, reloading only when config changes."""
-    global _cached_translator
-    if (
-        _cached_translator is not None
-        and _cached_translator.model is not None
-        and _cached_translator.device == ('mps' if device == 'mps' else 'cpu')
-        and _cached_translator.batch_size == batch_size
-        and _cached_translator.model_key == model
-    ):
-        _cached_translator.preprocessing_stats.reset()
-        return _cached_translator
-
-    if _cached_translator is not None:
-        _cached_translator.cleanup()
-
-    translator = SubtitleTranslator(device=device, batch_size=batch_size, model_key=model)
-    if not translator.load_model():
-        return None
-    _cached_translator = translator
-    return translator
-
-
 def translate_dialogue_lines(
     dialogue_lines: list[DialogueLine],
     device: str,
     batch_size: int,
     model: str,
     progress_callback: ProgressCallback | None = None,
+    metrics: MetricsCollector | NullCollector | None = None,
+    model_cache: ModelCache | None = None,
+    proper_nouns: set[str] | None = None,
 ) -> list[DialogueLine]:
-    translator = _get_translator(device, batch_size, model)
-    if translator is None:
-        return []
+    if metrics is None:
+        metrics = NullCollector()
+    if model_cache is None:
+        model_cache = ModelCache()
 
-    texts = [line.text for line in dialogue_lines]
-    translated_texts = translator.translate_texts(texts, progress_callback)
+    if model == 'apple':
+        backend = model_cache.get_apple_backend(batch_size)
+        if backend is None:
+            return []
+        if proper_nouns:
+            backend.proper_nouns = proper_nouns
+        texts = [line.text for line in dialogue_lines]
+        translated_texts = backend.translate_texts(texts, progress_callback)
+    else:
+        with metrics.span('load_model') as s:
+            translator, cached = model_cache.get_translator(device, batch_size, model)
+            s.detail('cached', cached)
+        if translator is None:
+            return []
+        if proper_nouns:
+            translator.proper_nouns = proper_nouns
+        texts = [line.text for line in dialogue_lines]
+        translated_texts = translator.translate_texts(texts, progress_callback)
 
     return [
         DialogueLine(line.start_ms, line.end_ms, text)

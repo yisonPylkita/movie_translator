@@ -1,0 +1,396 @@
+{
+  "version": 1,
+  "git_commit": "8d704fa",
+  "dirty": true,
+  "timestamp": "2026-03-30T18:15:10Z",
+  "config": {
+    "device": "mps",
+    "batch_size": 16,
+    "model": "apple",
+    "enable_fetch": true,
+    "enable_inpaint": false
+  },
+  "videos": [
+    {
+      "path": "/tmp/apple_benchmark/[AnimeRG] Berserk - 03 [Dual Audio] [1080p] [x265] [pseudo].mkv",
+      "hash": "",
+      "file_size_bytes": 188125125,
+      "duration_ms": 0,
+      "identity": {},
+      "entries": [],
+      "total_duration_ms": 48.5
+    },
+    {
+      "path": "/tmp/apple_benchmark/[EMBER] Dandadan - 01.mkv",
+      "hash": "99f0ba59106de56e",
+      "file_size_bytes": 471639724,
+      "duration_ms": 1437083,
+      "identity": {
+        "title": "S01E01-That's How Love Starts, Ya Know!",
+        "parsed_title": "Dandadan",
+        "media_type": "episode",
+        "season": null,
+        "episode": 1,
+        "year": null,
+        "is_anime": true,
+        "release_group": "EMBER",
+        "imdb_id": null,
+        "tmdb_id": null
+      },
+      "entries": [
+        {
+          "name": "identify.parse_filename",
+          "duration_ms": 48.7
+        },
+        {
+          "name": "identify.extract_container_metadata",
+          "duration_ms": 0.0
+        },
+        {
+          "name": "identify.compute_oshash",
+          "duration_ms": 1.7
+        },
+        {
+          "name": "identify.lookup_tmdb",
+          "duration_ms": 0.0,
+          "details": {
+            "hit": false
+          }
+        },
+        {
+          "name": "identify.record_identity",
+          "duration_ms": 0.0,
+          "details": {
+            "title": "S01E01-That's How Love Starts, Ya Know!",
+            "media_type": "episode",
+            "is_anime": true,
+            "episode": 1
+          }
+        },
+        {
+          "name": "identify",
+          "duration_ms": 51.0
+        },
+        {
+          "name": "extract_reference.get_track_info",
+          "duration_ms": 0.5
+        },
+        {
+          "name": "extract_reference.extract_subtitle",
+          "duration_ms": 177.5
+        },
+        {
+          "name": "extract_reference",
+          "duration_ms": 178.0
+        },
+        {
+          "name": "fetch.search_all.animesub",
+          "duration_ms": 65.8,
+          "details": {
+            "candidates": 0
+          }
+        },
+        {
+          "name": "fetch.search_all.napiprojekt",
+          "duration_ms": 157.4,
+          "details": {
+            "candidates": 0
+          }
+        },
+        {
+          "name": "fetch.search_all.opensubtitles",
+          "duration_ms": 448.8,
+          "details": {
+            "candidates": 50
+          }
+        },
+        {
+          "name": "fetch.search_all.podnapisi",
+          "duration_ms": 10009.7,
+          "details": {
+            "candidates": 0
+          }
+        },
+        {
+          "name": "fetch.search_all",
+          "duration_ms": 10010.7,
+          "details": {
+            "candidates": 50
+          }
+        },
+        {
+          "name": "fetch.download_all",
+          "duration_ms": 12.6,
+          "details": {
+            "downloaded": 0,
+            "failed": 50
+          }
+        },
+        {
+          "name": "fetch",
+          "duration_ms": 10030.3
+        },
+        {
+          "name": "extract.select_source",
+          "duration_ms": 0.0,
+          "details": {
+            "source": "reference"
+          }
+        },
+        {
+          "name": "extract.extract_dialogue_lines",
+          "duration_ms": 7.5,
+          "details": {
+            "lines": 3,
+            "chars": 104
+          }
+        },
+        {
+          "name": "extract",
+          "duration_ms": 7.7
+        },
+        {
+          "name": "translate.batch",
+          "duration_ms": 264.6,
+          "details": {
+            "input_lines": 3,
+            "input_chars": 104,
+            "batch_size": 16,
+            "output_lines": 3,
+            "output_chars": 98,
+            "batches": 1
+          }
+        },
+        {
+          "name": "translate.check_fonts",
+          "duration_ms": 900.1,
+          "details": {
+            "supports_polish": true
+          }
+        },
+        {
+          "name": "translate",
+          "duration_ms": 901.1
+        },
+        {
+          "name": "create_tracks.create_polish_subtitles",
+          "duration_ms": 1.0
+        },
+        {
+          "name": "create_tracks.build_track_list",
+          "duration_ms": 0.0,
+          "details": {
+            "tracks": 1
+          }
+        },
+        {
+          "name": "create_tracks",
+          "duration_ms": 1.0
+        },
+        {
+          "name": "mux.create_clean_video",
+          "duration_ms": 615.0,
+          "details": {
+            "tracks": 1,
+            "font_attachments": 0
+          }
+        },
+        {
+          "name": "mux.verify_result",
+          "duration_ms": 39.6
+        },
+        {
+          "name": "mux",
+          "duration_ms": 654.7
+        }
+      ],
+      "total_duration_ms": 11869.8
+    },
+    {
+      "path": "/tmp/apple_benchmark/[EMBER] Dandadan - 06.mkv",
+      "hash": "5f5fa2ea3e4906b9",
+      "file_size_bytes": 415572344,
+      "duration_ms": 1437175,
+      "identity": {
+        "title": "S01E06-A Dangerous Woman Arrives",
+        "parsed_title": "Dandadan",
+        "media_type": "episode",
+        "season": null,
+        "episode": 6,
+        "year": null,
+        "is_anime": true,
+        "release_group": "EMBER",
+        "imdb_id": null,
+        "tmdb_id": null
+      },
+      "entries": [
+        {
+          "name": "identify.parse_filename",
+          "duration_ms": 5.2
+        },
+        {
+          "name": "identify.extract_container_metadata",
+          "duration_ms": 0.0
+        },
+        {
+          "name": "identify.compute_oshash",
+          "duration_ms": 1.8
+        },
+        {
+          "name": "identify.lookup_tmdb",
+          "duration_ms": 0.0,
+          "details": {
+            "hit": false
+          }
+        },
+        {
+          "name": "identify.record_identity",
+          "duration_ms": 0.0,
+          "details": {
+            "title": "S01E06-A Dangerous Woman Arrives",
+            "media_type": "episode",
+            "is_anime": true,
+            "episode": 6
+          }
+        },
+        {
+          "name": "identify",
+          "duration_ms": 7.6
+        },
+        {
+          "name": "extract_reference.get_track_info",
+          "duration_ms": 0.5
+        },
+        {
+          "name": "extract_reference.extract_subtitle",
+          "duration_ms": 162.3
+        },
+        {
+          "name": "extract_reference",
+          "duration_ms": 162.8
+        },
+        {
+          "name": "fetch.search_all.animesub",
+          "duration_ms": 63.6,
+          "details": {
+            "candidates": 0
+          }
+        },
+        {
+          "name": "fetch.search_all.napiprojekt",
+          "duration_ms": 116.1,
+          "details": {
+            "candidates": 0
+          }
+        },
+        {
+          "name": "fetch.search_all.opensubtitles",
+          "duration_ms": 456.3,
+          "details": {
+            "candidates": 50
+          }
+        },
+        {
+          "name": "fetch.search_all.podnapisi",
+          "duration_ms": 10006.7,
+          "details": {
+            "candidates": 0
+          }
+        },
+        {
+          "name": "fetch.search_all",
+          "duration_ms": 10007.5,
+          "details": {
+            "candidates": 50
+          }
+        },
+        {
+          "name": "fetch.download_all",
+          "duration_ms": 24.3,
+          "details": {
+            "downloaded": 0,
+            "failed": 50
+          }
+        },
+        {
+          "name": "fetch",
+          "duration_ms": 10037.6
+        },
+        {
+          "name": "extract.select_source",
+          "duration_ms": 0.0,
+          "details": {
+            "source": "reference"
+          }
+        },
+        {
+          "name": "extract.extract_dialogue_lines",
+          "duration_ms": 6.1,
+          "details": {
+            "lines": 333,
+            "chars": 11011
+          }
+        },
+        {
+          "name": "extract",
+          "duration_ms": 6.5
+        },
+        {
+          "name": "translate.check_fonts",
+          "duration_ms": 765.5,
+          "details": {
+            "supports_polish": true
+          }
+        },
+        {
+          "name": "translate.batch",
+          "duration_ms": 9465.2,
+          "details": {
+            "input_lines": 333,
+            "input_chars": 11011,
+            "batch_size": 16,
+            "output_lines": 333,
+            "output_chars": 11300,
+            "batches": 21
+          }
+        },
+        {
+          "name": "translate",
+          "duration_ms": 9472.6
+        },
+        {
+          "name": "create_tracks.create_polish_subtitles",
+          "duration_ms": 4.4
+        },
+        {
+          "name": "create_tracks.build_track_list",
+          "duration_ms": 0.0,
+          "details": {
+            "tracks": 1
+          }
+        },
+        {
+          "name": "create_tracks",
+          "duration_ms": 4.5
+        },
+        {
+          "name": "mux.create_clean_video",
+          "duration_ms": 580.7,
+          "details": {
+            "tracks": 1,
+            "font_attachments": 0
+          }
+        },
+        {
+          "name": "mux.verify_result",
+          "duration_ms": 46.3
+        },
+        {
+          "name": "mux",
+          "duration_ms": 627.1
+        }
+      ],
+      "total_duration_ms": 20362.6
+    }
+  ]
+}

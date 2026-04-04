@@ -1,160 +1,17 @@
-import logging
-import shutil
+"""CLI entry point — routes to extract or translate subcommands."""
+
 import sys
-from pathlib import Path
-
-from .discovery import create_work_dir, find_videos
-from .logging import console, logger, set_verbose
-from .pipeline import TranslationPipeline
-from .progress import ProgressTracker
-from .subtitles import SubtitleExtractor
-
-
-def check_dependencies() -> bool:
-    """Check all required dependencies. Returns True if all satisfied."""
-    import importlib.util
-
-    from .ffmpeg import get_ffmpeg_version
-
-    version = sys.version_info
-    if version.major < 3 or (version.major == 3 and version.minor < 10):
-        console.print(f'[red]❌ Python 3.10+ required, found {version.major}.{version.minor}[/red]')
-        return False
-
-    try:
-        get_ffmpeg_version()
-    except Exception:
-        console.print('[red]❌ FFmpeg not available. Run ./setup.sh first.[/red]')
-        return False
-
-    required_packages = ['pysubs2', 'torch', 'transformers']
-    for package in required_packages:
-        if importlib.util.find_spec(package) is None:
-            console.print(f'[red]❌ Missing package: {package}. Run ./setup.sh first.[/red]')
-            return False
-
-    return True
-
-
-def parse_args():
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description='Movie Translator - Extract English dialogue → AI translate to Polish → Replace original video'
-    )
-    parser.add_argument('input', help='Video file or directory containing video files')
-    parser.add_argument(
-        '--device',
-        choices=['cpu', 'mps'],
-        default='mps' if sys.platform == 'darwin' else 'cpu',
-    )
-    parser.add_argument('--batch-size', type=int, default=16)
-    parser.add_argument('--model', choices=['allegro'], default='allegro')
-    parser.add_argument('--no-fetch', action='store_true')
-    parser.add_argument(
-        '--inpaint',
-        action='store_true',
-        help='Remove burned-in subtitles from video frames via inpainting (slow)',
-    )
-    parser.add_argument('--dry-run', action='store_true')
-    parser.add_argument('--keep-artifacts', action='store_true')
-    parser.add_argument('--verbose', '-v', action='store_true')
-    return parser.parse_args()
-
-
-def show_summary(results: list[tuple[str, str]], dry_run: bool = False) -> None:
-    successful = sum(1 for _, status in results if status == 'success')
-    failed = sum(1 for _, status in results if status == 'failed')
-    skipped = sum(1 for _, status in results if status == 'skipped')
-
-    parts = []
-    if successful > 0:
-        parts.append(f'[green]✓ {successful} translated[/green]')
-    if skipped > 0:
-        parts.append(f'[blue]⏭ {skipped} skipped[/blue]')
-    if failed > 0:
-        parts.append(f'[red]✗ {failed} failed[/red]')
-
-    console.print(' | '.join(parts))
-
-    if dry_run and successful > 0:
-        console.print('[yellow]Dry run - originals not modified[/yellow]')
 
 
 def main():
-    args = parse_args()
-    set_verbose(args.verbose)
+    if len(sys.argv) > 1 and sys.argv[1] == 'extract':
+        from .commands.extract_cmd import run
 
-    input_path = Path(args.input)
-    if not input_path.exists():
-        console.print(f'[red]❌ Not found: {input_path}[/red]')
-        sys.exit(1)
+        run(sys.argv[2:])
+    else:
+        from .commands.translate_cmd import run
 
-    if not check_dependencies():
-        sys.exit(1)
-
-    video_files = find_videos(input_path)
-    if not video_files:
-        console.print(f'[red]❌ No video files found in {input_path}[/red]')
-        sys.exit(1)
-
-    # Determine root directory for work dir creation
-    root_dir = input_path if input_path.is_dir() else input_path.parent
-
-    if args.dry_run:
-        console.print('[yellow]Dry run mode - originals will not be modified[/yellow]')
-
-    logging.getLogger('transformers').setLevel(logging.ERROR)
-    extractor = SubtitleExtractor()
-
-    with ProgressTracker(len(video_files), console=console) as tracker:
-        pipeline = TranslationPipeline(
-            device=args.device,
-            batch_size=args.batch_size,
-            model=args.model,
-            enable_fetch=not args.no_fetch,
-            enable_inpaint=args.inpaint,
-            tracker=tracker,
-        )
-
-        for video_path in video_files:
-            relative_name = (
-                str(video_path.relative_to(root_dir))
-                if root_dir != video_path.parent
-                else video_path.name
-            )
-            tracker.start_file(relative_name)
-            work_dir = create_work_dir(video_path, root_dir)
-            success = False
-
-            try:
-                if extractor.has_polish_subtitles(video_path):
-                    tracker.complete_file('skipped')
-                    success = True
-                elif pipeline.process_video_file(video_path, work_dir, dry_run=args.dry_run):
-                    tracker.complete_file('success')
-                    success = True
-                else:
-                    tracker.complete_file('failed')
-            except Exception as e:
-                logger.error(f'Unexpected error: {e}')
-                tracker.complete_file('failed')
-
-            if success and not args.keep_artifacts and work_dir.exists():
-                try:
-                    shutil.rmtree(work_dir)
-                    parent = work_dir.parent
-                    temp_root = root_dir / '.translate_temp'
-                    while parent != temp_root and parent != root_dir:
-                        if parent.exists() and not any(parent.iterdir()):
-                            parent.rmdir()
-                            parent = parent.parent
-                        else:
-                            break
-                    if temp_root.exists() and not any(temp_root.iterdir()):
-                        temp_root.rmdir()
-                except OSError as e:
-                    logger.debug(f'Failed to clean up {work_dir}: {e}')
+        run()
 
 
 if __name__ == '__main__':

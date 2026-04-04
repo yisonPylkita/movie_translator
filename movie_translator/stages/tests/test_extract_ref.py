@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from movie_translator.context import PipelineConfig, PipelineContext
 from movie_translator.stages.extract_ref import ExtractReferenceStage
+from movie_translator.subtitles import SubtitleExtractor
 
 
 class TestExtractReferenceStage:
@@ -60,3 +61,60 @@ class TestExtractReferenceStage:
 
         assert result.reference_path is None
         assert result.original_english_track is None
+
+
+class TestExtractRefDeferredOcr:
+    def test_text_track_extracts_directly(self, tmp_path):
+        """run() with a text-based track should extract without setting pending_ocr."""
+        video = tmp_path / 'ep01.mkv'
+        video.touch()
+        ctx = PipelineContext(
+            video_path=video,
+            work_dir=tmp_path / 'work',
+            config=PipelineConfig(),
+        )
+
+        text_track = {
+            'id': 2,
+            'codec': 'subrip',
+            'subtitle_index': 0,
+            'properties': {'language': 'eng'},
+        }
+
+        with (
+            patch.object(SubtitleExtractor, 'get_track_info', return_value=[text_track]),
+            patch.object(SubtitleExtractor, 'find_english_track', return_value=text_track),
+            patch.object(SubtitleExtractor, 'get_subtitle_extension', return_value='.srt'),
+            patch.object(SubtitleExtractor, 'extract_subtitle'),
+        ):
+            result = ExtractReferenceStage().run(ctx)
+
+        assert result.pending_ocr is None
+        assert result.reference_path is not None
+
+    def test_pgs_track_defers_ocr(self, tmp_path):
+        """run() with a PGS track should set pending_ocr instead of doing OCR."""
+        video = tmp_path / 'ep01.mkv'
+        video.touch()
+        ctx = PipelineContext(
+            video_path=video,
+            work_dir=tmp_path / 'work',
+            config=PipelineConfig(),
+        )
+
+        pgs_track = {
+            'id': 3,
+            'codec': 'hdmv_pgs_subtitle',
+            'subtitle_index': 0,
+            'properties': {'language': 'eng'},
+        }
+
+        with (
+            patch.object(SubtitleExtractor, 'get_track_info', return_value=[pgs_track]),
+            patch.object(SubtitleExtractor, 'find_english_track', return_value=pgs_track),
+        ):
+            result = ExtractReferenceStage().run(ctx)
+
+        assert result.pending_ocr is not None
+        assert result.pending_ocr.type == 'pgs'
+        assert result.pending_ocr.track_id == 3
