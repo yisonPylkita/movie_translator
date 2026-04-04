@@ -14,7 +14,6 @@ from ..fonts import (
 )
 from ..logging import logger
 from ..translation import translate_dialogue_lines
-from ..translation.translator import _get_translator
 
 if TYPE_CHECKING:
     from ..progress import ProgressTracker
@@ -67,16 +66,22 @@ class TranslateStage:
         tracker = self._tracker
         metrics = ctx.metrics
 
+        from ..translation import ModelCache
+        from ..translation.proper_nouns import extract_proper_nouns_from_subtitles
+
+        cache = ctx.config.model_cache or ModelCache()
+
+        # Detect character names from dialogue for translation protection
+        proper_nouns = extract_proper_nouns_from_subtitles([line.text for line in dialogue_lines])
+
         # Ensure model/backend is loaded before parallelizing (only loads once, cached after)
         if ctx.config.model == 'apple':
-            from ..translation.apple_backend import _get_apple_backend
-
-            _backend = _get_apple_backend(ctx.config.batch_size)
+            _backend = cache.get_apple_backend(ctx.config.batch_size)
             if _backend is None:
                 raise RuntimeError('Failed to load translation model')
         else:
             with metrics.span('load_model') as s:
-                _translator, cached = _get_translator(
+                _translator, cached = cache.get_translator(
                     ctx.config.device, ctx.config.batch_size, ctx.config.model
                 )
                 s.detail('cached', cached)
@@ -95,6 +100,8 @@ class TranslateStage:
                     ctx.config.batch_size,
                     ctx.config.model,
                     progress_callback=_on_progress,
+                    model_cache=cache,
+                    proper_nouns=proper_nouns,
                 )
                 if translated:
                     s.detail('output_lines', len(translated))

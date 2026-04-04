@@ -1,10 +1,7 @@
-"""Rich TUI progress display for batch video processing.
+"""Progress tracker for batch video processing.
 
-Provides a live-updating display with:
-- Overall progress bar (files processed / total)
-- Per-file stage tracker (identify → fetch → extract → translate → mux)
-- GPU queue status per file
-- Scrolling log panel with color-coded messages
+Manages state for files, stages, GPU tasks, and log capture.
+TUI rendering is delegated to TuiRenderer.
 """
 
 from __future__ import annotations
@@ -15,12 +12,8 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
-from rich.console import Console, Group
+from rich.console import Console
 from rich.live import Live
-from rich.panel import Panel
-from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn
-from rich.table import Table
-from rich.text import Text
 
 STAGES = ['identify', 'fetch', 'extract', 'translate', 'create', 'mux']
 
@@ -53,7 +46,7 @@ class FileState:
 
 @dataclass
 class GpuWorkerState:
-    """Tracks the GPU worker's current activity for the TUI."""
+    """Tracks the GPU worker's current activity."""
 
     current_task_type: str = ''  # 'translate' | 'ocr' | 'inpaint' | ''
     current_file: str = ''
@@ -84,7 +77,10 @@ class _LogCapture(logging.Handler):
 
 
 class ProgressTracker:
-    """Live TUI progress display for batch processing."""
+    """Tracks progress state for batch video processing.
+
+    TUI rendering is delegated to TuiRenderer.
+    """
 
     def __init__(self, total_files: int, console: Console | None = None):
         self._console = console or Console()
@@ -95,15 +91,19 @@ class ProgressTracker:
         self._active_files: dict[str, FileState] = {}
         self._gpu: GpuWorkerState = GpuWorkerState()
         self._lock = threading.Lock()
-        # _current_file tracks the most recently started file for backward compat
         self._current_file = ''
         self._log_lines: deque[tuple[str, str]] = deque(maxlen=24)
         self._batch_start_time = 0.0
         self._live: Live | None = None
         self._log_handler: _LogCapture | None = None
+        self._renderer = None
 
     def __enter__(self):
+        from .tui_renderer import TuiRenderer
+
         self._batch_start_time = time.monotonic()
+        self._renderer = TuiRenderer(self._console, self._total, self._batch_start_time)
+
         self._live = Live(
             self._render(),
             console=self._console,
@@ -112,9 +112,6 @@ class ProgressTracker:
         )
         self._live.__enter__()
 
-        # Install log handler to capture messages into the TUI panel.
-        # Disable propagation to prevent the root logger's RichHandler
-        # from also printing to the console (which fights with Live).
         self._log_handler = _LogCapture(self)
         logger = logging.getLogger('movie_translator')
         self._original_handlers = logger.handlers[:]
@@ -133,8 +130,8 @@ class ProgressTracker:
             self._live.__exit__(*args)
             self._live = None
 
-        # Print final summary
-        self._print_summary()
+        if self._renderer:
+            self._renderer.render_summary(self._completed, self._failed, self._skipped)
 
     # ------------------------------------------------------------------
     # Public API — all methods accept an optional file_name as first arg.
@@ -192,24 +189,19 @@ class ProgressTracker:
           Old API: set_stage_progress(done, total, rate)
         """
         if done_or_total is None:
-            # Called as set_stage_progress(done, total, rate=...) — shouldn't happen
-            # but guard against it
             return
 
         if total_or_rate is None:
-            # set_stage_progress(done, total) — old API without rate
             file_name = self._current_file
             done = int(name_or_done)
             total = int(done_or_total)
             r = rate
         elif isinstance(name_or_done, str):
-            # set_stage_progress('ep01', done, total, rate)
             file_name = name_or_done
             done = int(done_or_total)
             total = int(total_or_rate)
             r = rate
         else:
-            # set_stage_progress(done, total, rate) — old API
             file_name = self._current_file
             done = int(name_or_done)
             total = int(done_or_total)
@@ -243,33 +235,25 @@ class ProgressTracker:
             return
 
         elapsed = time.monotonic() - state.start_time
+        short = self._short_name(file_name)
 
         if final_status == 'success':
             with self._lock:
                 self._completed += 1
-            self._add_log(
-                f'[green]✓[/green] {self._short_name(file_name)} [dim]({elapsed:.0f}s)[/dim]',
-                'DONE',
-            )
+            self._add_log(f'[green]✓[/green] {short} [dim]({elapsed:.0f}s)[/dim]', 'DONE')
         elif final_status == 'failed':
             with self._lock:
                 self._failed += 1
-            self._add_log(
-                f'[red]✗[/red] {self._short_name(file_name)} [dim]({elapsed:.0f}s)[/dim]',
-                'DONE',
-            )
+            self._add_log(f'[red]✗[/red] {short} [dim]({elapsed:.0f}s)[/dim]', 'DONE')
         elif final_status == 'skipped':
             with self._lock:
                 self._skipped += 1
-            self._add_log(
-                f'[yellow]→[/yellow] {self._short_name(file_name)} [dim](skipped)[/dim]',
-                'DONE',
-            )
+            self._add_log(f'[yellow]→[/yellow] {short} [dim](skipped)[/dim]', 'DONE')
 
         self._update()
 
     # ------------------------------------------------------------------
-    # GPU worker panel API
+    # GPU worker API
     # ------------------------------------------------------------------
 
     def gpu_task_started(self, task_type: str, file_tag: str):
@@ -295,9 +279,8 @@ class ProgressTracker:
             label = {'translate': 'Translated', 'ocr': 'OCR', 'inpaint': 'Inpainted'}.get(
                 task_type, task_type
             )
-            detail = ''
             if self._gpu.progress:
-                done, total, rate = self._gpu.progress
+                _done, total, _rate = self._gpu.progress
                 detail = f' ({total} lines, {elapsed:.1f}s)'
             else:
                 detail = f' ({elapsed:.1f}s)'
@@ -343,199 +326,31 @@ class ProgressTracker:
             self._live.update(self._render())
 
     def _render(self):
-        """Build the complete TUI display."""
-        parts = []
+        """Snapshot state and delegate to TuiRenderer."""
+        if self._renderer is None:
+            from rich.console import Group
 
-        # Overall progress
-        parts.append(self._render_overall())
+            return Group()
 
-        # Copy state under lock, then render without lock
         with self._lock:
             active = dict(self._active_files)
-            gpu_task_type = self._gpu.current_task_type
-            gpu_file = self._gpu.current_file
-            gpu_progress = self._gpu.progress
-            gpu_queue_depth = self._gpu.queue_depth
-            gpu_recent = list(self._gpu.recent)
-
-        if active:
-            parts.append(self._render_active_files(active))
-
-        # GPU worker panel — show whenever there's activity or history
-        if gpu_task_type or gpu_recent or gpu_queue_depth:
-            parts.append(
-                self._render_gpu_panel(
-                    gpu_task_type, gpu_file, gpu_progress, gpu_queue_depth, gpu_recent
-                )
+            gpu_snapshot = (
+                self._gpu.current_task_type,
+                self._gpu.current_file,
+                self._gpu.progress,
+                self._gpu.queue_depth,
+                list(self._gpu.recent),
             )
-
-        # Log panel
-        with self._lock:
             log_lines = list(self._log_lines)
 
-        if log_lines:
-            parts.append(self._render_logs(log_lines))
-
-        return Group(*parts)
-
-    def _render_overall(self):
-        with self._lock:
-            done = self._completed + self._failed + self._skipped
-            completed = self._completed
-            failed = self._failed
-            skipped = self._skipped
-
-        elapsed = time.monotonic() - self._batch_start_time
-
-        table = Table.grid(padding=(0, 2))
-        table.add_column(ratio=1)
-        table.add_column(justify='right')
-
-        # Progress bar
-        progress = Progress(
-            TextColumn('[bold blue]Movie Translator'),
-            BarColumn(),
-            MofNCompleteColumn(),
-            expand=True,
+        return self._renderer.render(
+            completed=self._completed,
+            failed=self._failed,
+            skipped=self._skipped,
+            active_files=active,
+            gpu=gpu_snapshot,
+            log_lines=log_lines,
         )
-        progress.add_task('', total=self._total, completed=done)
-
-        # Status counts
-        status_parts = []
-        if completed:
-            status_parts.append(f'[green]{completed} done[/green]')
-        if failed:
-            status_parts.append(f'[red]{failed} failed[/red]')
-        if skipped:
-            status_parts.append(f'[yellow]{skipped} skipped[/yellow]')
-
-        status = '  '.join(status_parts) if status_parts else '[dim]starting...[/dim]'
-        elapsed_str = f'[dim]{elapsed:.0f}s[/dim]'
-
-        table.add_row(progress, Text.from_markup(f'{status}  {elapsed_str}'))
-        return Panel(table, style='blue', padding=(0, 1))
-
-    def _render_active_files(self, active: dict[str, FileState]):
-        """Render all active files, each with stage indicators and GPU status."""
-        renderables = []
-
-        for file_name, state in active.items():
-            name = self._short_name(file_name)
-            elapsed = time.monotonic() - state.start_time
-
-            stage_parts = []
-            for stage in STAGES:
-                label = STAGE_LABELS[stage]
-
-                if stage in state.stages_done:
-                    stage_parts.append(f'[green]✓ {label}[/green]')
-                elif stage == state.current_stage:
-                    if state.gpu_status == 'running':
-                        stage_parts.append(f'[bold yellow]▸ {label} [gpu][/bold yellow]')
-                    elif state.gpu_status == 'queued':
-                        stage_parts.append(f'[yellow]⏳ {label} [queue][/yellow]')
-                    else:
-                        stage_parts.append(f'[bold yellow]▸ {label}[/bold yellow]')
-                else:
-                    stage_parts.append(f'[dim]○ {label}[/dim]')
-
-            stages_line = '  '.join(stage_parts)
-            file_renderables: list = [
-                Text.from_markup(f'[bold]{name}[/bold] [dim]{elapsed:.0f}s[/dim]\n{stages_line}')
-            ]
-
-            # Sub-progress bar for current stage (e.g. translation)
-            if state.stage_progress is not None:
-                done, total, rate = state.stage_progress
-                sub = Progress(
-                    BarColumn(bar_width=40),
-                    MofNCompleteColumn(),
-                    TextColumn('•'),
-                    TextColumn(f'{rate:.1f} lines/s'),
-                    expand=False,
-                )
-                sub.add_task('', total=total, completed=done)
-                file_renderables.append(sub)
-
-            renderables.append(Group(*file_renderables))
-
-        title = f'[cyan]Active Files ({len(active)})'
-        return Panel(Group(*renderables), title=title, padding=(0, 1))
-
-    def _render_gpu_panel(
-        self,
-        task_type: str,
-        file_tag: str,
-        progress: tuple[int, int, float] | None,
-        queue_depth: int,
-        recent: list[str],
-    ):
-        """Render the dedicated GPU worker panel."""
-        renderables: list = []
-
-        if task_type:
-            label = {'translate': 'Translating', 'ocr': 'Running OCR', 'inpaint': 'Inpainting'}.get(
-                task_type, task_type
-            )
-            line = f'[bold magenta]▸[/bold magenta] {label} [bold]{file_tag}[/bold]'
-            renderables.append(Text.from_markup(line))
-
-            if progress:
-                done, total, rate = progress
-                sub = Progress(
-                    BarColumn(bar_width=40),
-                    MofNCompleteColumn(),
-                    TextColumn('•'),
-                    TextColumn(f'{rate:.1f}/s'),
-                    expand=False,
-                )
-                sub.add_task('', total=total, completed=done)
-                renderables.append(sub)
-        else:
-            renderables.append(Text.from_markup('[dim]idle[/dim]'))
-
-        if queue_depth:
-            renderables.append(Text.from_markup(f'[dim]Queue: {queue_depth} pending[/dim]'))
-
-        if recent:
-            renderables.append(Text.from_markup(''))
-            for entry in recent:
-                try:
-                    renderables.append(Text.from_markup(entry))
-                except Exception:
-                    renderables.append(Text(entry))
-
-        return Panel(
-            Group(*renderables), title='[magenta]GPU Worker', border_style='magenta', padding=(0, 1)
-        )
-
-    def _render_logs(self, log_lines: list[tuple[str, str]]):
-        text = Text()
-        max_width = (self._console.width or 120) - 6
-        for msg, level in log_lines:
-            display_msg = msg[:max_width] + '...' if len(msg) > max_width else msg
-            base_style = LEVEL_STYLES.get(level, 'white')
-            if level == 'DONE':
-                base_style = 'white'
-            try:
-                line = Text.from_markup(display_msg + '\n', style=base_style)
-            except Exception:
-                line = Text(display_msg + '\n', style=base_style)
-            text.append_text(line)
-        return Panel(text, title='[dim]Log', border_style='dim', padding=(0, 1))
-
-    def _print_summary(self):
-        self._console.print()
-        parts = []
-        if self._completed:
-            parts.append(f'[green]✓ {self._completed} translated[/green]')
-        if self._failed:
-            parts.append(f'[red]✗ {self._failed} failed[/red]')
-        if self._skipped:
-            parts.append(f'[yellow]→ {self._skipped} skipped[/yellow]')
-
-        elapsed = time.monotonic() - self._batch_start_time
-        self._console.print(' | '.join(parts) + f'  [dim]({elapsed:.0f}s total)[/dim]')
 
     def _short_name(self, name: str) -> str:
         max_len = (self._console.width or 80) - 20

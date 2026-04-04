@@ -63,9 +63,9 @@ class TestExtractReferenceStage:
         assert result.original_english_track is None
 
 
-class TestExtractRefRunIo:
+class TestExtractRefDeferredOcr:
     def test_text_track_extracts_directly(self, tmp_path):
-        """run_io() with a text-based track should extract without setting pending_ocr."""
+        """run() with a text-based track should extract without setting pending_ocr."""
         video = tmp_path / 'ep01.mkv'
         video.touch()
         ctx = PipelineContext(
@@ -87,13 +87,13 @@ class TestExtractRefRunIo:
             patch.object(SubtitleExtractor, 'get_subtitle_extension', return_value='.srt'),
             patch.object(SubtitleExtractor, 'extract_subtitle'),
         ):
-            result = ExtractReferenceStage().run_io(ctx)
+            result = ExtractReferenceStage().run(ctx)
 
         assert result.pending_ocr is None
         assert result.reference_path is not None
 
     def test_pgs_track_defers_ocr(self, tmp_path):
-        """run_io() with a PGS track should set pending_ocr instead of doing OCR."""
+        """run() with a PGS track should set pending_ocr instead of doing OCR."""
         video = tmp_path / 'ep01.mkv'
         video.touch()
         ctx = PipelineContext(
@@ -113,8 +113,8 @@ class TestExtractRefRunIo:
             patch.object(SubtitleExtractor, 'get_track_info', return_value=[pgs_track]),
             patch.object(SubtitleExtractor, 'find_english_track', return_value=pgs_track),
         ):
-            result = ExtractReferenceStage().run_io(ctx)
+            result = ExtractReferenceStage().run(ctx)
 
         assert result.pending_ocr is not None
-        assert result.pending_ocr['type'] == 'pgs'
-        assert result.pending_ocr['track_id'] == 3
+        assert result.pending_ocr.type == 'pgs'
+        assert result.pending_ocr.track_id == 3

@@ -73,8 +73,8 @@ class TestExtractEnglishStage:
                 ExtractEnglishStage().run(ctx)
 
 
-class TestExtractEnglishRunIo:
-    def test_run_io_uses_fetched_source(self, tmp_path):
+class TestExtractEnglishDeferredOcr:
+    def test_uses_fetched_source(self, tmp_path):
         """Fetched English source used, no pending_ocr."""
         video = tmp_path / 'ep01.mkv'
         video.touch()
@@ -94,13 +94,13 @@ class TestExtractEnglishRunIo:
             'extract_dialogue_lines',
             return_value=[DialogueLine(1000, 2000, 'Hello')],
         ):
-            result = ExtractEnglishStage().run_io(ctx)
+            result = ExtractEnglishStage().run(ctx)
 
         assert result.english_source == eng_sub
         assert result.pending_ocr is None
         assert result.dialogue_lines is not None and len(result.dialogue_lines) == 1
 
-    def test_run_io_defers_ocr_when_no_source(self, tmp_path):
+    def test_defers_ocr_when_no_source(self, tmp_path):
         """No sources available, sets pending_ocr instead of raising."""
         video = tmp_path / 'ep01.mkv'
         video.touch()
@@ -125,11 +125,11 @@ class TestExtractEnglishRunIo:
             mock_ext.find_english_track.return_value = None
             MockExtractor.return_value = mock_ext
 
-            result = ExtractEnglishStage().run_io(ctx)
+            result = ExtractEnglishStage().run(ctx)
 
         assert result.pending_ocr is not None
-        assert result.pending_ocr['type'] == 'burned_in'
-        assert result.pending_ocr['track_id'] is None
-        assert result.pending_ocr['output_dir'] == str(work)
+        assert result.pending_ocr.type == 'burned_in'
+        assert result.pending_ocr.track_id is None
+        assert result.pending_ocr.output_dir == work
         assert result.english_source is None
         assert result.dialogue_lines is None

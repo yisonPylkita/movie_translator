@@ -44,6 +44,8 @@ class TranslateTask(GpuTask):
     batch_size: int = 32
     model: str = 'Helsinki-NLP/opus-mt-en-pl'
     progress_callback: ProgressCallback | None = None
+    translation_cache: Any = None  # ModelCache instance
+    proper_nouns: Any = None  # set[str] — character names to protect
 
     def execute(
         self, model_cache: dict[str, Any], last_model_type: str | None
@@ -56,6 +58,8 @@ class TranslateTask(GpuTask):
             batch_size=self.batch_size,
             model=self.model,
             progress_callback=self.progress_callback,
+            model_cache=self.translation_cache,
+            proper_nouns=self.proper_nouns,
         )
 
 

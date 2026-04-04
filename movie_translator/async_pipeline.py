@@ -56,25 +56,22 @@ async def _handle_pending_ocr(
     if ctx.pending_ocr is None:
         return
 
-    ocr_info = ctx.pending_ocr
-    ocr_type = ocr_info['type']
-    output_dir = Path(ocr_info['output_dir'])
-
+    pending = ctx.pending_ocr
     tracker.set_gpu_status(tracker_key, 'queued')
 
-    if ocr_type == 'pgs':
+    if pending.type == 'pgs':
         task = OcrTask(
             ocr_type='pgs',
             video_path=ctx.video_path,
-            track_index=ocr_info['track_id'],
-            work_dir=output_dir,
+            track_index=pending.track_id or 0,
+            work_dir=pending.output_dir,
             file_tag=file_tag,
         )
     else:
         task = OcrTask(
             ocr_type='burned_in',
             video_path=ctx.video_path,
-            output_dir=output_dir,
+            output_dir=pending.output_dir,
             file_tag=file_tag,
         )
 
@@ -83,15 +80,15 @@ async def _handle_pending_ocr(
 
     # Apply results based on which stage deferred the OCR
     if stage_label == 'extract_ref':
-        if ocr_type == 'pgs' and result is not None:
+        if pending.type == 'pgs' and result is not None:
             ctx.reference_path = result
-        elif ocr_type == 'burned_in' and result is not None:
+        elif pending.type == 'burned_in' and result is not None:
             ctx.reference_path = result.srt_path
             ctx.ocr_results = result.ocr_results
     elif stage_label == 'extract_english':
-        if ocr_type == 'pgs' and result is not None:
+        if pending.type == 'pgs' and result is not None:
             ctx.english_source = result
-        elif ocr_type == 'burned_in' and result is not None:
+        elif pending.type == 'burned_in' and result is not None:
             ctx.english_source = result.srt_path
             ctx.ocr_results = result.ocr_results
 
@@ -142,7 +139,7 @@ async def process_file(
         # Stage 2 - Extract Reference (IO + deferred OCR)
         tracker.set_stage(tracker_key, 'extract')
         with ctx.metrics.span('extract_reference'):
-            await asyncio.to_thread(stages['extract_ref'].run_io, ctx)
+            await asyncio.to_thread(stages['extract_ref'].run, ctx)
         if ctx.pending_ocr:
             await _handle_pending_ocr(ctx, gpu_queue, file_tag, tracker_key, tracker, 'extract_ref')
 
@@ -154,7 +151,7 @@ async def process_file(
         # Stage 4 - Extract English (IO + deferred OCR)
         tracker.set_stage(tracker_key, 'extract')
         with ctx.metrics.span('extract'):
-            await asyncio.to_thread(stages['extract_english'].run_io, ctx)
+            await asyncio.to_thread(stages['extract_english'].run, ctx)
         if ctx.pending_ocr:
             await _handle_pending_ocr(
                 ctx, gpu_queue, file_tag, tracker_key, tracker, 'extract_english'
@@ -170,6 +167,14 @@ async def process_file(
 
         translate_stage = stages['translate']
         translate_stage.set_tracker(tracker)
+
+        # Detect character names for translation protection
+        from movie_translator.translation.proper_nouns import extract_proper_nouns_from_subtitles
+
+        assert ctx.dialogue_lines is not None
+        proper_nouns = extract_proper_nouns_from_subtitles(
+            [line.text for line in ctx.dialogue_lines]
+        )
 
         async def _check_fonts():
             with ctx.metrics.span('translate.check_fonts'):
@@ -191,6 +196,8 @@ async def process_file(
                 model=config.model,
                 progress_callback=_on_progress,
                 file_tag=file_tag,
+                translation_cache=config.model_cache,
+                proper_nouns=proper_nouns,
             )
             with ctx.metrics.span('translate.batch'):
                 result = await gpu_queue.submit(task)

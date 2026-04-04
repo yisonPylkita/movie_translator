@@ -16,6 +16,7 @@ from .enhancements import (
     preprocess_for_translation,
     restore_placeholders,
 )
+from .model_cache import ModelCache
 from .models import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_DEVICE,
@@ -46,6 +47,7 @@ class SubtitleTranslator:
         self.batch_size = batch_size
         self.enable_enhancements = enable_enhancements
         self.preprocessing_stats = PreprocessingStats()
+        self.proper_nouns: set[str] = set()
         self.tokenizer = None
         self.model = None
 
@@ -151,7 +153,9 @@ class SubtitleTranslator:
             # translation so the model doesn't mangle them.
             protected_texts = []
             for text in texts:
-                protected, mapping = extract_placeholders(text, self.preprocessing_stats)
+                protected, mapping = extract_placeholders(
+                    text, self.preprocessing_stats, proper_nouns=self.proper_nouns or None
+                )
                 protected_texts.append(protected)
                 placeholder_mappings.append(mapping)
             texts = protected_texts
@@ -319,37 +323,6 @@ class SubtitleTranslator:
         self._clear_memory()
 
 
-_cached_translator: SubtitleTranslator | None = None
-
-
-def _get_translator(
-    device: str, batch_size: int, model: str
-) -> tuple[SubtitleTranslator | None, bool]:
-    """Return a cached translator, reloading only when config changes.
-
-    Returns (translator, cached) where cached is True if the model was already loaded.
-    """
-    global _cached_translator
-    if (
-        _cached_translator is not None
-        and _cached_translator.model is not None
-        and _cached_translator.device == ('mps' if device == 'mps' else 'cpu')
-        and _cached_translator.batch_size == batch_size
-        and _cached_translator.model_key == model
-    ):
-        _cached_translator.preprocessing_stats.reset()
-        return _cached_translator, True
-
-    if _cached_translator is not None:
-        _cached_translator.cleanup()
-
-    translator = SubtitleTranslator(device=device, batch_size=batch_size, model_key=model)
-    if not translator.load_model():
-        return None, False
-    _cached_translator = translator
-    return translator, False
-
-
 def translate_dialogue_lines(
     dialogue_lines: list[DialogueLine],
     device: str,
@@ -357,24 +330,30 @@ def translate_dialogue_lines(
     model: str,
     progress_callback: ProgressCallback | None = None,
     metrics: MetricsCollector | NullCollector | None = None,
+    model_cache: ModelCache | None = None,
+    proper_nouns: set[str] | None = None,
 ) -> list[DialogueLine]:
     if metrics is None:
         metrics = NullCollector()
+    if model_cache is None:
+        model_cache = ModelCache()
 
     if model == 'apple':
-        from .apple_backend import _get_apple_backend
-
-        backend = _get_apple_backend(batch_size)
+        backend = model_cache.get_apple_backend(batch_size)
         if backend is None:
             return []
+        if proper_nouns:
+            backend.proper_nouns = proper_nouns
         texts = [line.text for line in dialogue_lines]
         translated_texts = backend.translate_texts(texts, progress_callback)
     else:
         with metrics.span('load_model') as s:
-            translator, cached = _get_translator(device, batch_size, model)
+            translator, cached = model_cache.get_translator(device, batch_size, model)
             s.detail('cached', cached)
         if translator is None:
             return []
+        if proper_nouns:
+            translator.proper_nouns = proper_nouns
         texts = [line.text for line in dialogue_lines]
         translated_texts = translator.translate_texts(texts, progress_callback)
 

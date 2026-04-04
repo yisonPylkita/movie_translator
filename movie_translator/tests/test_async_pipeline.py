@@ -42,12 +42,6 @@ class FakeStage:
             self._side_effect(ctx)
         return ctx
 
-    def run_io(self, ctx: PipelineContext) -> PipelineContext:
-        self.call_count += 1
-        if self._side_effect:
-            self._side_effect(ctx)
-        return ctx
-
 
 class FakeTranslateStage:
     """Fake translate stage with check_fonts and set_tracker."""
@@ -79,6 +73,7 @@ def _make_test_config(**overrides) -> PipelineConfig:
         'dry_run': True,
         'workers': 2,
         'external_subs_dir': None,
+        'model_cache': None,
     }
     defaults.update(overrides)
     return PipelineConfig(**defaults)

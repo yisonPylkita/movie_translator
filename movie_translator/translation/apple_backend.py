@@ -89,6 +89,7 @@ class AppleTranslationBackend:
         self.batch_size = batch_size
         self.enable_enhancements = enable_enhancements
         self.preprocessing_stats = PreprocessingStats()
+        self.proper_nouns: set[str] = set()
         self._binary_path = _ensure_binary()
         logger.info('Apple Translation backend ready')
 
@@ -118,7 +119,9 @@ class AppleTranslationBackend:
         if self.enable_enhancements:
             processed_texts = []
             for i, text in enumerate(merged_texts):
-                protected, mapping = extract_placeholders(text, self.preprocessing_stats)
+                protected, mapping = extract_placeholders(
+                    text, self.preprocessing_stats, proper_nouns=self.proper_nouns or None
+                )
                 placeholder_mappings.append(mapping)
 
                 # If the line is nothing but a placeholder tag + punctuation
@@ -312,24 +315,3 @@ def _call_swift_binary(binary: Path, texts: list[str], timeout: int = 120) -> li
         )
 
     return translations
-
-
-# ─── Caching ──────────────────────────────────────────────────────────────────
-
-_cached_apple_backend: AppleTranslationBackend | None = None
-
-
-def _get_apple_backend(batch_size: int) -> AppleTranslationBackend | None:
-    """Return a cached Apple backend instance."""
-    global _cached_apple_backend
-    if _cached_apple_backend is not None and _cached_apple_backend.batch_size == batch_size:
-        _cached_apple_backend.preprocessing_stats.reset()
-        return _cached_apple_backend
-
-    try:
-        backend = AppleTranslationBackend(batch_size=batch_size)
-        _cached_apple_backend = backend
-        return backend
-    except (FileNotFoundError, RuntimeError) as e:
-        logger.error(f'Apple Translation backend unavailable: {e}')
-        return None
