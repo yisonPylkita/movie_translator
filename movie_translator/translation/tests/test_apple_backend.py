@@ -17,13 +17,14 @@ from movie_translator.translation.apple_backend import (
     _apply_fallbacks,
     _call_swift_binary,
     _ensure_binary,
+    check_languages_installed,
     is_available,
 )
 
-# Skip integration tests if not on macOS 26+
+# Skip integration tests if not on macOS 26+ with languages downloaded
 apple_translation = pytest.mark.skipif(
-    not is_available(),
-    reason='Requires macOS 26+ with Apple Translation',
+    not is_available() or not check_languages_installed(),
+    reason='Requires macOS 26+ with Apple Translation languages installed',
 )
 
 
