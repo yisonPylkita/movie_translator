@@ -31,6 +31,9 @@ from .sentence_merger import merge_for_translation, unmerge_translations
 # tokenizer. sacremoses is optional and not needed for our use case.
 warnings.filterwarnings('ignore', message='.*sacremoses.*')
 
+# Matches lines that are entirely a placeholder tag + optional punctuation.
+_PLACEHOLDER_ONLY_RE = re.compile(r'^__\w+__[.!?,;:\u2026\s]*$')
+
 
 class SubtitleTranslator:
     def __init__(
@@ -170,11 +173,10 @@ class SubtitleTranslator:
         # "__NM0__..." from "Lord Boscone..."), skip the model — it would
         # hallucinate random text for the meaningless input.  Restore the
         # placeholder immediately and treat it like a cache hit.
-        _placeholder_only_re = re.compile(r'^__\w+__[.!?,;:\u2026\s]*$')
         placeholder_skip_indices: set[int] = set()
         placeholder_cached: dict[int, str] = {}
         for i, text in enumerate(texts):
-            if placeholder_mappings and _placeholder_only_re.match(text.strip()):
+            if placeholder_mappings and _PLACEHOLDER_ONLY_RE.match(text.strip()):
                 restored = restore_placeholders(text, placeholder_mappings[i])
                 placeholder_cached[i] = restored
                 placeholder_skip_indices.add(i)
@@ -210,14 +212,9 @@ class SubtitleTranslator:
         for i, text in enumerate(texts):
             stripped = text.strip()
             if len(stripped) < 3:
-                logger.warning(
+                logger.debug(
                     f'Very short input at index {i}: "{text}" ({len(stripped)} chars) - '
                     'may produce empty or poor translation'
-                )
-            elif len(stripped) < 5:
-                logger.debug(
-                    f'Short input at index {i}: "{text}" ({len(stripped)} chars) - '
-                    'translation quality may vary'
                 )
 
     def _apply_preprocessing(self, texts: list[str]) -> tuple[list[str], set[int], dict[int, str]]:
@@ -308,7 +305,6 @@ class SubtitleTranslator:
             **encoded,
             max_new_tokens=128,
             num_beams=1,
-            early_stopping=True,
             do_sample=False,
         )
         if self._is_nllb and self.tokenizer is not None:

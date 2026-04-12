@@ -25,25 +25,7 @@ import numpy as np
 
 from ..logging import logger
 from ..subtitles._pysubs2 import get_pysubs2
-from .validator import extract_timestamps
-
-
-def _build_binary_vector(
-    timestamps: list[tuple[int, int]],
-    duration_ms: int,
-    bin_size_ms: int,
-) -> np.ndarray:
-    """Convert timestamps to a binary activity vector."""
-    n_bins = math.ceil(duration_ms / bin_size_ms) if duration_ms > 0 else 0
-    if n_bins == 0:
-        return np.zeros(0, dtype=np.float64)
-
-    vec = np.zeros(n_bins, dtype=np.float64)
-    for start, end in timestamps:
-        first_bin = max(0, start // bin_size_ms)
-        last_bin = min(n_bins - 1, (end - 1) // bin_size_ms) if end > start else first_bin
-        vec[first_bin : last_bin + 1] = 1.0
-    return vec
+from .validator import build_activity_vector, extract_timestamps
 
 
 def estimate_offset(
@@ -51,6 +33,7 @@ def estimate_offset(
     cand_timestamps: list[tuple[int, int]],
     bin_size_ms: int = 100,
     max_shift_ms: int = 15000,
+    min_quality: float = 0.4,
 ) -> int | None:
     """Estimate static timing offset via cross-correlation.
 
@@ -59,6 +42,11 @@ def estimate_offset(
 
     A positive result means the candidate is early (shift it later).
     A negative result means the candidate is late (shift it earlier).
+
+    Args:
+        min_quality: Minimum normalized correlation to accept (0.0–1.0).
+            Use lower values (e.g. 0.2) for segment-level estimation where
+            fewer events are available.
 
     Returns:
         Estimated offset in milliseconds, or None if inputs are empty
@@ -72,8 +60,8 @@ def estimate_offset(
         max(e for _, e in cand_timestamps),
     )
 
-    ref_vec = _build_binary_vector(ref_timestamps, duration, bin_size_ms)
-    cand_vec = _build_binary_vector(cand_timestamps, duration, bin_size_ms)
+    ref_vec = build_activity_vector(ref_timestamps, duration, bin_size_ms)
+    cand_vec = build_activity_vector(cand_timestamps, duration, bin_size_ms)
 
     if len(ref_vec) == 0 or len(cand_vec) == 0:
         return None
@@ -103,7 +91,7 @@ def estimate_offset(
     if ref_energy == 0 or cand_energy == 0:
         return None
     norm = math.sqrt(ref_energy * cand_energy)
-    if best_score / norm < 0.4:
+    if best_score / norm < min_quality:
         return None
 
     return best_shift * bin_size_ms
@@ -165,58 +153,6 @@ def detect_op_gap(
 # ---------------------------------------------------------------------------
 # Piecewise offset estimation
 # ---------------------------------------------------------------------------
-
-
-def _estimate_segment_offset(
-    ref_timestamps: list[tuple[int, int]],
-    cand_timestamps: list[tuple[int, int]],
-    max_shift_ms: int,
-    bin_size_ms: int = 100,
-) -> int | None:
-    """Estimate offset for a specific segment's timestamps."""
-    if not ref_timestamps or not cand_timestamps:
-        return None
-
-    # Use the max end time across both as duration
-    duration = max(
-        max(e for _, e in ref_timestamps),
-        max(e for _, e in cand_timestamps),
-    )
-
-    ref_vec = _build_binary_vector(ref_timestamps, duration, bin_size_ms)
-    cand_vec = _build_binary_vector(cand_timestamps, duration, bin_size_ms)
-
-    if len(ref_vec) == 0 or len(cand_vec) == 0:
-        return None
-
-    max_len = max(len(ref_vec), len(cand_vec))
-    ref = np.zeros(max_len, dtype=np.float64)
-    cand = np.zeros(max_len, dtype=np.float64)
-    ref[: len(ref_vec)] = ref_vec
-    cand[: len(cand_vec)] = cand_vec
-
-    max_shift_bins = max_shift_ms // bin_size_ms
-    effective_max = min(max_shift_bins, max_len - 1)
-
-    corr = np.correlate(ref, cand, mode='full')
-    zero_lag = len(ref) - 1
-    lo = zero_lag - effective_max
-    hi = zero_lag + effective_max + 1  # exclusive
-    corr_slice = corr[lo:hi]
-    best_idx = int(np.argmax(corr_slice))
-    best_shift = best_idx - effective_max
-    best_score = float(corr_slice[best_idx])
-
-    # Quality check
-    ref_energy = float(np.dot(ref, ref))
-    cand_energy = float(np.dot(cand, cand))
-    if ref_energy == 0 or cand_energy == 0:
-        return None
-    norm = math.sqrt(ref_energy * cand_energy)
-    if best_score / norm < 0.2:
-        return None
-
-    return best_shift * bin_size_ms
 
 
 def _apply_piecewise_offsets(
@@ -350,11 +286,11 @@ def _align_piecewise(
     post_op_ref = [(s, e) for s, e in ref_timestamps if s >= gap_end]
 
     # Estimate pre-OP offset (small search range — just a few seconds)
-    pre_offset = _estimate_segment_offset(pre_op_ref, cand_timestamps, max_shift_ms=15000)
+    pre_offset = estimate_offset(pre_op_ref, cand_timestamps, max_shift_ms=15000, min_quality=0.2)
 
     # Estimate post-OP offset (large search range — OP could be removed)
-    post_offset = _estimate_segment_offset(
-        post_op_ref, cand_timestamps, max_shift_ms=op_duration + 30000
+    post_offset = estimate_offset(
+        post_op_ref, cand_timestamps, max_shift_ms=op_duration + 30000, min_quality=0.2
     )
 
     if pre_offset is None and post_offset is None:

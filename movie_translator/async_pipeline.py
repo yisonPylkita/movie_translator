@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
 
 from movie_translator.context import PipelineConfig, PipelineContext
 from movie_translator.gpu_queue import GpuQueue, InpaintTask, OcrTask, TranslateTask
@@ -18,6 +17,7 @@ from movie_translator.stages import (
     FetchSubtitlesStage,
     IdentifyStage,
     MuxStage,
+    Stage,
     TranslateStage,
 )
 from movie_translator.subtitles import SubtitleExtractor, SubtitleProcessor
@@ -31,7 +31,7 @@ def _make_file_tag(video_path: Path) -> str:
     return stem[:17] + '...'
 
 
-def _make_stages() -> dict[str, Any]:
+def _make_stages() -> dict[str, Stage]:
     """Create a dict of stage instances keyed by role name."""
     return {
         'identify': IdentifyStage(),
@@ -107,7 +107,7 @@ async def process_file(
     video_path: Path,
     work_dir: Path,
     config: PipelineConfig,
-    stages: dict[str, Any],
+    stages: dict[str, Stage],
     gpu_queue: GpuQueue,
     tracker: ProgressTracker,
     metrics: MetricsCollector | NullCollector | None = None,
@@ -134,24 +134,24 @@ async def process_file(
         # Stage 1 - Identify (IO)
         tracker.set_stage(tracker_key, 'identify')
         with ctx.metrics.span('identify'):
-            await asyncio.to_thread(stages['identify'].run, ctx)
+            ctx = await asyncio.to_thread(stages['identify'].run, ctx)
 
         # Stage 2 - Extract Reference (IO + deferred OCR)
         tracker.set_stage(tracker_key, 'extract')
         with ctx.metrics.span('extract_reference'):
-            await asyncio.to_thread(stages['extract_ref'].run, ctx)
+            ctx = await asyncio.to_thread(stages['extract_ref'].run, ctx)
         if ctx.pending_ocr:
             await _handle_pending_ocr(ctx, gpu_queue, file_tag, tracker_key, tracker, 'extract_ref')
 
         # Stage 3 - Fetch (IO)
         tracker.set_stage(tracker_key, 'fetch')
         with ctx.metrics.span('fetch'):
-            await asyncio.to_thread(stages['fetch'].run, ctx)
+            ctx = await asyncio.to_thread(stages['fetch'].run, ctx)
 
         # Stage 4 - Extract English (IO + deferred OCR)
         tracker.set_stage(tracker_key, 'extract')
         with ctx.metrics.span('extract'):
-            await asyncio.to_thread(stages['extract_english'].run, ctx)
+            ctx = await asyncio.to_thread(stages['extract_english'].run, ctx)
         if ctx.pending_ocr:
             await _handle_pending_ocr(
                 ctx, gpu_queue, file_tag, tracker_key, tracker, 'extract_english'
@@ -165,7 +165,7 @@ async def process_file(
         # Stage 5 - Translate (font check IO + GPU translation concurrently)
         tracker.set_stage(tracker_key, 'translate')
 
-        translate_stage = stages['translate']
+        translate_stage: TranslateStage = stages['translate']  # ty: ignore[invalid-assignment]
         translate_stage.set_tracker(tracker)
 
         # Detect character names for translation protection
@@ -212,7 +212,7 @@ async def process_file(
         # Stage 6 - Create Tracks (IO)
         tracker.set_stage(tracker_key, 'create')
         with ctx.metrics.span('create_tracks'):
-            await asyncio.to_thread(stages['create_tracks'].run, ctx)
+            ctx = await asyncio.to_thread(stages['create_tracks'].run, ctx)
 
         # Stage 7 - Inpaint (optional GPU) then Mux (IO)
         tracker.set_stage(tracker_key, 'mux')
@@ -232,7 +232,7 @@ async def process_file(
             ctx.inpainted_video = inpainted
 
         with ctx.metrics.span('mux'):
-            await asyncio.to_thread(stages['mux'].run, ctx)
+            ctx = await asyncio.to_thread(stages['mux'].run, ctx)
 
         return True
 
@@ -263,7 +263,6 @@ async def run_all(
     extractor = SubtitleExtractor()
 
     results: list[tuple[Path, str]] = []
-    results_lock = asyncio.Lock()
 
     async def _process_one(video_path: Path) -> None:
         relative_name = (
@@ -279,8 +278,7 @@ async def run_all(
             has_polish = await asyncio.to_thread(extractor.has_polish_subtitles, video_path)
             if has_polish:
                 tracker.complete_file(relative_name, 'skipped')
-                async with results_lock:
-                    results.append((video_path, 'skipped'))
+                results.append((video_path, 'skipped'))
                 return
 
             work_dir = create_work_dir(video_path, root_dir)
@@ -298,8 +296,7 @@ async def run_all(
 
             status = 'success' if success else 'failed'
             tracker.complete_file(relative_name, status)
-            async with results_lock:
-                results.append((video_path, status))
+            results.append((video_path, status))
 
     await asyncio.gather(*[_process_one(vp) for vp in video_files])
     return results

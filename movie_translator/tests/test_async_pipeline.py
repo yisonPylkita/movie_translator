@@ -184,7 +184,7 @@ class TestProcessFile:
             video_path=video_path,
             work_dir=work_dir,
             config=config,
-            stages=stages,
+            stages=stages,  # ty: ignore[invalid-argument-type]
             gpu_queue=gpu_queue,
             tracker=tracker,
             metrics=NullCollector(),
@@ -229,7 +229,7 @@ class TestProcessFile:
             video_path=video_path,
             work_dir=work_dir,
             config=config,
-            stages=stages,
+            stages=stages,  # ty: ignore[invalid-argument-type]
             gpu_queue=gpu_queue,
             tracker=tracker,
         )

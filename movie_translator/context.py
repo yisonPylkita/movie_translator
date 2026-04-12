@@ -14,6 +14,7 @@ from movie_translator.metrics.collector import MetricsCollector, NullCollector
 from movie_translator.types import DialogueLine, OCRResult, SubtitleFile
 
 if TYPE_CHECKING:
+    from movie_translator.identifier.types import MediaIdentity
     from movie_translator.translation.model_cache import ModelCache
 
 
@@ -72,7 +73,7 @@ class PipelineContext:
     config: PipelineConfig
 
     # Stage outputs (set progressively by each stage)
-    identity: object | None = None  # MediaIdentity (avoid circular import)
+    identity: MediaIdentity | None = None
     reference_path: Path | None = None
     original_english_track: OriginalTrack | None = None
     fetched_subtitles: dict[str, list[FetchedSubtitle]] | None = None

@@ -1,18 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextvars import copy_context
 from pathlib import Path
 
 from ..logging import logger
 from ..metrics.collector import MetricsCollector, NullCollector
+from .providers.base import SubtitleProvider
 from .types import SubtitleMatch
 
 
 class SubtitleFetcher:
     """Orchestrates subtitle search across multiple providers."""
 
-    def __init__(self, providers: list):
+    def __init__(self, providers: Sequence[SubtitleProvider]):
         self._providers = providers
 
     def search_all(

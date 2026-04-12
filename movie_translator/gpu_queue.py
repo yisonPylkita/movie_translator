@@ -149,11 +149,11 @@ class GpuQueue:
 
     def start(self) -> None:
         """Start the background worker."""
-        self._worker_task = asyncio.get_event_loop().create_task(self.run_worker())
+        self._worker_task = asyncio.create_task(self.run_worker())
 
     async def submit(self, task: GpuTask) -> Any:
         """Submit a task and wait for its result."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         future: asyncio.Future[Any] = loop.create_future()
         await self._queue.put((task, future))
         if self._tracker:

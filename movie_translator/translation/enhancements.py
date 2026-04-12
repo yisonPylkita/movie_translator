@@ -227,12 +227,9 @@ def preprocess_for_translation(
 _POST_TRANSLATION_FIXES = [
     (re.compile(r'\bMarzec\b'), 'Naprzód'),  # "March" (month) → military command
     (re.compile(r'\bDobra droga\b', re.IGNORECASE), 'Tak trzymaj'),  # "Way to go" literal
-    (re.compile(r'\bWnętrzności\b', re.IGNORECASE), 'Guts'),  # character name
-    (re.compile(r'\bKaska\b'), 'Casca'),  # character name
     (re.compile(r'^Ładuj!$'), 'Do ataku!'),  # "Charge" as battery → attack
     (re.compile(r'\bstrajk\b', re.IGNORECASE), 'cios'),  # labour strike → combat strike
     (re.compile(r'Weź to razem', re.IGNORECASE), 'Weź się w garść'),  # "get it together"
-    (re.compile(r'\bDobra robota\b', re.IGNORECASE), 'Świetna robota'),  # slightly more natural
 ]
 
 
