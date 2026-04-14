@@ -53,7 +53,7 @@ build-backend = "hatchling.build"
 packages = ["movie_translator"]
 
 [dependency-groups]
-dev = ["ruff~=0.14", "pytest~=8.0", "pytest-xdist~=3.5", "pytest-cov~=6.0", "pytest-asyncio>=0.24", "ty"]
+dev = ["ruff~=0.14", "pytest~=9.0", "pytest-xdist~=3.5", "pytest-cov~=6.0", "pytest-asyncio>=0.24", "ty"]
 
 [tool.ruff]
 line-length = 100
