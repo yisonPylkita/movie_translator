@@ -77,12 +77,21 @@ def _entry_matches(title: str, base_title: str, season: int | None, episode: int
         season: Requested season (None = don't filter by season)
         episode: Requested episode number
     """
-    # Check episode number
-    patterns = re.findall(r'(?:ep|episode\s*|e)(\d+)', title.lower())
-    if not patterns:
-        return False
-    if not any(int(n) == episode for n in patterns):
-        return False
+    title_lower = title.lower()
+
+    # Check for episode ranges first (e.g., "ep01-13", "ep1-10")
+    range_matches = re.findall(r'(?:ep|episode\s*|e)(\d+)\s*-\s*(\d+)', title_lower)
+    for start_str, end_str in range_matches:
+        if int(start_str) <= episode <= int(end_str):
+            # Episode falls within this range — matches
+            break
+    else:
+        # No range matched; check individual episode numbers
+        patterns = re.findall(r'(?:ep|episode\s*|e)(\d+)', title_lower)
+        if not patterns:
+            return False
+        if not any(int(n) == episode for n in patterns):
+            return False
 
     # Check season (if requested)
     if season is not None:
@@ -213,7 +222,7 @@ class AnimeSubProvider:
 
         return matches
 
-    def download(self, match: SubtitleMatch, output_path: Path) -> Path:
+    def download(self, match: SubtitleMatch, output_path: Path, episode: int | None = None) -> Path:
         sub_id, sh = match.subtitle_id.split(':', 1)
 
         data = urllib.parse.urlencode({'id': sub_id, 'sh': sh}).encode()
@@ -224,7 +233,7 @@ class AnimeSubProvider:
             method='POST',
         )
 
-        with self._opener.open(req, timeout=5) as resp:
+        with self._opener.open(req, timeout=15) as resp:
             content_type = resp.headers.get('Content-Type', '')
             zip_bytes = resp.read()
 
@@ -242,7 +251,23 @@ class AnimeSubProvider:
             if not sub_files:
                 raise RuntimeError(f'No subtitle file found in ZIP from AnimeSub (id={sub_id})')
 
-            subtitle_content = zf.read(sub_files[0])
+            # When ZIP has multiple episodes, pick the file matching requested episode
+            chosen = sub_files[0]
+            if episode is not None and len(sub_files) > 1:
+                ep_pad2 = f'{episode:02d}'
+                ep_pad3 = f'{episode:03d}'
+                for name in sub_files:
+                    name_lower = name.lower()
+                    # Match patterns like "ep05", "e05", "- 05", "_05."
+                    if (
+                        re.search(rf'(?:ep|e|[-_ ])0*{episode}(?:\D|$)', name_lower)
+                        or ep_pad2 in name_lower
+                        or ep_pad3 in name_lower
+                    ):
+                        chosen = name
+                        break
+
+            subtitle_content = zf.read(chosen)
             output_path.write_bytes(subtitle_content)
 
         logger.info(f'Downloaded subtitle: {output_path.name} (animesub.info)')
@@ -254,7 +279,7 @@ class AnimeSubProvider:
         url = f'{BASE_URL}/szukaj.php?szukane={query}&pTitle={title_type}&od={page}'
 
         req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
-        with self._opener.open(req, timeout=5) as resp:
+        with self._opener.open(req, timeout=15) as resp:
             html = resp.read().decode('iso-8859-2', errors='replace')
 
         parser = _ResultParser()

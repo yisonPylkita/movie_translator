@@ -32,6 +32,22 @@ class PodnapisiProvider:
         if not podnapi_langs:
             return []
 
+        matches: list[SubtitleMatch] = []
+
+        # Strategy 1: Hash-based search (higher confidence)
+        if identity.oshash:
+            hash_params = {
+                'sXML': '1',
+                'sH': identity.oshash,
+                'sJ': ','.join(podnapi_langs),
+            }
+            try:
+                xml_text = self._fetch_xml(f'{SEARCH_URL}?{urllib.parse.urlencode(hash_params)}')
+                matches = self._parse_results(xml_text, languages, hash_match=True)
+            except Exception as e:
+                logger.debug(f'Podnapisi hash search failed: {e}')
+
+        # Strategy 2: Text-based search (always, merge with hash results)
         params = {
             'sXML': '1',
             'sK': identity.parsed_title or identity.title,
@@ -48,17 +64,22 @@ class PodnapisiProvider:
 
         try:
             xml_text = self._fetch_xml(url)
+            query_matches = self._parse_results(xml_text, languages, hash_match=False)
+            seen_ids = {m.subtitle_id for m in matches}
+            for m in query_matches:
+                if m.subtitle_id not in seen_ids:
+                    matches.append(m)
+                    seen_ids.add(m.subtitle_id)
         except Exception as e:
             logger.debug(f'Podnapisi search failed: {e}')
-            return []
 
-        return self._parse_results(xml_text, languages)
+        return matches
 
     def download(self, match: SubtitleMatch, output_path: Path) -> Path:
         url = f'{API_BASE}/subtitles/{match.subtitle_id}/download'
         req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
 
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             content = resp.read()
 
         # Podnapisi returns a ZIP file
@@ -81,10 +102,12 @@ class PodnapisiProvider:
 
     def _fetch_xml(self, url: str) -> str:
         req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             return resp.read().decode('utf-8')
 
-    def _parse_results(self, xml_text: str, languages: list[str]) -> list[SubtitleMatch]:
+    def _parse_results(
+        self, xml_text: str, languages: list[str], *, hash_match: bool = False
+    ) -> list[SubtitleMatch]:
         matches = []
         try:
             root = ET.fromstring(xml_text)
@@ -108,8 +131,8 @@ class PodnapisiProvider:
                     subtitle_id=sub_id,
                     release_name=release,
                     format='srt',
-                    score=0.65,
-                    hash_match=False,
+                    score=0.9 if hash_match else 0.65,
+                    hash_match=hash_match,
                 )
             )
 

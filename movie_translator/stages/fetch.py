@@ -7,11 +7,13 @@ from ..context import FetchedSubtitle, PipelineContext
 from ..logging import logger
 from ..subtitle_fetch import SubtitleFetcher, SubtitleValidator, align_ilass
 from ..subtitle_fetch.align import align_to_reference as align_builtin
+from ..subtitle_fetch.encoding import normalize_encoding
 from ..subtitle_fetch.providers.animesub import AnimeSubProvider
 from ..subtitle_fetch.providers.base import SubtitleProvider
 from ..subtitle_fetch.providers.napiprojekt import NapiProjektProvider
 from ..subtitle_fetch.providers.opensubtitles import OpenSubtitlesProvider
 from ..subtitle_fetch.providers.podnapisi import PodnapisiProvider
+from ..subtitle_fetch.retry import with_retry
 
 
 class FetchSubtitlesStage:
@@ -95,7 +97,17 @@ class FetchSubtitlesStage:
             i, match = i_match
             filename = f'{match.source}_{match.language}_{i}.{match.format}'
             output_path = candidates_dir / filename
-            fetcher.download_candidate(match, output_path)
+            with_retry(
+                lambda m=match, p=output_path: fetcher.download_candidate(m, p),
+                retries=1,
+                delay=2.0,
+                label=f'download_{match.source}',
+            )
+            # Normalize encoding to UTF-8 so pysubs2 can parse Polish characters
+            try:
+                normalize_encoding(output_path)
+            except Exception as e:
+                logger.debug(f'Encoding normalization failed for {output_path.name}: {e}')
             return match, output_path
 
         with ThreadPoolExecutor(max_workers=4) as pool:

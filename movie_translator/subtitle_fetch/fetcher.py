@@ -8,6 +8,7 @@ from pathlib import Path
 from ..logging import logger
 from ..metrics.collector import MetricsCollector, NullCollector
 from .providers.base import SubtitleProvider
+from .retry import with_retry
 from .types import SubtitleMatch
 
 
@@ -30,7 +31,12 @@ class SubtitleFetcher:
 
         def _search_provider(provider):
             with metrics.span(provider.name) as s:
-                matches = provider.search(identity, languages)
+                matches = with_retry(
+                    lambda p=provider: p.search(identity, languages),
+                    retries=1,
+                    delay=2.0,
+                    label=provider.name,
+                )
                 s.detail('candidates', len(matches))
                 return provider.name, matches
 

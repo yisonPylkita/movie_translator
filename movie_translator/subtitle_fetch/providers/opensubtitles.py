@@ -57,34 +57,40 @@ class OpenSubtitlesProvider:
             except Exception as e:
                 logger.debug(f'OpenSubtitles hash search failed: {e}')
 
-        # Strategy 2: Search by query (if hash gave no results)
-        if not matches:
-            params = {
-                'query': identity.title,
-                'languages': os_langs,
-            }
-            if identity.season is not None:
-                params['season_number'] = str(identity.season)
-            if identity.episode is not None:
-                params['episode_number'] = str(identity.episode)
-            if identity.media_type == 'movie' and identity.year:
-                params['year'] = str(identity.year)
+        # Strategy 2: Always search by query too — Polish subs often come from
+        # different releases than the video file, so hash search alone misses them.
+        query_params = {
+            'query': identity.title,
+            'languages': os_langs,
+        }
+        if identity.season is not None:
+            query_params['season_number'] = str(identity.season)
+        if identity.episode is not None:
+            query_params['episode_number'] = str(identity.episode)
+        if identity.media_type == 'movie' and identity.year:
+            query_params['year'] = str(identity.year)
 
-            # Use IMDB/TMDB IDs for more precise search
-            imdb_id = getattr(identity, 'imdb_id', None)
-            if imdb_id:
-                params['imdb_id'] = (
-                    imdb_id.replace('tt', '') if imdb_id.startswith('tt') else imdb_id
-                )
-            tmdb_id = getattr(identity, 'tmdb_id', None)
-            if tmdb_id:
-                params['tmdb_id'] = str(tmdb_id)
+        # Use IMDB/TMDB IDs for more precise search
+        imdb_id = getattr(identity, 'imdb_id', None)
+        if imdb_id:
+            query_params['imdb_id'] = (
+                imdb_id.replace('tt', '') if imdb_id.startswith('tt') else imdb_id
+            )
+        tmdb_id = getattr(identity, 'tmdb_id', None)
+        if tmdb_id:
+            query_params['tmdb_id'] = str(tmdb_id)
 
-            try:
-                data = self._api_request('GET', '/subtitles', params)
-                matches = self._parse_results(data, languages, identity)
-            except Exception as e:
-                logger.debug(f'OpenSubtitles query search failed: {e}')
+        try:
+            data = self._api_request('GET', '/subtitles', query_params)
+            query_matches = self._parse_results(data, languages, identity)
+            # Merge: keep hash results (higher score), add new query results
+            seen_ids = {m.subtitle_id for m in matches}
+            for m in query_matches:
+                if m.subtitle_id not in seen_ids:
+                    matches.append(m)
+                    seen_ids.add(m.subtitle_id)
+        except Exception as e:
+            logger.debug(f'OpenSubtitles query search failed: {e}')
 
         matches.sort(key=lambda m: m.score, reverse=True)
         return matches
@@ -171,7 +177,7 @@ class OpenSubtitlesProvider:
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
 
         try:
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=15) as resp:
                 resp_headers = dict(resp.headers.items())
                 self._rate_limiter.update_from_headers(resp_headers)
                 return json.loads(resp.read())

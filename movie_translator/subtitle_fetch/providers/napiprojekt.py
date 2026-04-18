@@ -107,7 +107,7 @@ class NapiProjektProvider:
             method='POST',
         )
 
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:
             content = resp.read()
 
         if content.startswith(b'NPc0') or len(content) < 10:

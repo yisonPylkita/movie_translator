@@ -85,3 +85,45 @@ class TestPodnapisiProvider:
         with patch.object(provider, '_fetch_xml', side_effect=Exception('network error')):
             matches = provider.search(_make_identity(), ['eng'])
         assert matches == []
+
+    def test_hash_search_gets_higher_score(self):
+        """Hash-based matches should score higher than query-based."""
+        provider = PodnapisiProvider()
+        # Return different results for hash vs query search
+        call_count = [0]
+
+        def mock_fetch(url):
+            call_count[0] += 1
+            if 'sH=' in url:
+                # Hash search returns one result
+                return """<?xml version="1.0" encoding="UTF-8"?>
+                <results><subtitle>
+                    <id>111</id><release>hash-match</release><language>pl</language>
+                </subtitle></results>"""
+            else:
+                # Query search returns a different result
+                return """<?xml version="1.0" encoding="UTF-8"?>
+                <results><subtitle>
+                    <id>222</id><release>query-match</release><language>pl</language>
+                </subtitle></results>"""
+
+        with patch.object(provider, '_fetch_xml', side_effect=mock_fetch):
+            matches = provider.search(_make_identity(), ['pol'])
+
+        assert len(matches) == 2
+        # Hash match should have higher score
+        hash_match = next(m for m in matches if m.subtitle_id == '111')
+        query_match = next(m for m in matches if m.subtitle_id == '222')
+        assert hash_match.score > query_match.score
+        assert hash_match.hash_match is True
+        assert query_match.hash_match is False
+
+    def test_hash_and_query_results_deduplicated(self):
+        """Same subtitle from both hash and query search should appear once."""
+        provider = PodnapisiProvider()
+        with patch.object(provider, '_fetch_xml', return_value=SAMPLE_XML):
+            matches = provider.search(_make_identity(), ['pol'])
+
+        # Same IDs from hash and query → deduplicated
+        ids = [m.subtitle_id for m in matches]
+        assert len(ids) == len(set(ids))

@@ -173,6 +173,23 @@ class TestEntryMatches:
     def test_no_episode_pattern_rejected(self):
         assert not _entry_matches('Naruto Movie', 'Naruto', season=1, episode=1)
 
+    def test_episode_range_matches_middle(self):
+        """ep01-13 should match episode 5."""
+        assert _entry_matches(f'{self.BASE} ep01-13', self.BASE, season=1, episode=5)
+
+    def test_episode_range_matches_start(self):
+        assert _entry_matches(f'{self.BASE} ep01-13', self.BASE, season=1, episode=1)
+
+    def test_episode_range_matches_end(self):
+        assert _entry_matches(f'{self.BASE} ep01-13', self.BASE, season=1, episode=13)
+
+    def test_episode_range_rejects_outside(self):
+        assert not _entry_matches(f'{self.BASE} ep01-10', self.BASE, season=1, episode=11)
+
+    def test_episode_range_with_season(self):
+        """S2 range entry should not match S1."""
+        assert not _entry_matches(f'{self.BASE} 2 ep01-13', self.BASE, season=1, episode=5)
+
 
 class TestAnimeSubProvider:
     def test_name(self):
