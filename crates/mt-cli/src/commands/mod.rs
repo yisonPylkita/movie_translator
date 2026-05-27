@@ -5,3 +5,4 @@
 pub mod extract;
 pub mod iphone;
 pub mod translate;
+pub mod zip_store;
