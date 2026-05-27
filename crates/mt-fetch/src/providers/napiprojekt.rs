@@ -46,6 +46,14 @@ pub fn is_not_found(content: &[u8]) -> bool {
     content.starts_with(b"NPc0") || content.len() < 10
 }
 
+/// Short, log-friendly prefix of a hash/id. Never panics on short input.
+///
+/// Crafted `subtitle_id`s can be shorter than 8 bytes; a naive `&hash[..8]`
+/// slice would panic. This returns the whole string when it is shorter.
+fn short_hash(hash: &str) -> &str {
+    hash.get(..8).unwrap_or(hash)
+}
+
 /// NapiProjekt subtitle provider (Polish subtitles, hash-based).
 pub struct NapiProjektProvider {
     video_path: Option<PathBuf>,
@@ -133,7 +141,7 @@ impl super::SubtitleProvider for NapiProjektProvider {
         let content = match self.fetch_subtitle(&file_hash)? {
             Some(c) => c,
             None => {
-                tracing::debug!("NapiProjekt: no subtitle for hash {}", &file_hash[..8]);
+                tracing::debug!("NapiProjekt: no subtitle for hash {}", short_hash(&file_hash));
                 return Ok(vec![]);
             }
         };
@@ -145,7 +153,7 @@ impl super::SubtitleProvider for NapiProjektProvider {
             language: "pol".to_string(),
             source: self.name().to_string(),
             subtitle_id: file_hash.clone(),
-            release_name: format!("napiprojekt-{}", &file_hash[..8]),
+            release_name: format!("napiprojekt-{}", short_hash(&file_hash)),
             format: "srt".to_string(),
             score: 0.95,
             hash_match: true,
@@ -272,6 +280,19 @@ mod tests {
     #[test]
     fn compute_token_different_hashes_differ() {
         assert_ne!(compute_token("hash_a"), compute_token("hash_b"));
+    }
+
+    #[test]
+    fn short_hash_truncates_long_ids() {
+        assert_eq!(short_hash("0123456789abcdef"), "01234567");
+    }
+
+    #[test]
+    fn short_hash_does_not_panic_on_short_ids() {
+        // A crafted/short subtitle_id must not panic (previously `&id[..8]`).
+        assert_eq!(short_hash("abc"), "abc");
+        assert_eq!(short_hash(""), "");
+        assert_eq!(short_hash("12345678"), "12345678");
     }
 
     #[test]

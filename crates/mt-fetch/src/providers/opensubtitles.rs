@@ -154,10 +154,7 @@ impl OpenSubtitlesProvider {
             .or_else(|| std::env::var("OPENSUBTITLES_PASSWORD").ok())
             .unwrap_or_default();
 
-        let client = reqwest::blocking::Client::builder()
-            .user_agent(USER_AGENT)
-            .build()
-            .expect("failed to build reqwest client");
+        let client = super::build_blocking_client(USER_AGENT);
 
         Self {
             api_key,
@@ -248,10 +245,17 @@ impl OpenSubtitlesProvider {
             return Err(FetchError::QuotaExceeded);
         }
         if status >= 400 {
-            return Err(FetchError::Http {
-                status,
-                body: "API error".to_string(),
-            });
+            // Capture the response body so HTTP failures carry the provider's
+            // error detail instead of a generic "API error" placeholder.
+            let body_text = resp.text().unwrap_or_default();
+            let trimmed = body_text.trim();
+            let snippet: String = trimmed.chars().take(200).collect();
+            let body = if snippet.is_empty() {
+                "API error".to_string()
+            } else {
+                snippet
+            };
+            return Err(FetchError::Http { status, body });
         }
 
         let json: serde_json::Value = resp.json().map_err(|e| FetchError::Parse(e.to_string()))?;

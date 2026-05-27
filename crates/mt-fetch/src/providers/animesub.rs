@@ -234,11 +234,18 @@ impl Default for AnimeSubProvider {
 
 impl AnimeSubProvider {
     pub fn new() -> Self {
+        // Fall back to a bare client rather than panicking if the configured
+        // builder fails (e.g. transient TLS backend init failure).
         let client = reqwest::blocking::Client::builder()
             .user_agent(USER_AGENT)
             .cookie_store(true)
             .build()
-            .expect("failed to build reqwest client");
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    "failed to build configured HTTP client ({e}); using default client"
+                );
+                reqwest::blocking::Client::new()
+            });
         Self { client }
     }
 
@@ -346,16 +353,38 @@ impl super::SubtitleProvider for AnimeSubProvider {
             .send()
             .map_err(|e| FetchError::Network(e.to_string()))?;
 
+        let status = resp.status();
         let zip_bytes = resp
             .bytes()
             .map_err(|e| FetchError::Network(e.to_string()))?;
+
+        // The endpoint returns an HTML error page (200 or otherwise) when the
+        // download is unavailable; ZIP archives start with the "PK" magic. Detect
+        // this up front so we surface a clear error instead of "not a ZIP".
+        let looks_like_zip = zip_bytes.starts_with(b"PK");
+        if !status.is_success() || !looks_like_zip {
+            let snippet: String = String::from_utf8_lossy(&zip_bytes)
+                .chars()
+                .take(200)
+                .collect();
+            tracing::warn!(
+                "AnimeSub download for id={sub_id} returned non-ZIP response (status={}): {}",
+                status.as_u16(),
+                snippet.trim()
+            );
+            return Err(FetchError::Http {
+                status: status.as_u16(),
+                body: format!("AnimeSub returned a non-ZIP response for id={sub_id}"),
+            });
+        }
 
         let cursor = std::io::Cursor::new(&zip_bytes[..]);
         let mut archive = zip::ZipArchive::new(cursor)
             .map_err(|e| FetchError::Parse(format!("not a ZIP: {e}")))?;
 
-        // Find subtitle files in the ZIP
-        let sub_files: Vec<String> = (0..archive.len())
+        // Find subtitle files in the ZIP, recording the index so we can re-open
+        // by index (UTF-8-safe and avoids an O(n^2) by_name re-scan).
+        let sub_entries: Vec<(usize, String)> = (0..archive.len())
             .filter_map(|i| {
                 let f = archive.by_index(i).ok()?;
                 let name = f.name().to_lowercase();
@@ -364,23 +393,23 @@ impl super::SubtitleProvider for AnimeSubProvider {
                     || name.ends_with(".ssa")
                     || name.ends_with(".sub")
                 {
-                    Some(f.name().to_string())
+                    Some((i, f.name().to_string()))
                 } else {
                     None
                 }
             })
             .collect();
 
-        if sub_files.is_empty() {
+        if sub_entries.is_empty() {
             return Err(FetchError::NotFound(format!(
                 "no subtitle file in ZIP for id={sub_id}"
             )));
         }
 
-        // When ZIP has multiple episodes, pick the file matching the episode
-        let chosen = sub_files[0].clone();
+        // When ZIP has multiple episodes, pick the first subtitle file.
+        let chosen_index = sub_entries[0].0;
         let mut file = archive
-            .by_name(&chosen)
+            .by_index(chosen_index)
             .map_err(|e| FetchError::Parse(format!("cannot read zip entry: {e}")))?;
 
         let mut content = Vec::new();

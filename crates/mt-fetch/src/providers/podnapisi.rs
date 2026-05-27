@@ -189,10 +189,7 @@ impl Default for PodnapisiProvider {
 
 impl PodnapisiProvider {
     pub fn new() -> Self {
-        let client = reqwest::blocking::Client::builder()
-            .user_agent(USER_AGENT)
-            .build()
-            .expect("failed to build reqwest client");
+        let client = super::build_blocking_client(USER_AGENT);
         Self { client }
     }
 
@@ -293,7 +290,10 @@ impl super::SubtitleProvider for PodnapisiProvider {
         // Podnapisi returns a ZIP or raw subtitle content
         let cursor = std::io::Cursor::new(&content[..]);
         if let Ok(mut archive) = zip::ZipArchive::new(cursor) {
-            let sub_files: Vec<String> = (0..archive.len())
+            // Record (index, name) so we can re-open by index — this is
+            // UTF-8-safe (by_name breaks on non-UTF8 entry names) and avoids
+            // an O(n^2) re-scan.
+            let sub_entries: Vec<(usize, String)> = (0..archive.len())
                 .filter_map(|i| {
                     let f = archive.by_index(i).ok()?;
                     let name = f.name().to_lowercase();
@@ -302,22 +302,23 @@ impl super::SubtitleProvider for PodnapisiProvider {
                         || name.ends_with(".ssa")
                         || name.ends_with(".sub")
                     {
-                        Some(f.name().to_string())
+                        Some((i, f.name().to_string()))
                     } else {
                         None
                     }
                 })
                 .collect();
 
-            if sub_files.is_empty() {
+            if sub_entries.is_empty() {
                 return Err(FetchError::NotFound(format!(
                     "no subtitle file in Podnapisi ZIP (id={})",
                     match_.subtitle_id
                 )));
             }
 
+            let chosen_index = sub_entries[0].0;
             let mut file = archive
-                .by_name(&sub_files[0])
+                .by_index(chosen_index)
                 .map_err(|e| FetchError::Parse(format!("cannot read zip entry: {e}")))?;
             let mut data = Vec::new();
             file.read_to_end(&mut data).map_err(FetchError::Io)?;

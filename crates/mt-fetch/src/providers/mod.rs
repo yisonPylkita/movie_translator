@@ -11,6 +11,22 @@ use crate::retry::FetchError;
 use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
 
+/// Build a blocking reqwest client with the given user agent.
+///
+/// If the configured builder fails (e.g. transient TLS backend init failure),
+/// fall back to a bare `Client::new()` rather than panicking at construction
+/// time. Provider constructors are infallible, so a build failure must not
+/// abort the whole process.
+pub(crate) fn build_blocking_client(user_agent: &str) -> reqwest::blocking::Client {
+    reqwest::blocking::Client::builder()
+        .user_agent(user_agent)
+        .build()
+        .unwrap_or_else(|e| {
+            tracing::warn!("failed to build configured HTTP client ({e}); using default client");
+            reqwest::blocking::Client::new()
+        })
+}
+
 /// Trait for subtitle providers (mirrors Python `SubtitleProvider` Protocol).
 pub trait SubtitleProvider: Send + Sync {
     fn name(&self) -> &str;
