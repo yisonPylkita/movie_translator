@@ -2,13 +2,17 @@ use std::path::Path;
 
 use crate::ass::{load_ass, to_ass_string};
 
+fn ground_truth_path() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("benchmarks/onepiece/ground_truth/ground_truth.json")
+}
+
 fn ground_truth() -> serde_json::Value {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("benchmarks/onepiece/ground_truth/ground_truth.json");
+    let path = ground_truth_path();
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|_| panic!("ground_truth.json not found at {}", path.display()));
     serde_json::from_str(&content).expect("parse ground_truth.json")
@@ -40,6 +44,13 @@ const CORPUS_FILES: &[&str] = &[
 
 #[test]
 fn corpus_round_trip_all_11_files() {
+    // The One Piece corpus lives in the untracked `benchmarks/onepiece/`
+    // directory (local benchmark data). When it's absent — e.g. on CI — skip:
+    // the inline-fixture tests in this module provide committed coverage.
+    if !ground_truth_path().exists() {
+        eprintln!("skipping corpus_round_trip: benchmarks/onepiece corpus not present");
+        return;
+    }
     let gt = ground_truth();
     let mut failures: Vec<String> = Vec::new();
 
@@ -170,6 +181,12 @@ fn corpus_round_trip_all_11_files() {
 fn round_trip_stability() {
     let files = ["op_0031.ass", "op_0040.ass", "onepace_arlongpark_01_pl.ass"];
 
+    // Untracked local corpus; skip on CI (see corpus_round_trip_all_11_files).
+    if !corpus_path(files[0]).exists() {
+        eprintln!("skipping round_trip_stability: benchmarks/onepiece corpus not present");
+        return;
+    }
+
     for filename in &files {
         let path = corpus_path(filename);
         let content = std::fs::read_to_string(&path).unwrap();
@@ -196,6 +213,29 @@ fn round_trip_stability() {
             assert_eq!(e1.text, e2.text, "{filename}[{i}].text");
             assert_eq!(e1.style, e2.style, "{filename}[{i}].style");
         }
+    }
+}
+
+#[test]
+fn inline_round_trip_stability() {
+    // Self-contained round-trip (no external corpus) so CI exercises
+    // load -> serialize -> reload fidelity across styles, comments, override
+    // tags, multi-line text, and varied timing/layers.
+    let input = "[Script Info]\nTitle: RT Test\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\nStyle: Sign,Arial,36,&H00FFFF00,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,8,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nComment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,,marker\nDialogue: 0,0:00:01.00,0:00:03.50,Default,Speaker,0,0,0,,{\\i1}Line one{\\i0}\\NLine two\nDialogue: 5,0:00:04.00,0:00:06.00,Sign,,20,20,40,fade,Sign text, with comma\n";
+
+    let subs1 = load_ass(input).unwrap();
+    let serialized = to_ass_string(&subs1);
+    let subs2 = load_ass(&serialized).expect("re-parse of serialized output failed");
+
+    assert_eq!(subs1.events.len(), subs2.events.len());
+    assert_eq!(subs1.styles.len(), subs2.styles.len());
+    for (i, (e1, e2)) in subs1.events.iter().zip(subs2.events.iter()).enumerate() {
+        assert_eq!(e1.start_ms, e2.start_ms, "event {i} start_ms");
+        assert_eq!(e1.end_ms, e2.end_ms, "event {i} end_ms");
+        assert_eq!(e1.text, e2.text, "event {i} text");
+        assert_eq!(e1.style, e2.style, "event {i} style");
+        assert_eq!(e1.layer, e2.layer, "event {i} layer");
+        assert_eq!(e1.kind, e2.kind, "event {i} kind");
     }
 }
 
