@@ -239,27 +239,53 @@ async fn run_all_with_executor(
     let semaphore = Arc::new(Semaphore::new(workers.max(1) as usize));
     let handle = worker.handle();
 
+    // Keep each join handle paired with its (idx, path) so that if a file task
+    // panics we can still record a per-file failure with its real identity —
+    // and, crucially, so we can join *every* task before shutting the worker
+    // down (no early return that would orphan the other in-flight tasks).
     let mut joins = Vec::with_capacity(video_files.len());
     for (idx, video_path) in video_files.into_iter().enumerate() {
         let permit_sem = semaphore.clone();
         let executor = handle.clone();
         let config = config.clone();
         let root_dir = root_dir.clone();
+        let task_idx = idx;
+        let task_path = video_path.clone();
 
-        joins.push(tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             // Hold a permit for the file's whole lifetime (the Python
             // `async with semaphore:` wraps the entire per-file body).
             let _permit = permit_sem.acquire_owned().await.expect("semaphore");
 
             // Check for existing Polish subtitles (IO-bound) — skip if present.
+            //
+            // A probe error (unreadable/corrupt file) or a panic in the probe
+            // task must NOT collapse to `has_polish = false` and then be
+            // processed: that would silently push a broken file through the
+            // whole pipeline. Treat either as a per-file `Failed` and report it.
             let vp = video_path.clone();
-            let has_polish = tokio::task::spawn_blocking(move || {
-                SubtitleExtractor::new()
-                    .has_polish_subtitles(&vp)
-                    .unwrap_or(false)
+            let probe = tokio::task::spawn_blocking(move || {
+                SubtitleExtractor::new().has_polish_subtitles(&vp)
             })
-            .await
-            .unwrap_or(false);
+            .await;
+
+            let has_polish = match probe {
+                Ok(Ok(has)) => has,
+                Ok(Err(e)) => {
+                    tracing::error!(
+                        "Failed to probe Polish subtitles for {}: {e}",
+                        video_path.display()
+                    );
+                    return (idx, video_path, FileStatus::Failed);
+                }
+                Err(join_err) => {
+                    tracing::error!(
+                        "Polish-subtitle probe task panicked for {}: {join_err}",
+                        video_path.display()
+                    );
+                    return (idx, video_path, FileStatus::Failed);
+                }
+            };
 
             if has_polish {
                 return (idx, video_path, FileStatus::Skipped);
@@ -285,16 +311,26 @@ async fn run_all_with_executor(
                 FileStatus::Failed
             };
             (idx, video_path, status)
-        }));
+        });
+        joins.push((task_idx, task_path, handle));
     }
 
     // Collect, restoring input order (Python appends as tasks complete; we keep
     // the deterministic input order which is friendlier for callers/tests).
+    //
+    // Await EVERY task — never early-return on a JoinError. A panicked task is
+    // recorded as a per-file `Failed` (using the idx/path we paired with it),
+    // so the remaining tasks are still joined and the worker is only shut down
+    // once nothing is in flight. This avoids orphaned tasks (each holding a
+    // `GpuWorkerHandle` clone) racing the worker's `shutdown()`.
     let mut collected: Vec<(usize, PathBuf, FileStatus)> = Vec::with_capacity(joins.len());
-    for j in joins {
+    for (idx, path, j) in joins {
         match j.await {
             Ok(triple) => collected.push(triple),
-            Err(e) => return Err(PipelineError::Stage(format!("file task panicked: {e}"))),
+            Err(join_err) => {
+                tracing::error!("File task panicked for {}: {join_err}", path.display());
+                collected.push((idx, path, FileStatus::Failed));
+            }
         }
     }
     collected.sort_by_key(|(idx, _, _)| *idx);
@@ -384,6 +420,56 @@ mod tests {
         assert_eq!(FileStatus::Success.as_str(), "success");
         assert_eq!(FileStatus::Failed.as_str(), "failed");
         assert_eq!(FileStatus::Skipped.as_str(), "skipped");
+    }
+
+    /// Fix #5 regression guard: when the Polish-subtitle probe cannot read a
+    /// file (here, a non-existent path → ffprobe errors), that file must be
+    /// reported `Failed`, never silently treated as `has_polish = false` and
+    /// then `Skipped`. (Skipped would mean a broken file is quietly ignored.)
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn unprobeable_file_is_failed_not_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = vec![dir.path().join("does_not_exist.mkv")];
+        let config = PipelineConfig {
+            workers: 1,
+            enable_fetch: false,
+            ..Default::default()
+        };
+        let results = run_all_with(files, dir.path().to_path_buf(), config, probe_off)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].1,
+            FileStatus::Failed,
+            "an unprobeable file must be Failed, never Skipped"
+        );
+    }
+
+    /// Fix #6 regression guard: every file task is joined and recorded (in
+    /// input order) and the shared worker shuts down cleanly afterwards. With
+    /// the previous early-return-on-JoinError the remaining tasks would have
+    /// been orphaned holding worker-handle clones; this drives enough
+    /// concurrent files through the real shutdown path to exercise that.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn all_file_tasks_joined_before_shutdown() {
+        let dir = tempfile::tempdir().unwrap();
+        let files: Vec<PathBuf> = (0..8)
+            .map(|i| dir.path().join(format!("ep{i}.mkv")))
+            .collect();
+        let config = PipelineConfig {
+            workers: 3,
+            enable_fetch: false,
+            ..Default::default()
+        };
+        // Returns (and thus reaches worker.shutdown()) only after joining all 8.
+        let results = run_all_with(files.clone(), dir.path().to_path_buf(), config, probe_off)
+            .await
+            .unwrap();
+        assert_eq!(results.len(), 8, "every spawned file task must be joined");
+        for (i, (path, _status)) in results.iter().enumerate() {
+            assert_eq!(path, &files[i], "results must preserve input order");
+        }
     }
 
     /// `run_all` over non-existent files: each fails deterministically (the
