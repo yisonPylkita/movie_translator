@@ -96,12 +96,56 @@ fn apple_translation_available_uncached() -> bool {
         Some(b) => b,
         None => return false,
     };
-    // check_languages_installed: the compiled bridge must respond to `test`.
-    std::process::Command::new(&binary)
-        .arg("test")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    // check_languages_installed: do a test EN->PL translation, exactly like
+    // Python's `_call_swift_binary(['test'])`. The bridge ignores argv and reads
+    // a JSON request from stdin (`{"texts":[...],"source":"en","target":"pl"}`),
+    // writing `{"translations":[...]}` (or `{"error":...}`) to stdout. We must
+    // feed stdin and inspect the response — passing "test" as an argv with empty
+    // stdin makes the bridge fail to decode and exit non-zero.
+    bridge_test_translation_ok(&binary)
+}
+
+/// Run the Swift bridge's probe translation (port of `check_languages_installed`
+/// → `_call_swift_binary(['test'])`): returns true iff the bridge produces a
+/// translation with no error, which confirms the EN→PL language pack is
+/// installed and on-device translation works.
+fn bridge_test_translation_ok(binary: &Path) -> bool {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let request = br#"{"texts":["test"],"source":"en","target":"pl"}"#;
+    let mut child = match Command::new(binary)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    if let Some(stdin) = child.stdin.as_mut() {
+        if stdin.write_all(request).is_err() {
+            return false;
+        }
+    }
+    let output = match child.wait_with_output() {
+        Ok(o) => o,
+        Err(_) => return false,
+    };
+    // Success = valid JSON response carrying a non-empty `translations` array and
+    // no `error` field (mirrors Python's AppleTranslationError checks).
+    match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+        Ok(v) => {
+            let no_error = v.get("error").map(|e| e.is_null()).unwrap_or(true);
+            let has_translation = v
+                .get("translations")
+                .and_then(|t| t.as_array())
+                .map(|a| !a.is_empty())
+                .unwrap_or(false);
+            no_error && has_translation
+        }
+        Err(_) => false,
+    }
 }
 
 /// Compile the Apple Translation Swift bridge on demand if needed.
