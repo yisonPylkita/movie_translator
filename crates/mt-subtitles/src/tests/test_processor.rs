@@ -36,6 +36,40 @@ fn extract_dialogue_lines_from_ass() {
 }
 
 #[test]
+fn ass_line_breaks_become_real_newlines() {
+    use mt_core::types::DialogueLine;
+    let tmp = tempfile_path();
+    // Event with an ASS hard break (\N) and a soft break (\n) plus an override tag.
+    let content = "[Script Info]\nTitle: Test\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,{\\i1}First line\\NSecond line\\nThird line\n";
+    let ass_file = tmp.join("breaks.ass");
+    std::fs::write(&ass_file, content).unwrap();
+
+    let lines = SubtitleProcessor::extract_dialogue_lines(&ass_file).unwrap();
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0].text, "First line\nSecond line\nThird line");
+    assert!(
+        !lines[0].text.contains("\\N") && !lines[0].text.contains("\\n"),
+        "literal ASS break tokens must not survive: {:?}",
+        lines[0].text
+    );
+
+    // Round-trip: create_subtitle_file should turn real newlines back into \N on output.
+    let output = tmp.join("breaks_out.ass");
+    let out_lines = vec![DialogueLine {
+        start_ms: 1000,
+        end_ms: 3000,
+        text: "First line\nSecond line".to_string(),
+    }];
+    SubtitleProcessor::create_english_subtitles(&ass_file, &out_lines, &output).unwrap();
+    let out_content = std::fs::read_to_string(&output).unwrap();
+    assert!(
+        out_content.contains("First line\\NSecond line"),
+        "newline should serialize back to \\N: {out_content}"
+    );
+    std::fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
 fn extract_dialogue_lines_from_srt() {
     let tmp = tempfile_path();
     let srt_file = make_srt_file(&tmp);

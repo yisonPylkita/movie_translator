@@ -329,7 +329,14 @@ impl SubtitleProcessor {
                 continue;
             }
 
-            let clean = strip_ass_overrides(&event.text).trim().to_string();
+            // Match pysubs2 `SSAEvent.plaintext`: strip override tags, then
+            // convert ASS hard breaks (`\N`) and soft breaks (`\n`) into real
+            // newlines so translation models do not receive literal `\N` tokens.
+            let clean = strip_ass_overrides(&event.text)
+                .replace("\\N", "\n")
+                .replace("\\n", "\n")
+                .trim()
+                .to_string();
             if clean.is_empty() {
                 continue;
             }
