@@ -1,5 +1,6 @@
 //! ASS (Advanced SubStation Alpha) parser and serializer.
 
+use crate::error::ParseError;
 use crate::model::{AssTime, Event, EventKind, RawSection, Style, Subtitles};
 
 /// Parse an ASS file from a string.
@@ -10,7 +11,7 @@ use crate::model::{AssTime, Event, EventKind, RawSection, Style, Subtitles};
 /// - Unknown sections (preserved as `RawSection`)
 /// - Timing: `H:MM:SS.cs` → ms via `AssTime::parse`
 /// - `Text` field as last (may contain commas): `splitn(n, ',')`
-pub fn load_ass(input: &str) -> Result<Subtitles, String> {
+pub fn load_ass(input: &str) -> Result<Subtitles, ParseError> {
     // Handle BOM
     let (bom, s) = if let Some(stripped) = input.strip_prefix('\u{FEFF}') {
         (true, stripped)
@@ -60,7 +61,10 @@ pub fn load_ass(input: &str) -> Result<Subtitles, String> {
         }
     }
 
-    for line in s.lines() {
+    for (idx, line) in s.lines().enumerate() {
+        // 1-based line number as seen in an editor. Note: a stripped BOM does
+        // not shift line numbering since it lives on the first line.
+        let line_no = idx + 1;
         let trimmed = line.trim();
 
         // Section headers
@@ -124,9 +128,12 @@ pub fn load_ass(input: &str) -> Result<Subtitles, String> {
                         .collect();
                 } else if trimmed.starts_with("Dialogue:") || trimmed.starts_with("Comment:") {
                     if events_format.is_empty() {
-                        return Err("encountered Dialogue/Comment before Format line".to_string());
+                        return Err(ParseError::malformed_at(
+                            "encountered Dialogue/Comment before Format line",
+                            line_no,
+                        ));
                     }
-                    let event = parse_event(trimmed, &events_format)?;
+                    let event = parse_event(trimmed, &events_format, line_no)?;
                     events.push(event);
                 }
             }
@@ -161,22 +168,39 @@ pub fn load_ass(input: &str) -> Result<Subtitles, String> {
     })
 }
 
-fn parse_event(line: &str, field_order: &[String]) -> Result<Event, String> {
+/// Parse a timestamp field, attaching the source `line_no` to any failure.
+fn parse_time_field(field: &str, raw: &str, line_no: usize) -> Result<i64, ParseError> {
+    AssTime::parse(raw).map(|t| t.0).map_err(|e| match e {
+        ParseError::BadTime { value, .. } => ParseError::BadTime {
+            value,
+            line_no: Some(line_no),
+        },
+        other => ParseError::Malformed {
+            detail: format!("{field}: {other}"),
+            line_no: Some(line_no),
+        },
+    })
+}
+
+fn parse_event(line: &str, field_order: &[String], line_no: usize) -> Result<Event, ParseError> {
     let (kind, rest) = if let Some(r) = line.strip_prefix("Dialogue:") {
         (EventKind::Dialogue, r)
     } else if let Some(r) = line.strip_prefix("Comment:") {
         (EventKind::Comment, r)
     } else {
-        return Err(format!("not a Dialogue/Comment line: {line}"));
+        return Err(ParseError::malformed_at(
+            format!("not a Dialogue/Comment line: {line}"),
+            line_no,
+        ));
     };
 
     let rest = rest.trim_start_matches(' ');
     let n = field_order.len();
     let fields: Vec<&str> = rest.splitn(n, ',').collect();
     if fields.len() < n {
-        return Err(format!(
-            "expected {n} fields, got {} in: {line}",
-            fields.len()
+        return Err(ParseError::malformed_at(
+            format!("expected {n} fields, got {}", fields.len()),
+            line_no,
         ));
     }
 
@@ -187,11 +211,18 @@ fn parse_event(line: &str, field_order: &[String]) -> Result<Event, String> {
         .zip(fields.iter().copied())
         .collect();
 
-    let get = |name: &str| -> Result<&str, String> {
+    let get = |name: &str| -> Result<&str, ParseError> {
         field_map
             .get(name)
             .copied()
-            .ok_or_else(|| format!("missing field {name}"))
+            .ok_or_else(|| ParseError::missing_at(name, line_no))
+    };
+
+    let parse_int = |name: &str, raw: &str| -> Result<i32, ParseError> {
+        raw.trim().parse().map_err(|_| ParseError::Malformed {
+            detail: format!("field `{name}` is not an integer: {raw:?}"),
+            line_no: Some(line_no),
+        })
     };
 
     // ASS v4+ uses `Layer`; legacy SSA v4 uses `Marked` (value `Marked=N`).
@@ -201,28 +232,19 @@ fn parse_event(line: &str, field_order: &[String]) -> Result<Event, String> {
         None => field_map
             .get("Marked")
             .copied()
-            .ok_or("missing field Layer")?,
+            .ok_or_else(|| ParseError::missing_at("Layer", line_no))?,
     };
     let layer_value = layer_field
         .trim()
         .strip_prefix("Marked=")
         .unwrap_or_else(|| layer_field.trim());
-    let layer: i32 = layer_value.parse().map_err(|e| format!("Layer: {e}"))?;
-    let start_ms = AssTime::parse(get("Start")?)?.0;
-    let end_ms = AssTime::parse(get("End")?)?.0;
+    let layer: i32 = parse_int("Layer", layer_value)?;
+    let start_ms = parse_time_field("Start", get("Start")?, line_no)?;
+    let end_ms = parse_time_field("End", get("End")?, line_no)?;
 
-    let margin_l: i32 = get("MarginL")?
-        .trim()
-        .parse()
-        .map_err(|e| format!("MarginL: {e}"))?;
-    let margin_r: i32 = get("MarginR")?
-        .trim()
-        .parse()
-        .map_err(|e| format!("MarginR: {e}"))?;
-    let margin_v: i32 = get("MarginV")?
-        .trim()
-        .parse()
-        .map_err(|e| format!("MarginV: {e}"))?;
+    let margin_l: i32 = parse_int("MarginL", get("MarginL")?)?;
+    let margin_r: i32 = parse_int("MarginR", get("MarginR")?)?;
+    let margin_v: i32 = parse_int("MarginV", get("MarginV")?)?;
 
     Ok(Event {
         kind,
@@ -317,7 +339,15 @@ pub fn to_ass_string(subs: &Subtitles) -> String {
                 "MarginV" => event.margin_v.to_string(),
                 "Effect" => event.effect.clone(),
                 "Text" => event.text.clone(),
-                other => format!("<unknown:{other}>"),
+                other => {
+                    // Never corrupt subtitle output with a sentinel string for
+                    // an unrecognised event-format field — warn and emit empty.
+                    tracing::warn!(
+                        field = other,
+                        "unknown event-format field; emitting empty value"
+                    );
+                    String::new()
+                }
             };
             parts.push(v);
         }
@@ -325,16 +355,16 @@ pub fn to_ass_string(subs: &Subtitles) -> String {
         out.push('\n');
     }
 
-    // Post-events sections
+    // Post-events sections.
+    // Keep blank lines verbatim — consistent with the pre-styles / pre-events
+    // serializers above — so Aegisub trailing sections round-trip exactly.
     for sec in &subs.post_events_sections {
         out.push('\n');
         out.push_str(&sec.header);
         out.push('\n');
         for line in &sec.lines {
-            if !line.is_empty() {
-                out.push_str(line);
-                out.push('\n');
-            }
+            out.push_str(line);
+            out.push('\n');
         }
     }
 

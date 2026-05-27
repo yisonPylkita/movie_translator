@@ -190,7 +190,7 @@ pub fn detect_op_gap_default(timestamps: &[(i64, i64)]) -> Option<(i64, i64)> {
 ///
 /// Mirrors Python `apply_offset(subtitle_path, offset_ms)`.
 pub fn apply_offset(path: &Path, offset_ms: i64) -> Result<(), String> {
-    let mut subs = mt_subtitles::load(path)?;
+    let mut subs = mt_subtitles::load(path).map_err(|e| e.to_string())?;
     for event in &mut subs.events {
         event.start_ms += offset_ms;
         event.end_ms += offset_ms;
@@ -210,7 +210,7 @@ fn apply_piecewise_offsets(
     pre_offset_ms: i64,
     post_offset_ms: i64,
 ) -> Result<(), String> {
-    let mut subs = mt_subtitles::load(path)?;
+    let mut subs = mt_subtitles::load(path).map_err(|e| e.to_string())?;
     for event in &mut subs.events {
         if event.start_ms < boundary_ms {
             event.start_ms += pre_offset_ms;

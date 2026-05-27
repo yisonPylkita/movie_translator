@@ -1,5 +1,7 @@
 //! In-memory model for subtitle files (ASS and SRT).
 
+use crate::error::ParseError;
+
 /// Whether an event is dialogue or a comment (chapter marker, editor note).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventKind {
@@ -34,35 +36,53 @@ pub struct AssTime(pub i64);
 
 impl AssTime {
     /// Parse `"H:MM:SS.cs"` → milliseconds.
-    pub fn parse(s: &str) -> Result<Self, String> {
-        let s = s.trim();
-        let mut parts = s.splitn(2, ':');
-        let h: i64 = parts
-            .next()
-            .ok_or("missing hours")?
-            .parse()
-            .map_err(|e| format!("{e}"))?;
-        let rest = parts.next().ok_or("missing minutes")?;
+    ///
+    /// Matches pysubs2 semantics:
+    /// - A leading `-` on the whole timestamp negates the result (needed
+    ///   because the hours field `-0` otherwise loses its sign).
+    /// - The fractional part is scaled by its digit count: 1 digit → ×100
+    ///   (deciseconds), 2 digits → ×10 (centiseconds), 3 digits → ×1
+    ///   (milliseconds).
+    pub fn parse(s: &str) -> Result<Self, ParseError> {
+        let trimmed = s.trim();
+        let bad = || ParseError::BadTime {
+            value: s.to_string(),
+            line_no: None,
+        };
+
+        // Split off a leading whole-timestamp sign so that "-0:00:01" is
+        // treated as negative even though the hours field parses to 0.
+        let (negative, body) = match trimmed.strip_prefix('-') {
+            Some(rest) => (true, rest),
+            None => (false, trimmed),
+        };
+
+        let mut parts = body.splitn(2, ':');
+        let h: i64 = parts.next().ok_or_else(bad)?.parse().map_err(|_| bad())?;
+        let rest = parts.next().ok_or_else(bad)?;
+
         let mut parts2 = rest.splitn(2, ':');
-        let m: i64 = parts2
-            .next()
-            .ok_or("missing minutes")?
-            .parse()
-            .map_err(|e| format!("{e}"))?;
-        let rest2 = parts2.next().ok_or("missing seconds")?;
+        let m: i64 = parts2.next().ok_or_else(bad)?.parse().map_err(|_| bad())?;
+        let rest2 = parts2.next().ok_or_else(bad)?;
+
         let mut parts3 = rest2.splitn(2, '.');
-        let sec: i64 = parts3
-            .next()
-            .ok_or("missing seconds")?
-            .parse()
-            .map_err(|e| format!("{e}"))?;
-        let cs: i64 = parts3
-            .next()
-            .ok_or("missing centiseconds")?
-            .parse()
-            .map_err(|e| format!("{e}"))?;
-        let ms = h * 3_600_000 + m * 60_000 + sec * 1_000 + cs * 10;
-        Ok(AssTime(ms))
+        let sec: i64 = parts3.next().ok_or_else(bad)?.parse().map_err(|_| bad())?;
+        let frac_str = parts3.next().ok_or_else(bad)?;
+
+        let frac: i64 = frac_str.parse().map_err(|_| bad())?;
+        // Scale by digit count, like pysubs2: ".5" → 500ms, ".50" → 500ms,
+        // ".500" → 500ms.
+        let frac_ms = match frac_str.len() {
+            1 => frac * 100,
+            2 => frac * 10,
+            3 => frac,
+            // More than 3 digits: keep the leading 3 (milliseconds precision).
+            n if n > 3 => frac / 10_i64.pow((n - 3) as u32),
+            _ => return Err(bad()),
+        };
+
+        let ms = h * 3_600_000 + m * 60_000 + sec * 1_000 + frac_ms;
+        Ok(AssTime(if negative { -ms } else { ms }))
     }
 
     /// Format back to `"H:MM:SS.cs"`.
@@ -206,6 +226,30 @@ mod tests {
         let expected = 3_600_000 + 23 * 60_000 + 45 * 1_000 + 67 * 10;
         assert_eq!(t.0, expected);
         assert_eq!(t.format(), "1:23:45.67");
+    }
+
+    #[test]
+    fn ass_time_fractional_digit_scaling() {
+        // 3 digits → milliseconds
+        assert_eq!(AssTime::parse("0:00:01.100").unwrap().0, 1100);
+        // 2 digits → centiseconds (×10)
+        assert_eq!(AssTime::parse("0:00:01.10").unwrap().0, 1100);
+        // 1 digit → deciseconds (×100)
+        assert_eq!(AssTime::parse("0:00:01.5").unwrap().0, 1500);
+    }
+
+    #[test]
+    fn ass_time_negative_sign_preserved() {
+        // Leading sign must negate even though "-0" parses to 0 for the hour.
+        assert_eq!(AssTime::parse("-0:00:01.00").unwrap().0, -1000);
+        assert_eq!(AssTime::parse("-0:00:01.5").unwrap().0, -1500);
+        assert_eq!(AssTime::parse("-1:00:00.00").unwrap().0, -3_600_000);
+    }
+
+    #[test]
+    fn ass_time_bad_value_is_structured_error() {
+        let err = AssTime::parse("not a time").unwrap_err();
+        assert!(matches!(err, ParseError::BadTime { .. }));
     }
 
     #[test]

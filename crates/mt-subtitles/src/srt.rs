@@ -1,5 +1,6 @@
 //! SRT (SubRip Text) parser and serializer.
 
+use crate::error::ParseError;
 use crate::model::{Event, EventKind, Style, Subtitles};
 
 /// Canonical ASS v4+ `[Events]` `Format:` field order (matches pysubs2 output).
@@ -49,7 +50,7 @@ pub const DEFAULT_SCRIPT_INFO_LINES: &[&str] = &[
 ];
 
 /// Parse an SRT file from a string.
-pub fn load_srt(input: &str) -> Result<Subtitles, String> {
+pub fn load_srt(input: &str) -> Result<Subtitles, ParseError> {
     // Strip a leading UTF-8 BOM if present.
     let input = input.strip_prefix('\u{FEFF}').unwrap_or(input);
 
@@ -58,16 +59,22 @@ pub fn load_srt(input: &str) -> Result<Subtitles, String> {
     // SRT blocks are separated by blank lines.
     // Each block: index line, timing line, text lines.
     let mut block: Vec<&str> = Vec::new();
+    // 1-based line number where the current block began.
+    let mut block_start_line = 1usize;
 
-    for line in input.lines().chain(std::iter::once("")) {
+    for (idx, line) in input.lines().chain(std::iter::once("")).enumerate() {
+        let line_no = idx + 1;
         if line.trim().is_empty() {
             if !block.is_empty() {
-                if let Some(event) = parse_srt_block(&block)? {
+                if let Some(event) = parse_srt_block(&block, block_start_line)? {
                     events.push(event);
                 }
                 block.clear();
             }
         } else {
+            if block.is_empty() {
+                block_start_line = line_no;
+            }
             block.push(line);
         }
     }
@@ -99,18 +106,21 @@ pub fn load_srt(input: &str) -> Result<Subtitles, String> {
     })
 }
 
-fn parse_srt_block(block: &[&str]) -> Result<Option<Event>, String> {
+fn parse_srt_block(block: &[&str], block_start_line: usize) -> Result<Option<Event>, ParseError> {
     // First line is the sequence number (ignore). Need at least number + timing.
     if block.len() < 2 {
         return Ok(None);
     }
 
+    // Timing is the block's second line.
+    let timing_line_no = block_start_line + 1;
+
     // Second line: "HH:MM:SS,mmm --> HH:MM:SS,mmm"
     let timing_line = block[1].trim();
     let arrow = "-->";
-    let pos = timing_line
-        .find(arrow)
-        .ok_or_else(|| format!("no '-->' in timing line: {timing_line}"))?;
+    let pos = timing_line.find(arrow).ok_or_else(|| {
+        ParseError::malformed_at(format!("no '-->' in timing line: {timing_line}"), timing_line_no)
+    })?;
     let start_str = timing_line[..pos].trim();
     let end_part = timing_line[pos + arrow.len()..].trim();
 
@@ -118,8 +128,8 @@ fn parse_srt_block(block: &[&str]) -> Result<Option<Event>, String> {
     // (e.g. "00:00:01,000 --> 00:00:02,000  X1:0 X2:0 Y1:0 Y2:0")
     let end_str = end_part.split_whitespace().next().unwrap_or(end_part);
 
-    let start_ms = parse_srt_time(start_str)?;
-    let end_ms = parse_srt_time(end_str)?;
+    let start_ms = parse_srt_time(start_str, timing_line_no)?;
+    let end_ms = parse_srt_time(end_str, timing_line_no)?;
 
     // Remaining lines are text
     let text = if block.len() > 2 {
@@ -147,30 +157,27 @@ fn parse_srt_block(block: &[&str]) -> Result<Option<Event>, String> {
     }))
 }
 
-fn parse_srt_time(s: &str) -> Result<i64, String> {
+fn parse_srt_time(s: &str, line_no: usize) -> Result<i64, ParseError> {
     // Format: HH:MM:SS,mmm (also accept '.' as the ms separator)
     let s = s.trim();
-    let sep_pos = s
-        .rfind([',', '.'])
-        .ok_or_else(|| format!("no ms separator in SRT time: {s}"))?;
+    let bad = || ParseError::BadTime {
+        value: s.to_string(),
+        line_no: Some(line_no),
+    };
+
+    let sep_pos = s.rfind([',', '.']).ok_or_else(bad)?;
     let hms = &s[..sep_pos];
     let ms_str = &s[sep_pos + 1..];
 
-    let ms: i64 = ms_str.parse().map_err(|e| format!("ms parse: {e}"))?;
+    let ms: i64 = ms_str.parse().map_err(|_| bad())?;
 
     let parts: Vec<&str> = hms.split(':').collect();
     if parts.len() != 3 {
-        return Err(format!("expected HH:MM:SS, got: {hms}"));
+        return Err(bad());
     }
-    let h: i64 = parts[0].trim().parse().map_err(|e| format!("hours: {e}"))?;
-    let m: i64 = parts[1]
-        .trim()
-        .parse()
-        .map_err(|e| format!("minutes: {e}"))?;
-    let sec: i64 = parts[2]
-        .trim()
-        .parse()
-        .map_err(|e| format!("seconds: {e}"))?;
+    let h: i64 = parts[0].trim().parse().map_err(|_| bad())?;
+    let m: i64 = parts[1].trim().parse().map_err(|_| bad())?;
+    let sec: i64 = parts[2].trim().parse().map_err(|_| bad())?;
 
     Ok(h * 3_600_000 + m * 60_000 + sec * 1_000 + ms)
 }

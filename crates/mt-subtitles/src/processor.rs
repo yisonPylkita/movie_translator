@@ -2,30 +2,35 @@
 
 use std::path::Path;
 
-use mt_core::types::{replace_polish_chars, DialogueLine, NON_DIALOGUE_STYLES};
+use mt_core::types::{is_non_dialogue_style, replace_polish_chars, DialogueLine};
+use thiserror::Error;
 
 use crate::{
     ass::{load_ass, to_ass_string},
+    error::ParseError,
     model::{strip_ass_overrides, Event, EventKind, Subtitles},
     srt::{load_srt, to_srt_string},
 };
 
 /// Error type for subtitle processing failures.
-#[derive(Debug)]
-pub struct SubtitleProcessingError(pub String);
+#[derive(Debug, Error)]
+pub enum SubtitleProcessingError {
+    /// The requested subtitle file does not exist on disk.
+    #[error("subtitle file not found: {0}")]
+    NotFound(String),
 
-impl std::fmt::Display for SubtitleProcessingError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
+    /// Parsing the subtitle content failed; the underlying [`ParseError`] is
+    /// preserved as the error source.
+    #[error("failed to parse subtitle file: {0}")]
+    Parse(#[from] ParseError),
 
-impl std::error::Error for SubtitleProcessingError {}
+    /// Writing the subtitle file failed.
+    #[error("failed to save subtitle file: {0}")]
+    Save(#[source] std::io::Error),
 
-impl SubtitleProcessingError {
-    fn new(msg: impl Into<String>) -> Self {
-        SubtitleProcessingError(msg.into())
-    }
+    /// A validation precondition was violated (e.g. cleaned file has no events).
+    #[error("{0}")]
+    Validation(String),
 }
 
 type Result<T> = std::result::Result<T, SubtitleProcessingError>;
@@ -77,10 +82,9 @@ impl SubtitleProcessor {
     /// Port of `SubtitleProcessor.extract_dialogue_lines`.
     pub fn extract_dialogue_lines(subtitle_file: &Path) -> Result<Vec<DialogueLine>> {
         if !subtitle_file.exists() {
-            return Err(SubtitleProcessingError::new(format!(
-                "Subtitle file not found: {}",
-                subtitle_file.display()
-            )));
+            return Err(SubtitleProcessingError::NotFound(
+                subtitle_file.display().to_string(),
+            ));
         }
 
         let subs = load_file(subtitle_file)?;
@@ -102,10 +106,9 @@ impl SubtitleProcessor {
         text_transform: Option<fn(&str) -> String>,
     ) -> Result<()> {
         if !original_file.exists() {
-            return Err(SubtitleProcessingError::new(format!(
-                "Original subtitle file not found: {}",
-                original_file.display()
-            )));
+            return Err(SubtitleProcessingError::NotFound(
+                original_file.display().to_string(),
+            ));
         }
 
         let mut subs = load_file(original_file)?;
@@ -176,10 +179,9 @@ impl SubtitleProcessor {
     /// The style raw field has fontname at index 1 (0-indexed after name).
     pub fn override_font_name(ass_file: &Path, new_font_name: &str) -> Result<()> {
         if !ass_file.exists() {
-            return Err(SubtitleProcessingError::new(format!(
-                "Subtitle file not found: {}",
-                ass_file.display()
-            )));
+            return Err(SubtitleProcessingError::NotFound(
+                ass_file.display().to_string(),
+            ));
         }
 
         let mut subs = load_file(ass_file)?;
@@ -202,12 +204,8 @@ impl SubtitleProcessor {
     /// Port of `SubtitleProcessor.validate_cleaned_subtitles`.
     /// Timing mismatches are logged as warnings but not fatal.
     pub fn validate_cleaned_subtitles(original_file: &Path, cleaned_file: &Path) -> Result<()> {
-        let original_subs = load_file(original_file).map_err(|e| {
-            SubtitleProcessingError::new(format!("Failed to load subtitle files: {e}"))
-        })?;
-        let cleaned_subs = load_file(cleaned_file).map_err(|e| {
-            SubtitleProcessingError::new(format!("Failed to load subtitle files: {e}"))
-        })?;
+        let original_subs = load_file(original_file)?;
+        let cleaned_subs = load_file(cleaned_file)?;
 
         let original_events: Vec<&Event> = original_subs
             .events
@@ -222,12 +220,7 @@ impl SubtitleProcessor {
 
         let original_dialogue: Vec<&Event> = original_events
             .iter()
-            .filter(|e| {
-                let style_lower = e.style.to_lowercase();
-                !NON_DIALOGUE_STYLES
-                    .iter()
-                    .any(|kw| style_lower.contains(kw))
-            })
+            .filter(|e| !is_non_dialogue_style(&e.style))
             .copied()
             .collect();
         let non_dialogue_count = original_events.len() - original_dialogue.len();
@@ -238,8 +231,8 @@ impl SubtitleProcessor {
         }
 
         if cleaned_events.is_empty() {
-            return Err(SubtitleProcessingError::new(
-                "Cleaned subtitle file has no events",
+            return Err(SubtitleProcessingError::Validation(
+                "Cleaned subtitle file has no events".to_string(),
             ));
         }
 
@@ -326,11 +319,7 @@ impl SubtitleProcessor {
                 continue;
             }
 
-            let style_lower = event.style.to_lowercase();
-            if NON_DIALOGUE_STYLES
-                .iter()
-                .any(|kw| style_lower.contains(kw))
-            {
+            if is_non_dialogue_style(&event.style) {
                 continue;
             }
 
@@ -358,24 +347,16 @@ impl SubtitleProcessor {
 }
 
 fn load_file(path: &Path) -> std::result::Result<Subtitles, SubtitleProcessingError> {
-    let content = std::fs::read_to_string(path).map_err(|e| {
-        SubtitleProcessingError::new(format!("failed to read {}: {e}", path.display()))
-    })?;
+    let content = std::fs::read_to_string(path).map_err(ParseError::Io)?;
     match path
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
         .as_deref()
     {
-        Some("ass") | Some("ssa") => load_ass(&content).map_err(|e| {
-            SubtitleProcessingError::new(format!("Failed to parse subtitle file: {e}"))
-        }),
-        Some("srt") => load_srt(&content).map_err(|e| {
-            SubtitleProcessingError::new(format!("Failed to parse subtitle file: {e}"))
-        }),
-        other => Err(SubtitleProcessingError::new(format!(
-            "unsupported extension: {other:?}"
-        ))),
+        Some("ass") | Some("ssa") => Ok(load_ass(&content)?),
+        Some("srt") => Ok(load_srt(&content)?),
+        other => Err(ParseError::UnsupportedExtension(other.map(String::from)).into()),
     }
 }
 
@@ -389,6 +370,5 @@ fn save_file(subs: &Subtitles, path: &Path) -> std::result::Result<(), SubtitleP
         Some("srt") => to_srt_string(subs),
         _ => to_ass_string(subs),
     };
-    std::fs::write(path, content)
-        .map_err(|e| SubtitleProcessingError::new(format!("Failed to save subtitle file: {e}")))
+    std::fs::write(path, content).map_err(SubtitleProcessingError::Save)
 }

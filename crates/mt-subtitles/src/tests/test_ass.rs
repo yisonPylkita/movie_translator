@@ -274,6 +274,45 @@ fn comment_events_preserved() {
 }
 
 #[test]
+fn post_events_section_blank_lines_round_trip() {
+    // Bug 4: trailing raw sections (e.g. [Aegisub Extradata]) must preserve
+    // blank lines so the output round-trips, matching the pre-* serializers.
+    let input = "[Script Info]\nTitle: Test\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Hello\n\n[Aegisub Extradata]\nData: line one\n\nData: line three\n";
+    let subs = load_ass(input).unwrap();
+    // The post-events section captured the blank line between the two Data lines.
+    let sec = subs
+        .post_events_sections
+        .iter()
+        .find(|s| s.header == "[Aegisub Extradata]")
+        .expect("extradata section preserved");
+    assert!(
+        sec.lines.iter().any(|l| l.is_empty()),
+        "blank line should be captured in the raw section body"
+    );
+
+    let out = to_ass_string(&subs);
+    // The blank line between the two Data lines must survive serialization.
+    assert!(
+        out.contains("Data: line one\n\nData: line three"),
+        "blank line in post-events section was stripped:\n{out}"
+    );
+}
+
+#[test]
+fn unknown_event_field_is_not_serialized_as_sentinel() {
+    // Bug 5: an unrecognised event-format field must not leak a "<unknown:...>"
+    // sentinel into the output; it should be emitted as empty instead.
+    let input = "[Script Info]\nTitle: Test\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Bogus, Text\nDialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,xx,Hello\n";
+    let subs = load_ass(input).unwrap();
+    let out = to_ass_string(&subs);
+    assert!(
+        !out.contains("<unknown:"),
+        "unknown field sentinel leaked into output:\n{out}"
+    );
+    assert!(out.contains("Hello"), "real text should still be emitted");
+}
+
+#[test]
 fn text_with_commas_preserved() {
     let input = "[Script Info]\nTitle: Test\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Hello, world, goodbye\n";
     let subs = load_ass(input).unwrap();

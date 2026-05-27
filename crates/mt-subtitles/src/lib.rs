@@ -48,6 +48,7 @@
 
 pub mod ass;
 pub mod encoding;
+pub mod error;
 pub mod model;
 pub mod processor;
 pub mod srt;
@@ -58,13 +59,13 @@ mod tests;
 use std::path::Path;
 
 pub use encoding::normalize_encoding;
+pub use error::ParseError;
 pub use model::{AssTime, Event, EventKind, RawSection, Style, Subtitles};
 pub use processor::{find_dialogue_style, SubtitleProcessingError, SubtitleProcessor};
 
 /// Load a subtitle file by path, dispatching on extension (`.ass`/`.ssa` or `.srt`).
-pub fn load(path: &Path) -> Result<Subtitles, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+pub fn load(path: &Path) -> Result<Subtitles, ParseError> {
+    let content = std::fs::read_to_string(path)?;
     match path
         .extension()
         .and_then(|e| e.to_str())
@@ -73,6 +74,6 @@ pub fn load(path: &Path) -> Result<Subtitles, String> {
     {
         Some("ass") | Some("ssa") => ass::load_ass(&content),
         Some("srt") => srt::load_srt(&content),
-        other => Err(format!("unsupported extension: {other:?}")),
+        other => Err(ParseError::UnsupportedExtension(other.map(String::from))),
     }
 }
