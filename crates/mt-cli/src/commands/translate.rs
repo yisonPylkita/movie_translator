@@ -71,9 +71,26 @@ pub struct TranslateArgs {
     #[arg(long, short = 'v', default_value_t = false)]
     pub verbose: bool,
 
-    /// Collect performance metrics.
+    /// Collect performance metrics. Accepted for CLI compatibility, but the
+    /// metrics subsystem was not ported to the Rust binary (see
+    /// [`warn_unimplemented_metrics`]).
     #[arg(long, default_value_t = false)]
     pub metrics: bool,
+}
+
+/// Message emitted to stderr when `--metrics` is passed.
+///
+/// The Python metrics subsystem (which wrote `metrics.json`) was intentionally
+/// not ported. The flag stays accepted so existing invocations don't error, but
+/// we warn so users aren't misled into expecting an output file.
+pub const METRICS_NOT_IMPLEMENTED_WARNING: &str =
+    "warning: --metrics is not implemented in the Rust port (metrics collection was not ported)";
+
+/// Emit the metrics-not-implemented warning to stderr if `metrics` is set.
+fn warn_unimplemented_metrics(metrics: bool) {
+    if metrics {
+        eprintln!("{METRICS_NOT_IMPLEMENTED_WARNING}");
+    }
 }
 
 impl TranslateArgs {
@@ -160,6 +177,8 @@ pub fn cleanup_in_place_orphans(video_files: &[PathBuf]) -> usize {
 /// multi-threaded runtime.
 pub async fn run(args: TranslateArgs) -> i32 {
     crate::init_tracing(args.verbose);
+
+    warn_unimplemented_metrics(args.metrics);
 
     let (model, extra_models) = resolve_models(args.model.as_deref());
 
@@ -270,6 +289,16 @@ mod tests {
         assert!(!args.inpaint);
         assert!(!args.metrics);
         assert!(args.external_subs.is_none());
+    }
+
+    #[test]
+    fn metrics_flag_parses_and_has_warning() {
+        let args = parse(&["movie.mkv", "--metrics"]);
+        assert!(args.metrics, "--metrics must still be accepted");
+        // The warning text makes clear the flag is a no-op in the Rust port.
+        assert!(METRICS_NOT_IMPLEMENTED_WARNING.contains("not implemented"));
+        // warn helper is a no-op when the flag is unset (smoke test, no panic).
+        warn_unimplemented_metrics(false);
     }
 
     #[test]

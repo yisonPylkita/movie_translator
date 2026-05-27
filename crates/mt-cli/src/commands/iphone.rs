@@ -416,6 +416,15 @@ fn read_zip_arcnames(zip_path: &Path) -> Result<std::collections::HashSet<String
 
 /// Read (name, data) for every entry of a STORE-only zip we wrote.
 fn read_zip_entries(zip_path: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
+    Ok(read_zip_entries_with_crc(zip_path)?
+        .into_iter()
+        .map(|(name, data, _crc)| (name, data))
+        .collect())
+}
+
+/// Like [`read_zip_entries`] but also returns the CRC-32 recorded in each
+/// local file header, so callers can verify data integrity.
+fn read_zip_entries_with_crc(zip_path: &Path) -> Result<Vec<(String, Vec<u8>, u32)>, String> {
     let bytes = std::fs::read(zip_path).map_err(|e| e.to_string())?;
     let mut entries = Vec::new();
     let mut pos = 0usize;
@@ -424,6 +433,7 @@ fn read_zip_entries(zip_path: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
         if sig != 0x0403_4b50 {
             break; // reached central directory
         }
+        let stored_crc = u32::from_le_bytes([bytes[pos + 14], bytes[pos + 15], bytes[pos + 16], bytes[pos + 17]]);
         let size = u32::from_le_bytes([bytes[pos + 18], bytes[pos + 19], bytes[pos + 20], bytes[pos + 21]]) as usize;
         let name_len = u16::from_le_bytes([bytes[pos + 26], bytes[pos + 27]]) as usize;
         let extra_len = u16::from_le_bytes([bytes[pos + 28], bytes[pos + 29]]) as usize;
@@ -431,16 +441,23 @@ fn read_zip_entries(zip_path: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
         let name = String::from_utf8_lossy(&bytes[name_start..name_start + name_len]).to_string();
         let data_start = name_start + name_len + extra_len;
         let data = bytes[data_start..data_start + size].to_vec();
-        entries.push((name, data));
+        entries.push((name, data, stored_crc));
         pos = data_start + size;
     }
     Ok(entries)
 }
 
+/// Verify every entry's data against its stored CRC-32, mirroring Python's
+/// `zip_packer.verify_zip` / `zipfile.testzip()`. Returns the first mismatch
+/// (or structurally-bad entry) as an error.
 fn verify_zip(zip_path: &Path) -> Result<(), String> {
-    for (name, data) in read_zip_entries(zip_path)? {
-        let _ = name;
-        let _ = crc32(&data); // structural read already validates layout
+    for (name, data, stored_crc) in read_zip_entries_with_crc(zip_path)? {
+        let actual = crc32(&data);
+        if actual != stored_crc {
+            return Err(format!(
+                "CRC mismatch for {name}: stored {stored_crc:#010x}, computed {actual:#010x}"
+            ));
+        }
     }
     Ok(())
 }
@@ -710,6 +727,32 @@ mod tests {
         let names = read_zip_arcnames(&zip).unwrap();
         assert!(names.contains("a.mp4"));
         assert!(names.contains("c.mp4"));
+    }
+
+    #[test]
+    fn verify_zip_detects_corruption() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path();
+        let f1 = base.join("a.mp4");
+        std::fs::write(&f1, b"hello world payload").unwrap();
+        let zip = pack_and_clean(base, std::slice::from_ref(&f1)).unwrap();
+
+        // A freshly written zip verifies cleanly.
+        verify_zip(&zip).expect("pristine zip must verify");
+
+        // Corrupt a byte inside an entry's payload and confirm verify fails.
+        let mut bytes = std::fs::read(&zip).unwrap();
+        // Find the payload "hello..." and flip a byte within it.
+        let needle = b"hello";
+        let idx = bytes
+            .windows(needle.len())
+            .position(|w| w == needle)
+            .expect("payload present");
+        bytes[idx] ^= 0xFF;
+        std::fs::write(&zip, &bytes).unwrap();
+
+        let err = verify_zip(&zip).expect_err("corrupted zip must fail verification");
+        assert!(err.contains("CRC mismatch"), "unexpected error: {err}");
     }
 
     #[test]

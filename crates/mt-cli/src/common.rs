@@ -3,7 +3,7 @@
 //! Port of `movie_translator/commands/common.py`
 //! (`check_dependencies`, `resolve_model`, `resolve_models`).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Verify required external tools are present.
 ///
@@ -67,33 +67,114 @@ fn apple_swift_dir() -> PathBuf {
 /// Port of `apple_backend.is_available()` + `check_languages_installed()`.
 ///
 /// `is_available`: macOS 26.0+ (Tahoe) and the Swift source exists.
-/// `check_languages_installed`: run the compiled `translate_bridge test`
-/// command and treat success as "languages installed". If the binary is not
-/// yet compiled we conservatively return `false` (the Python path compiles it
-/// on demand; doing a `swiftc` build here is out of scope, see the crate
-/// concern note in the report).
+/// `check_languages_installed`: ensure the `translate_bridge` binary is built
+/// (compiling on demand via `swiftc`, like Python's `_ensure_binary`), then run
+/// the `test` command and treat success as "languages installed".
+///
+/// The result is cached for the process lifetime so we don't recompile / re-probe
+/// on every `resolve_models` call.
 fn apple_translation_available() -> bool {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<bool> = OnceLock::new();
+    *CACHE.get_or_init(apple_translation_available_uncached)
+}
+
+fn apple_translation_available_uncached() -> bool {
     if !cfg!(target_os = "macos") {
         return false;
     }
     let swift_dir = apple_swift_dir();
-    if !swift_dir.join("translate_bridge.swift").exists() {
+    let source = swift_dir.join("translate_bridge.swift");
+    if !source.exists() {
         return false;
     }
     // macOS major version >= 26.
     if !macos_major_at_least(26) {
         return false;
     }
+    // _ensure_binary: compile the bridge if missing or stale, then probe.
+    let binary = match ensure_apple_bridge(&source, &swift_dir.join("translate_bridge")) {
+        Some(b) => b,
+        None => return false,
+    };
     // check_languages_installed: the compiled bridge must respond to `test`.
-    let binary = swift_dir.join("translate_bridge");
-    if !binary.exists() {
-        return false;
-    }
     std::process::Command::new(&binary)
         .arg("test")
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Compile the Apple Translation Swift bridge on demand if needed.
+///
+/// Port of `apple_backend._ensure_binary`: recompile when the binary is missing
+/// or older than the source, using the same `swiftc` invocation/output path.
+/// Returns `Some(binary_path)` if the binary exists (already or after a
+/// successful build), `None` if it cannot be built (no source, no `swiftc`, or
+/// the compile failed).
+fn ensure_apple_bridge(source: &Path, binary: &Path) -> Option<PathBuf> {
+    let needs_compile = match (binary.metadata(), source.metadata()) {
+        (Ok(bin_meta), Ok(src_meta)) => match (bin_meta.modified(), src_meta.modified()) {
+            (Ok(bin_mtime), Ok(src_mtime)) => src_mtime > bin_mtime,
+            // If we can't read mtimes, only compile when the binary is absent
+            // (it exists here), so don't recompile.
+            _ => false,
+        },
+        // Binary missing -> must compile.
+        (Err(_), Ok(_)) => true,
+        // Source missing -> caller already checked, but be safe.
+        _ => return None,
+    };
+
+    if needs_compile {
+        let swiftc = which_swiftc()?;
+        tracing::info!("Compiling Apple Translation bridge...");
+        let status = std::process::Command::new(swiftc)
+            .args([
+                "-parse-as-library",
+                "-O",
+                "-framework",
+                "Translation",
+            ])
+            .arg(source)
+            .arg("-o")
+            .arg(binary)
+            .output();
+        match status {
+            Ok(out) if out.status.success() => {
+                tracing::info!("Compiled Apple Translation bridge: {}", binary.display());
+            }
+            Ok(out) => {
+                tracing::warn!(
+                    "Failed to compile Apple Translation bridge: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                );
+                return None;
+            }
+            Err(e) => {
+                tracing::warn!("Failed to invoke swiftc for Apple Translation bridge: {e}");
+                return None;
+            }
+        }
+    }
+
+    if binary.exists() {
+        Some(binary.to_path_buf())
+    } else {
+        None
+    }
+}
+
+/// Locate `swiftc` on PATH (equivalent to Python's `shutil.which('swiftc')`).
+fn which_swiftc() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join("swiftc");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 /// Best-effort `platform.mac_ver()` major-version check via `sw_vers`.
