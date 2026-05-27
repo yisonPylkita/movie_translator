@@ -81,13 +81,19 @@ pub fn load_srt(input: &str) -> Result<Subtitles, String> {
             .map(|s| s.to_string())
             .collect(),
         pre_styles_sections: Vec::new(),
-        styles_format: DEFAULT_STYLES_FORMAT.iter().map(|s| s.to_string()).collect(),
+        styles_format: DEFAULT_STYLES_FORMAT
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
         styles: vec![Style {
             name: "Default".to_string(),
             raw: DEFAULT_STYLE_RAW.to_string(),
         }],
         pre_events_sections: Vec::new(),
-        events_format: DEFAULT_EVENTS_FORMAT.iter().map(|s| s.to_string()).collect(),
+        events_format: DEFAULT_EVENTS_FORMAT
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
         events,
         post_events_sections: Vec::new(),
     })

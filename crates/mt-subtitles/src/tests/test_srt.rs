@@ -150,7 +150,8 @@ fn srt_to_ass_produces_valid_complete_ass() {
     );
 
     // Re-parsing the produced ASS must succeed (no "missing field Layer").
-    let reparsed = load_ass(&ass).unwrap_or_else(|e| panic!("re-parse of SRT-sourced ASS failed: {e}"));
+    let reparsed =
+        load_ass(&ass).unwrap_or_else(|e| panic!("re-parse of SRT-sourced ASS failed: {e}"));
     assert_eq!(reparsed.events.len(), subs.events.len());
     for (a, b) in reparsed.events.iter().zip(subs.events.iter()) {
         assert_eq!(a.start_ms, b.start_ms);
