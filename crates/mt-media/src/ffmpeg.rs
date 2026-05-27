@@ -11,6 +11,21 @@ use thiserror::Error;
 
 use mt_core::SubtitleFile;
 
+mod binaries {
+    //! Binary resolution, delegating to the shared `mt_core::exec` resolver so
+    //! `mt-media` and `mt-discovery` find the same `ffmpeg`/`ffprobe`.
+    use super::*;
+
+    /// Resolve `ffmpeg` and `ffprobe`, returning a [`VideoMuxError`] on failure.
+    pub(super) fn ffmpeg() -> Result<PathBuf, VideoMuxError> {
+        mt_core::exec::get_ffmpeg().map_err(|e| VideoMuxError::FfmpegNotFound(e.to_string()))
+    }
+
+    pub(super) fn ffprobe() -> Result<PathBuf, VideoMuxError> {
+        mt_core::exec::get_ffprobe().map_err(|e| VideoMuxError::FfmpegNotFound(e.to_string()))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Error
 // ---------------------------------------------------------------------------
@@ -43,69 +58,44 @@ pub enum VideoMuxError {
 // Cached binary resolution
 // ---------------------------------------------------------------------------
 
-static FFMPEG_PATHS: OnceLock<Result<(PathBuf, PathBuf), String>> = OnceLock::new();
 static MKVMERGE_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 
-/// Resolve `ffmpeg` and `ffprobe` from `PATH`.
+/// Resolve `ffmpeg` and `ffprobe`.
 ///
-/// Result is cached after the first call.
-///
-/// TODO: Add bundled-binary fallback (e.g. `static-ffmpeg` equivalent) as a future enhancement.
-pub fn get_ffmpeg_paths() -> Result<(&'static PathBuf, &'static PathBuf), VideoMuxError> {
-    let result = FFMPEG_PATHS.get_or_init(|| {
-        let ffmpeg = which_binary("ffmpeg")?;
-        let ffprobe = which_binary("ffprobe")?;
-        Ok((ffmpeg, ffprobe))
-    });
-    match result {
-        Ok((ff, fp)) => Ok((ff, fp)),
-        Err(e) => Err(VideoMuxError::FfmpegNotFound(e.clone())),
-    }
+/// Delegates to the shared [`mt_core::exec`] resolver (which caches successes,
+/// retries failures, and validates the resolved path is a real file).
+pub fn get_ffmpeg_paths() -> Result<(PathBuf, PathBuf), VideoMuxError> {
+    Ok((binaries::ffmpeg()?, binaries::ffprobe()?))
 }
 
 /// Return the path to the `ffmpeg` binary.
-pub fn get_ffmpeg() -> Result<&'static PathBuf, VideoMuxError> {
-    get_ffmpeg_paths().map(|(ff, _)| ff)
+pub fn get_ffmpeg() -> Result<PathBuf, VideoMuxError> {
+    binaries::ffmpeg()
 }
 
 /// Return the path to the `ffprobe` binary.
-pub fn get_ffprobe() -> Result<&'static PathBuf, VideoMuxError> {
-    get_ffmpeg_paths().map(|(_, fp)| fp)
+pub fn get_ffprobe() -> Result<PathBuf, VideoMuxError> {
+    binaries::ffprobe()
 }
 
 /// Find `mkvmerge` binary.  Returns `None` if unavailable.
 ///
-/// Checks `PATH` first, then the Homebrew location `/opt/homebrew/bin/mkvmerge`.
+/// Checks `PATH` first (via the shared resolver), then the Homebrew location
+/// `/opt/homebrew/bin/mkvmerge`. A successful resolution is cached; mkvmerge is
+/// optional, so a miss is represented as `None` (cached) rather than an error.
 pub fn get_mkvmerge() -> Option<&'static PathBuf> {
     MKVMERGE_PATH
         .get_or_init(|| {
-            if let Ok(p) = which_binary("mkvmerge") {
+            if let Ok(p) = mt_core::exec::find_binary("mkvmerge") {
                 return Some(p);
             }
             let homebrew = PathBuf::from("/opt/homebrew/bin/mkvmerge");
-            if homebrew.exists() {
+            if homebrew.is_file() {
                 return Some(homebrew);
             }
             None
         })
         .as_ref()
-}
-
-fn which_binary(name: &str) -> Result<PathBuf, String> {
-    // Use `which` command, or iterate PATH manually — keep it dependency-free.
-    let output = Command::new("which")
-        .arg(name)
-        .output()
-        .map_err(|e| format!("failed to run which: {e}"))?;
-    if output.status.success() {
-        let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !path_str.is_empty() {
-            return Ok(PathBuf::from(path_str));
-        }
-    }
-    Err(format!(
-        "{name} not found. Please install FFmpeg (e.g. `brew install ffmpeg`) or run ./setup.sh"
-    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -365,7 +355,7 @@ pub fn mux_video_with_subtitles(
             original_sub_index,
             original_sub_title,
         );
-        run_ffmpeg_mux(ffmpeg, &args)
+        run_ffmpeg_mux(&ffmpeg, &args)
     }
 }
 
@@ -389,8 +379,17 @@ pub fn resolve_mkvmerge_sub_track_id(
             String::from_utf8_lossy(&output.stderr).to_string(),
         ));
     }
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-    let tracks = json["tracks"].as_array().cloned().unwrap_or_default();
+    let json = String::from_utf8_lossy(&output.stdout);
+    parse_mkvmerge_sub_track_id(&json, subtitle_index)
+}
+
+/// Pure helper: select the subtitle track id from mkvmerge `-J` JSON.
+///
+/// Factored out for unit testing. A missing/non-integer `id` returns an error
+/// rather than silently defaulting to track 0 (which would mux the wrong track).
+pub fn parse_mkvmerge_sub_track_id(json: &str, subtitle_index: usize) -> Result<u64, VideoMuxError> {
+    let value: serde_json::Value = serde_json::from_str(json)?;
+    let tracks = value["tracks"].as_array().cloned().unwrap_or_default();
     let sub_tracks: Vec<&serde_json::Value> = tracks
         .iter()
         .filter(|t| t["type"].as_str() == Some("subtitles"))
@@ -401,7 +400,11 @@ pub fn resolve_mkvmerge_sub_track_id(
             count: sub_tracks.len(),
         });
     }
-    Ok(sub_tracks[subtitle_index]["id"].as_u64().unwrap_or(0))
+    sub_tracks[subtitle_index]["id"].as_u64().ok_or_else(|| {
+        VideoMuxError::MkvmergeIdentifyFailed(format!(
+            "mkvmerge track {subtitle_index} has no integer `id` field"
+        ))
+    })
 }
 
 /// Build the mkvmerge command-line argument list (excluding the binary itself).
@@ -542,15 +545,20 @@ pub fn build_ffmpeg_mux_args(
     args.push("-c:s".to_string());
     args.push(subtitle_codec.to_string());
 
-    // Attach new fonts (MKV only — not for MP4)
+    // Attach new fonts (MKV only — not for MP4).
+    //
+    // Each attachment needs its mimetype/filename metadata bound to its own
+    // attachment-stream index (`-metadata:s:t:0`, `:1`, …). Using the
+    // index-less `-metadata:s:t` for every font would land all values on the
+    // same (wrong) attachment when there is more than one font.
     if let Some(fonts) = font_attachments {
         if !is_mp4 {
-            for font_path in fonts {
+            for (attach_idx, font_path) in fonts.iter().enumerate() {
                 args.push("-attach".to_string());
                 args.push(font_path.to_string_lossy().to_string());
-                args.push("-metadata:s:t".to_string());
+                args.push(format!("-metadata:s:t:{attach_idx}"));
                 args.push(format!("mimetype={}", mimetype_for_font(font_path)));
-                args.push("-metadata:s:t".to_string());
+                args.push(format!("-metadata:s:t:{attach_idx}"));
                 args.push(format!(
                     "filename={}",
                     font_path.file_name().unwrap_or_default().to_string_lossy()
@@ -772,6 +780,50 @@ mod tests {
         assert_eq!(parse_ffmpeg_version_string(line), "N-113757-g12345abcd");
     }
 
+    // ----- parse_mkvmerge_sub_track_id -----
+
+    const MKVMERGE_TRACKS_JSON: &str = r#"{
+        "tracks": [
+            {"id": 0, "type": "video"},
+            {"id": 1, "type": "audio"},
+            {"id": 2, "type": "subtitles"},
+            {"id": 3, "type": "subtitles"}
+        ]
+    }"#;
+
+    #[test]
+    fn mkvmerge_track_id_selects_nth_subtitle() {
+        assert_eq!(parse_mkvmerge_sub_track_id(MKVMERGE_TRACKS_JSON, 0).unwrap(), 2);
+        assert_eq!(parse_mkvmerge_sub_track_id(MKVMERGE_TRACKS_JSON, 1).unwrap(), 3);
+    }
+
+    #[test]
+    fn mkvmerge_track_id_out_of_range_errors() {
+        let r = parse_mkvmerge_sub_track_id(MKVMERGE_TRACKS_JSON, 5);
+        assert!(matches!(
+            r,
+            Err(VideoMuxError::SubtitleIndexOutOfRange { index: 5, count: 2 })
+        ));
+    }
+
+    #[test]
+    fn mkvmerge_track_id_missing_id_errors_not_zero() {
+        // A subtitle track with no `id` must NOT silently mux track 0.
+        let json = r#"{"tracks":[{"type":"subtitles"}]}"#;
+        let r = parse_mkvmerge_sub_track_id(json, 0);
+        assert!(
+            matches!(r, Err(VideoMuxError::MkvmergeIdentifyFailed(_))),
+            "expected MkvmergeIdentifyFailed, got {r:?}"
+        );
+    }
+
+    #[test]
+    fn mkvmerge_track_id_noninteger_id_errors() {
+        let json = r#"{"tracks":[{"type":"subtitles","id":"two"}]}"#;
+        let r = parse_mkvmerge_sub_track_id(json, 0);
+        assert!(matches!(r, Err(VideoMuxError::MkvmergeIdentifyFailed(_))));
+    }
+
     // ----- build_ffmpeg_mux_args -----
 
     fn make_sub(name: &str, lang: &str, is_default: bool) -> SubtitleFile {
@@ -873,8 +925,51 @@ mod tests {
         );
         assert!(args.contains(&"-attach".to_string()));
         assert!(args.contains(&"/tmp/MyFont.ttf".to_string()));
+        // Single font → attachment index 0.
+        assert!(args.contains(&"-metadata:s:t:0".to_string()));
         assert!(args.contains(&"mimetype=application/x-truetype-font".to_string()));
         assert!(args.contains(&"filename=MyFont.ttf".to_string()));
+    }
+
+    #[test]
+    fn ffmpeg_args_multiple_fonts_use_per_attachment_metadata_index() {
+        let subs = vec![make_sub("Polish", "pol", true)];
+        let fonts = vec![
+            PathBuf::from("/tmp/FontOne.ttf"),
+            PathBuf::from("/tmp/FontTwo.otf"),
+        ];
+        let args = build_ffmpeg_mux_args(
+            Path::new("/tmp/input.mkv"),
+            &subs,
+            Path::new("/tmp/output.mkv"),
+            Some(&fonts),
+            None,
+            None,
+        );
+
+        // Two attachments → two distinct per-attachment metadata indices.
+        assert!(args.contains(&"-metadata:s:t:0".to_string()));
+        assert!(args.contains(&"-metadata:s:t:1".to_string()));
+        // The index-less form must NOT be used (that was the bug).
+        assert!(!args.contains(&"-metadata:s:t".to_string()));
+
+        // Verify the metadata for the SECOND font lands right after its
+        // `-metadata:s:t:1` flag (not on attachment 0).
+        let pos = args
+            .iter()
+            .position(|a| a == "-metadata:s:t:1")
+            .expect("second attachment index present");
+        assert_eq!(args[pos + 1], "mimetype=application/vnd.ms-opentype");
+        assert_eq!(args[pos + 2], "-metadata:s:t:1");
+        assert_eq!(args[pos + 3], "filename=FontTwo.otf");
+
+        // And the first font's mimetype is truetype on index 0.
+        let pos0 = args
+            .iter()
+            .position(|a| a == "-metadata:s:t:0")
+            .expect("first attachment index present");
+        assert_eq!(args[pos0 + 1], "mimetype=application/x-truetype-font");
+        assert_eq!(args[pos0 + 3], "filename=FontOne.ttf");
     }
 
     #[test]

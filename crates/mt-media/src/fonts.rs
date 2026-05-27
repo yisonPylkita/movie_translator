@@ -113,7 +113,7 @@ pub fn extract_font(
 ) -> Result<bool, VideoMuxError> {
     let ffmpeg = get_ffmpeg()?;
     let attachment_arg = format!("-dump_attachment:{stream_index}");
-    Command::new(ffmpeg)
+    let output = Command::new(&ffmpeg)
         .args([
             "-y",
             &attachment_arg,
@@ -122,6 +122,19 @@ pub fn extract_font(
             &video_path.to_string_lossy(),
         ])
         .output()?;
+
+    // ffmpeg can exit non-zero yet still leave a partial/corrupt file behind,
+    // which `output_path.exists()` alone would treat as success. Honor the exit
+    // status: on failure, remove any partial output and report failure.
+    if !output.status.success() {
+        let _ = std::fs::remove_file(output_path);
+        tracing::debug!(
+            "font extraction failed (stream {stream_index}): {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+        return Ok(false);
+    }
+
     Ok(output_path.exists())
 }
 

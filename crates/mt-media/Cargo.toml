@@ -13,5 +13,6 @@ thiserror = { workspace = true }
 ttf-parser = "0.25"
 dirs = "5"
 tempfile = "3"
+tracing = { workspace = true }
 
 [dev-dependencies]
