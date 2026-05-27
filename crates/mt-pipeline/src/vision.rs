@@ -10,14 +10,36 @@
 //! force it on/off without touching the host platform (matching how the Python
 //! tests `patch('...is_vision_ocr_available')`).
 
+use std::sync::OnceLock;
+
 /// A predicate that reports whether Vision-based OCR is available.
 pub type VisionOcrProbe = fn() -> bool;
 
-/// Default probe: best-effort port of the Python check.
+/// Default probe: a precise, cached port of the Python check.
 ///
-/// We cannot import the macOS `Vision` framework from Rust, so we approximate:
-/// the binding is *potentially* available only on macOS. The orchestrator may
-/// substitute a more precise probe that shells out to the Python helper.
+/// On non-macOS this is trivially `false`. On macOS we verify the `Vision`
+/// and `Quartz` Python bindings actually import (the same import the Python
+/// `is_available` performs), shelling out to `python3 -c "import Vision, Quartz"`
+/// exactly **once** and caching the boolean for the rest of the process. If the
+/// probe cannot be run at all we fall back to the conservative platform check.
 pub fn default_vision_ocr_probe() -> bool {
-    cfg!(target_os = "macos")
+    if !cfg!(target_os = "macos") {
+        return false;
+    }
+    static CACHED: OnceLock<bool> = OnceLock::new();
+    *CACHED.get_or_init(probe_macos_vision)
+}
+
+/// Run the one-shot macOS Vision import check. Cached by the caller.
+fn probe_macos_vision() -> bool {
+    match std::process::Command::new("python3")
+        .args(["-c", "import Vision, Quartz"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+    {
+        Ok(status) => status.success(),
+        // python3 missing / not runnable: fall back to the platform signal.
+        Err(_) => cfg!(target_os = "macos"),
+    }
 }
