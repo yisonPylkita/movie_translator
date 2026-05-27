@@ -51,15 +51,9 @@ pub fn pack_and_clean(input_dir: &Path, mp4_files: &[PathBuf]) -> Result<PathBuf
 
         write_store_zip(&partial, &zip_path, input_dir, mp4_files, &existing)
             .with_context(|| format!("writing zip {}", partial.display()))?;
-        verify_zip(&partial)
-            .with_context(|| format!("verifying zip {}", partial.display()))?;
-        std::fs::rename(&partial, &zip_path).with_context(|| {
-            format!(
-                "renaming {} -> {}",
-                partial.display(),
-                zip_path.display()
-            )
-        })?;
+        verify_zip(&partial).with_context(|| format!("verifying zip {}", partial.display()))?;
+        std::fs::rename(&partial, &zip_path)
+            .with_context(|| format!("renaming {} -> {}", partial.display(), zip_path.display()))?;
         Ok(())
     };
 
@@ -124,9 +118,7 @@ fn write_store_zip(
         let arcname = f
             .strip_prefix(base_dir)
             .map(|p| p.to_string_lossy().replace('\\', "/"))
-            .map_err(|_| {
-                anyhow::anyhow!("{} is not under {}", f.display(), base_dir.display())
-            })?;
+            .map_err(|_| anyhow::anyhow!("{} is not under {}", f.display(), base_dir.display()))?;
         if existing.contains(&arcname) {
             continue;
         }
@@ -138,7 +130,9 @@ fn write_store_zip(
             .with_context(|| format!("streaming {} into archive", f.display()))?;
     }
 
-    writer.finish().context("finalising zip central directory")?;
+    writer
+        .finish()
+        .context("finalising zip central directory")?;
     Ok(())
 }
 

@@ -119,7 +119,10 @@ fn parse_srt_block(block: &[&str], block_start_line: usize) -> Result<Option<Eve
     let timing_line = block[1].trim();
     let arrow = "-->";
     let pos = timing_line.find(arrow).ok_or_else(|| {
-        ParseError::malformed_at(format!("no '-->' in timing line: {timing_line}"), timing_line_no)
+        ParseError::malformed_at(
+            format!("no '-->' in timing line: {timing_line}"),
+            timing_line_no,
+        )
     })?;
     let start_str = timing_line[..pos].trim();
     let end_part = timing_line[pos + arrow.len()..].trim();

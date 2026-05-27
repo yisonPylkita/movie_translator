@@ -141,7 +141,10 @@ impl super::SubtitleProvider for NapiProjektProvider {
         let content = match self.fetch_subtitle(&file_hash)? {
             Some(c) => c,
             None => {
-                tracing::debug!("NapiProjekt: no subtitle for hash {}", short_hash(&file_hash));
+                tracing::debug!(
+                    "NapiProjekt: no subtitle for hash {}",
+                    short_hash(&file_hash)
+                );
                 return Ok(vec![]);
             }
         };

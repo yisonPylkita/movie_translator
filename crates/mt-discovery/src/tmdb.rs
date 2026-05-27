@@ -338,7 +338,10 @@ mod tests {
         }
         // Unicode title (Japanese) → percent-encoded UTF-8 bytes.
         let url2 = build_search_url("key123", "千と千尋", None, "movie");
-        assert!(url2.contains("query=%E5%8D%83"), "unicode not encoded: {url2}");
+        assert!(
+            url2.contains("query=%E5%8D%83"),
+            "unicode not encoded: {url2}"
+        );
     }
 
     // ── injected-key no-key path is testable without env mutation (bug 8) ──────

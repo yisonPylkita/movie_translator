@@ -65,8 +65,8 @@ struct Probe {
 }
 
 fn probe(mkv_path: &Path) -> Result<Probe> {
-    let info = get_video_info(mkv_path)
-        .with_context(|| format!("probing {}", mkv_path.display()))?;
+    let info =
+        get_video_info(mkv_path).with_context(|| format!("probing {}", mkv_path.display()))?;
     let mut video_codec = String::new();
     let mut has_jpn = false;
     let mut has_pol = false;
@@ -115,11 +115,7 @@ fn should_skip(mkv_path: &Path, p: &Probe) -> Option<String> {
     None
 }
 
-fn build_ffmpeg_cmd(
-    mkv_path: &Path,
-    temp_path: &Path,
-    include_subs: bool,
-) -> Result<Vec<String>> {
+fn build_ffmpeg_cmd(mkv_path: &Path, temp_path: &Path, include_subs: bool) -> Result<Vec<String>> {
     let ffmpeg = get_ffmpeg().context("locating ffmpeg")?;
     let mut cmd: Vec<String> = vec![
         ffmpeg.to_string_lossy().to_string(),
@@ -186,10 +182,10 @@ fn video_duration(info: &mt_media::VideoInfo) -> f64 {
 
 fn verify_output(src: &Path, dst: &Path) -> Result<()> {
     let tolerance = 1.0_f64;
-    let src_info = get_video_info(src)
-        .with_context(|| format!("probing source {}", src.display()))?;
-    let dst_info = get_video_info(dst)
-        .with_context(|| format!("probing output {}", dst.display()))?;
+    let src_info =
+        get_video_info(src).with_context(|| format!("probing source {}", src.display()))?;
+    let dst_info =
+        get_video_info(dst).with_context(|| format!("probing output {}", dst.display()))?;
 
     let src_dur = video_duration(&src_info);
     let dst_dur = video_duration(&dst_info);

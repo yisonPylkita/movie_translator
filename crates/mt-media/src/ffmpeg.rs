@@ -387,7 +387,10 @@ pub fn resolve_mkvmerge_sub_track_id(
 ///
 /// Factored out for unit testing. A missing/non-integer `id` returns an error
 /// rather than silently defaulting to track 0 (which would mux the wrong track).
-pub fn parse_mkvmerge_sub_track_id(json: &str, subtitle_index: usize) -> Result<u64, VideoMuxError> {
+pub fn parse_mkvmerge_sub_track_id(
+    json: &str,
+    subtitle_index: usize,
+) -> Result<u64, VideoMuxError> {
     let value: serde_json::Value = serde_json::from_str(json)?;
     let tracks = value["tracks"].as_array().cloned().unwrap_or_default();
     let sub_tracks: Vec<&serde_json::Value> = tracks
@@ -793,8 +796,14 @@ mod tests {
 
     #[test]
     fn mkvmerge_track_id_selects_nth_subtitle() {
-        assert_eq!(parse_mkvmerge_sub_track_id(MKVMERGE_TRACKS_JSON, 0).unwrap(), 2);
-        assert_eq!(parse_mkvmerge_sub_track_id(MKVMERGE_TRACKS_JSON, 1).unwrap(), 3);
+        assert_eq!(
+            parse_mkvmerge_sub_track_id(MKVMERGE_TRACKS_JSON, 0).unwrap(),
+            2
+        );
+        assert_eq!(
+            parse_mkvmerge_sub_track_id(MKVMERGE_TRACKS_JSON, 1).unwrap(),
+            3
+        );
     }
 
     #[test]

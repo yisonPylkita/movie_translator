@@ -72,7 +72,10 @@ mod tests {
     fn carries_source_chain_for_io() {
         let io = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
         let err: PipelineError = io.into();
-        assert!(err.source().is_some(), "io cause must be in the source chain");
+        assert!(
+            err.source().is_some(),
+            "io cause must be in the source chain"
+        );
     }
 
     #[test]
@@ -82,7 +85,10 @@ mod tests {
             line_no: Some(3),
         };
         let err: PipelineError = pe.into();
-        assert!(err.source().is_some(), "parse cause must be in source chain");
+        assert!(
+            err.source().is_some(),
+            "parse cause must be in source chain"
+        );
         assert!(err.to_string().contains("subtitle parse failed"));
     }
 
