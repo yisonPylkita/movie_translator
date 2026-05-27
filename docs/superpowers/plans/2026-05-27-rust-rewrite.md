@@ -106,10 +106,11 @@ Reference: `movie_translator/discovery.py`, `identifier/{hasher.py,napihash.py,p
 - [ ] `napihash` — port `identifier/napihash.py`; test against Python output.
 - [ ] Commit: `feat(discovery): oshash + napihash`.
 
-### Task 3.2: Filename parsing (guessit/aniparse port — highest risk)
-- [ ] Build parity corpus: run Python `discovery`/`identifier.parser` over a large list of real filenames, dump `{filename → parsed fields}` to `crates/mt-discovery/tests/parity_corpus.json`.
-- [ ] Port the parsing rules; test = every corpus entry must match. Iterate rules until green (allow a documented small ignore-list if a rule is genuinely obscure).
-- [ ] Commit: `feat(discovery): filename parser w/ parity corpus`.
+### Task 3.2: Filename parsing — Python CLI tool (REVISED 2026-05-27)
+`identifier/parser.py` wraps `guessit` + `aniparse`, large Python rule engines with no faithful Rust equivalent. Per the user's CLI-tools-over-Rust-port principle (same as ML), keep parsing in Python behind a thin single-purpose CLI script; Rust orchestrates.
+- [ ] Create `ml/parse_filename.py`: argv/stdin `{filename, folder_name?}` → stdout JSON `{title, parsed_title, year, season, episode, media_type, is_anime, release_group}` (the fields `parse_filename` produces). Wraps `identifier.parser.parse_filename`.
+- [ ] In `mt-discovery`, a `parse_filename(filename, folder) -> ParsedName` that spawns the script (reuse the mt-ml runner once it exists, or a local subprocess helper) and deserializes. Test with a `--echo`/fixture mode or `#[ignore]` integration test plus a unit test of the deserialization.
+- [ ] Commit: `feat(discovery): filename parse via python cli tool`.
 
 ### Task 3.3: TMDB lookup + identify orchestration
 **Reference:** `identifier/tmdb.py`, `identify.py`, `metadata.py`.
