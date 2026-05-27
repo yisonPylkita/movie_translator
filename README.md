@@ -4,6 +4,8 @@
 
 **AI subtitle translator** for English to Polish translation. Fetches existing Polish subtitles from the internet when available, falls back to AI translation, and handles timing alignment automatically. Runs entirely locally on your machine.
 
+> **⚙️ Rust rewrite (in progress on the `rust-rewrite` branch).** The orchestration layer — CLI, pipeline, subtitle parsing, fetching, alignment, validation, media/mux, filename discovery — has been rewritten in Rust as a Cargo workspace (`crates/mt-*`) for type safety and correctness. Machine-learning inference (translation, OCR, inpainting) and `guessit`/`aniparse` filename parsing stay in Python, invoked as single-purpose CLI scripts under `ml/`; Rust owns all orchestration and GPU-worker serialization. Build the Rust binary with `cargo build --release` (produces `target/release/movie-translator`); the Python environment (`uv sync`) is still required because the `ml/` scripts import the `movie_translator` package as the ML backend. Design + plan: `docs/superpowers/specs/2026-05-27-rust-rewrite-design.md`, `docs/superpowers/plans/2026-05-27-rust-rewrite.md`.
+
 ## What It Does
 
 Takes video files (MKV or MP4) and produces new video files with as many Polish subtitle tracks as possible. The pipeline is fully automated:
