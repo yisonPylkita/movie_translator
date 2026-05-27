@@ -21,6 +21,25 @@ use std::path::Path;
 
 use crate::validator::{build_activity_vector, extract_timestamps};
 
+/// Errors raised while applying timing offsets to a subtitle file.
+#[derive(Debug, thiserror::Error)]
+pub enum AlignError {
+    /// The subtitle file could not be loaded/parsed.
+    #[error("failed to load subtitle {path}: {source}")]
+    Load {
+        path: String,
+        #[source]
+        source: mt_subtitles::ParseError,
+    },
+    /// Writing the re-timed subtitle back to disk failed.
+    #[error("failed to write subtitle {path}: {source}")]
+    Write {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
 // ---------------------------------------------------------------------------
 // estimate_offset
 // ---------------------------------------------------------------------------
@@ -45,6 +64,9 @@ pub const MIN_OFFSET_MS: i64 = 150;
 /// A positive result means the candidate is early (shift it later).
 /// A negative result means the candidate is late (shift it earlier).
 ///
+/// `bin_size_ms` must be `> 0`; a zero bin size has no meaning and would cause
+/// a divide-by-zero, so it returns `None`.
+///
 /// Mirrors Python `estimate_offset(ref_timestamps, cand_timestamps, bin_size_ms, max_shift_ms, min_quality)`.
 pub fn estimate_offset(
     ref_timestamps: &[(i64, i64)],
@@ -53,6 +75,11 @@ pub fn estimate_offset(
     max_shift_ms: i64,
     min_quality: f64,
 ) -> Option<i64> {
+    // `bin_size_ms` must be > 0 (documented above); guard against a zero/negative
+    // value that would divide-by-zero below.
+    if bin_size_ms <= 0 {
+        return None;
+    }
     if ref_timestamps.is_empty() || cand_timestamps.is_empty() {
         return None;
     }
@@ -188,12 +215,18 @@ pub fn detect_op_gap_default(timestamps: &[(i64, i64)]) -> Option<(i64, i64)> {
 
 /// Shift all events in a subtitle file by the given offset (in place).
 ///
+/// Timestamps are clamped to `>= 0` after offsetting so a large negative
+/// offset can never produce negative timings (standard subtitle-tool behavior).
+///
 /// Mirrors Python `apply_offset(subtitle_path, offset_ms)`.
-pub fn apply_offset(path: &Path, offset_ms: i64) -> Result<(), String> {
-    let mut subs = mt_subtitles::load(path).map_err(|e| e.to_string())?;
+pub fn apply_offset(path: &Path, offset_ms: i64) -> Result<(), AlignError> {
+    let mut subs = mt_subtitles::load(path).map_err(|source| AlignError::Load {
+        path: path.display().to_string(),
+        source,
+    })?;
     for event in &mut subs.events {
-        event.start_ms += offset_ms;
-        event.end_ms += offset_ms;
+        event.start_ms = (event.start_ms + offset_ms).max(0);
+        event.end_ms = (event.end_ms + offset_ms).max(0);
     }
     save_subs(&subs, path)
 }
@@ -209,21 +242,25 @@ fn apply_piecewise_offsets(
     boundary_ms: i64,
     pre_offset_ms: i64,
     post_offset_ms: i64,
-) -> Result<(), String> {
-    let mut subs = mt_subtitles::load(path).map_err(|e| e.to_string())?;
+) -> Result<(), AlignError> {
+    let mut subs = mt_subtitles::load(path).map_err(|source| AlignError::Load {
+        path: path.display().to_string(),
+        source,
+    })?;
     for event in &mut subs.events {
-        if event.start_ms < boundary_ms {
-            event.start_ms += pre_offset_ms;
-            event.end_ms += pre_offset_ms;
+        let offset = if event.start_ms < boundary_ms {
+            pre_offset_ms
         } else {
-            event.start_ms += post_offset_ms;
-            event.end_ms += post_offset_ms;
-        }
+            post_offset_ms
+        };
+        // Clamp to >= 0 so negative offsets never produce negative timings.
+        event.start_ms = (event.start_ms + offset).max(0);
+        event.end_ms = (event.end_ms + offset).max(0);
     }
     save_subs(&subs, path)
 }
 
-fn save_subs(subs: &mt_subtitles::model::Subtitles, path: &Path) -> Result<(), String> {
+fn save_subs(subs: &mt_subtitles::model::Subtitles, path: &Path) -> Result<(), AlignError> {
     let content = match path
         .extension()
         .and_then(|e| e.to_str())
@@ -233,7 +270,10 @@ fn save_subs(subs: &mt_subtitles::model::Subtitles, path: &Path) -> Result<(), S
         Some("srt") => mt_subtitles::srt::to_srt_string(subs),
         _ => mt_subtitles::ass::to_ass_string(subs),
     };
-    std::fs::write(path, content).map_err(|e| format!("failed to write {}: {e}", path.display()))
+    std::fs::write(path, content).map_err(|source| AlignError::Write {
+        path: path.display().to_string(),
+        source,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -645,6 +685,29 @@ mod tests {
         let (timestamps, _) = extract_timestamps(&path);
         assert_eq!(timestamps[0], (3000, 5000));
         assert_eq!(timestamps[1], (8000, 10000));
+    }
+
+    #[test]
+    fn apply_offset_large_negative_clamps_to_zero() {
+        let tmp = TempDir::new().unwrap();
+        let path = write_file(
+            &tmp,
+            "test.srt",
+            &make_srt(&[(1000, 3000, "A"), (5000, 7000, "B")]),
+        );
+        // Offset more negative than any timestamp; results must clamp to >= 0.
+        apply_offset(&path, -1_000_000).unwrap();
+        let (timestamps, _) = extract_timestamps(&path);
+        for &(start, end) in &timestamps {
+            assert!(start >= 0, "start should be clamped: {start}");
+            assert!(end >= 0, "end should be clamped: {end}");
+        }
+    }
+
+    #[test]
+    fn estimate_offset_zero_bin_size_returns_none() {
+        let ts = to_timestamps(&[1000, 4000, 7000], 2000);
+        assert_eq!(estimate_offset(&ts, &ts, 0, 15_000, 0.4), None);
     }
 
     #[test]
