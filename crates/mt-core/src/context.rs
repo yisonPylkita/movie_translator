@@ -24,6 +24,9 @@ pub struct PipelineConfig {
     pub in_place: bool,
     pub workers: u32,
     pub external_subs_dir: Option<PathBuf>,
+    /// Keep per-file work/`.translate_temp` directories after a successful run
+    /// instead of deleting them. Failures always keep artifacts for debugging.
+    pub keep_artifacts: bool,
 }
 
 impl Default for PipelineConfig {
@@ -39,6 +42,7 @@ impl Default for PipelineConfig {
             in_place: false,
             workers: 4,
             external_subs_dir: None,
+            keep_artifacts: false,
         }
     }
 }
@@ -153,6 +157,7 @@ mod tests {
         assert!(!cfg.in_place);
         assert_eq!(cfg.workers, 4);
         assert!(cfg.external_subs_dir.is_none());
+        assert!(!cfg.keep_artifacts);
     }
 
     #[test]

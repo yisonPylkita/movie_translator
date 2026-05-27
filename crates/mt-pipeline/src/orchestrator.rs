@@ -302,8 +302,22 @@ async fn run_all_with_executor(
                 }
             };
 
-            let success =
-                process_file(video_path.clone(), work_dir, config, executor, vision_probe).await;
+            let keep_artifacts = config.keep_artifacts;
+            let success = process_file(
+                video_path.clone(),
+                work_dir.clone(),
+                config,
+                executor,
+                vision_probe,
+            )
+            .await;
+
+            // Match the Python behaviour: on success, unless --keep-artifacts,
+            // remove the file's work dir (and prune now-empty parents up to
+            // `.translate_temp`). Failures always keep artifacts for debugging.
+            if success && !keep_artifacts {
+                cleanup_work_dir(&work_dir, &root_dir);
+            }
 
             let status = if success {
                 FileStatus::Success
@@ -338,6 +352,52 @@ async fn run_all_with_executor(
         .into_iter()
         .map(|(_, path, status)| (path, status))
         .collect())
+}
+
+/// Remove a successful file's work dir and prune now-empty parent dirs up to
+/// (and including, if empty) the `.translate_temp` root under `root_dir`.
+///
+/// Port of `translate_cmd.run`'s post-success `shutil.rmtree(work_dir)` +
+/// empty-parent pruning. Best-effort: failures are logged at debug and ignored
+/// (they must never turn a successful translation into a reported failure).
+fn cleanup_work_dir(work_dir: &Path, root_dir: &Path) {
+    if !work_dir.exists() {
+        return;
+    }
+    if let Err(e) = std::fs::remove_dir_all(work_dir) {
+        tracing::debug!("Failed to clean up {}: {e}", work_dir.display());
+        return;
+    }
+
+    let temp_root = root_dir.join(".translate_temp");
+    // Walk up from the work dir's parent, removing each directory that is now
+    // empty, stopping at the temp root or the input root.
+    let mut parent = work_dir.parent().map(Path::to_path_buf);
+    while let Some(dir) = parent {
+        if dir == temp_root || dir == root_dir {
+            break;
+        }
+        match dir_is_empty(&dir) {
+            Some(true) => {
+                if std::fs::remove_dir(&dir).is_err() {
+                    break;
+                }
+                parent = dir.parent().map(Path::to_path_buf);
+            }
+            _ => break,
+        }
+    }
+    // Finally, remove the temp root itself if it is now empty.
+    if dir_is_empty(&temp_root) == Some(true) {
+        let _ = std::fs::remove_dir(&temp_root);
+    }
+}
+
+/// `Some(true)` if `dir` exists and has no entries, `Some(false)` if it has
+/// entries, `None` if it can't be read.
+fn dir_is_empty(dir: &Path) -> Option<bool> {
+    let mut entries = std::fs::read_dir(dir).ok()?;
+    Some(entries.next().is_none())
 }
 
 /// Process a single file synchronously (no tokio, no worker).
@@ -420,6 +480,51 @@ mod tests {
         assert_eq!(FileStatus::Success.as_str(), "success");
         assert_eq!(FileStatus::Failed.as_str(), "failed");
         assert_eq!(FileStatus::Skipped.as_str(), "skipped");
+    }
+
+    /// Fix #3: a successful run without --keep-artifacts removes the work dir
+    /// and prunes the now-empty `.translate_temp` tree up to the input root.
+    #[test]
+    fn cleanup_work_dir_removes_and_prunes() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // Mirror create_work_dir layout: root/.translate_temp/Show/ep01/
+        let work_dir = root.join(".translate_temp").join("Show").join("ep01");
+        std::fs::create_dir_all(work_dir.join("candidates")).unwrap();
+        std::fs::write(work_dir.join("artifact.srt"), b"x").unwrap();
+
+        cleanup_work_dir(&work_dir, root);
+
+        assert!(!work_dir.exists(), "work dir removed");
+        assert!(
+            !root.join(".translate_temp").join("Show").exists(),
+            "empty intermediate parent pruned"
+        );
+        assert!(
+            !root.join(".translate_temp").exists(),
+            "empty temp root pruned"
+        );
+        assert!(root.exists(), "input root never removed");
+    }
+
+    /// Pruning stops at a non-empty sibling: a second episode's work dir must
+    /// survive when the first is cleaned.
+    #[test]
+    fn cleanup_work_dir_keeps_nonempty_siblings() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let temp = root.join(".translate_temp").join("Show");
+        let ep01 = temp.join("ep01");
+        let ep02 = temp.join("ep02");
+        std::fs::create_dir_all(&ep01).unwrap();
+        std::fs::create_dir_all(&ep02).unwrap();
+        std::fs::write(ep02.join("keep.srt"), b"x").unwrap();
+
+        cleanup_work_dir(&ep01, root);
+
+        assert!(!ep01.exists(), "cleaned work dir removed");
+        assert!(ep02.exists(), "non-empty sibling survives");
+        assert!(temp.exists(), "shared parent survives (still has ep02)");
     }
 
     /// Fix #5 regression guard: when the Polish-subtitle probe cannot read a

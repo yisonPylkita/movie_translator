@@ -111,6 +111,7 @@ impl TranslateArgs {
             in_place: self.in_place,
             workers: self.workers,
             external_subs_dir: self.external_subs.as_ref().map(PathBuf::from),
+            keep_artifacts: self.keep_artifacts,
         }
     }
 }
@@ -363,6 +364,19 @@ mod tests {
         assert_eq!(cfg.model, "allegro");
         assert_eq!(cfg.extra_models, vec!["apple".to_string()]);
         assert_eq!(cfg.external_subs_dir, Some(PathBuf::from("/subs")));
+    }
+
+    #[test]
+    fn keep_artifacts_maps_into_config() {
+        let args = parse(&["movie.mkv", "--keep-artifacts"]);
+        assert!(args.keep_artifacts);
+        let cfg = args.to_config("allegro".into(), vec![]);
+        assert!(cfg.keep_artifacts);
+
+        // Default off -> cleanup happens.
+        let args = parse(&["movie.mkv"]);
+        let cfg = args.to_config("allegro".into(), vec![]);
+        assert!(!cfg.keep_artifacts);
     }
 
     #[test]
