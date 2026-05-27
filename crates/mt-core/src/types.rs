@@ -3,8 +3,12 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 /// Styles that indicate non-dialogue content (signs, songs, etc.).
-/// Covers common fansub naming: OP/ED/IN (insert song) layers with
-/// romaji (OPRO/INRO) and English (OPEN/INEN) suffixes.
+/// Covers common fansub naming: OP/ED/IN (insert song) layers. Because
+/// matching is token-based (split on `-`/`_`/space/digit), separated forms
+/// like `OP-RO` / `OP-EN` match via the `op` token, and `INRO` / `INEN`
+/// match as explicit keywords. Note: glued forms like `OPRO`/`OPEN` are NOT
+/// keywords and so are NOT matched (avoids matching a legit style named
+/// "Open").
 pub const NON_DIALOGUE_STYLES: &[&str] = &[
     "sign", "signs", "song", "songs", "title", "titles", "op", "ed", "insert", "inro", "inen",
 ];
