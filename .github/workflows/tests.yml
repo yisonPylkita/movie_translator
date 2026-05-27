@@ -20,10 +20,11 @@ jobs:
           lfs: true
           submodules: true
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      # Install the exact toolchain pinned in rust-toolchain.toml (single source
+      # of truth for local + CI). `rustup show` reads the file and installs the
+      # pinned channel together with its declared components (rustfmt, clippy).
+      - name: Install pinned Rust toolchain
+        run: rustup show
 
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2

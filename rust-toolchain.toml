@@ -1,0 +1,7 @@
+# Pins the exact Rust toolchain for this project. rustup reads this file
+# automatically for every cargo/rustc/clippy/rustfmt invocation (local and CI),
+# so the same compiler version is used everywhere. Bump deliberately.
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
