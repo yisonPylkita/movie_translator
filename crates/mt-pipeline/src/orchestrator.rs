@@ -112,7 +112,8 @@ async fn process_file_inner(
     // Stage 2 — Extract Reference (IO + deferred OCR).
     ctx = run_blocking(move || stages::extract_ref::run_with_probe(ctx, vision_probe)).await?;
     if ctx.pending_ocr.is_some() {
-        ctx = resolve_pending_ocr_blocking(ctx, executor.clone(), OcrStageLabel::ExtractRef).await?;
+        ctx =
+            resolve_pending_ocr_blocking(ctx, executor.clone(), OcrStageLabel::ExtractRef).await?;
     }
 
     // Stage 3 — Fetch (IO).
@@ -148,7 +149,9 @@ async fn process_file_inner(
     let exec = executor.clone();
     ctx = run_blocking(move || stages::translate::run(ctx, &exec, None)).await?;
     if ctx.translated_lines.as_ref().is_none_or(|l| l.is_empty()) {
-        return Err(PipelineError::Stage("Translation failed -- empty result".into()));
+        return Err(PipelineError::Stage(
+            "Translation failed -- empty result".into(),
+        ));
     }
 
     // Stage 6 — Create Tracks (IO).
@@ -210,8 +213,15 @@ pub async fn run_all_with(
     };
 
     let worker = GpuWorker::spawn();
-    let result =
-        run_all_with_executor(video_files, root_dir, config, vision_probe, &worker, workers).await;
+    let result = run_all_with_executor(
+        video_files,
+        root_dir,
+        config,
+        vision_probe,
+        &worker,
+        workers,
+    )
+    .await;
     worker.shutdown().await;
     result
 }
@@ -258,19 +268,16 @@ async fn run_all_with_executor(
             let work_dir = match create_work_dir(&video_path, &root_dir) {
                 Ok(wd) => wd,
                 Err(e) => {
-                    tracing::error!("Failed to create work dir for {}: {e}", video_path.display());
+                    tracing::error!(
+                        "Failed to create work dir for {}: {e}",
+                        video_path.display()
+                    );
                     return (idx, video_path, FileStatus::Failed);
                 }
             };
 
-            let success = process_file(
-                video_path.clone(),
-                work_dir,
-                config,
-                executor,
-                vision_probe,
-            )
-            .await;
+            let success =
+                process_file(video_path.clone(), work_dir, config, executor, vision_probe).await;
 
             let status = if success {
                 FileStatus::Success
@@ -409,9 +416,14 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn run_all_empty_input() {
         let dir = tempfile::tempdir().unwrap();
-        let results = run_all_with(vec![], dir.path().to_path_buf(), PipelineConfig::default(), probe_off)
-            .await
-            .unwrap();
+        let results = run_all_with(
+            vec![],
+            dir.path().to_path_buf(),
+            PipelineConfig::default(),
+            probe_off,
+        )
+        .await
+        .unwrap();
         assert!(results.is_empty());
     }
 

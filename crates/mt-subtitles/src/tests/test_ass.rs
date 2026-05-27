@@ -45,8 +45,8 @@ fn corpus_round_trip_all_11_files() {
 
     for filename in CORPUS_FILES {
         let path = corpus_path(filename);
-        let content =
-            std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("cannot read {}", path.display()));
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("cannot read {}", path.display()));
 
         let subs = load_ass(&content).unwrap_or_else(|e| panic!("parse error for {filename}: {e}"));
 
@@ -103,7 +103,9 @@ fn corpus_round_trip_all_11_files() {
             if ev.text != gt_text {
                 let got: String = ev.text.chars().take(60).collect();
                 let exp: String = gt_text.chars().take(60).collect();
-                failures.push(format!("{filename}[{i}].text: got {got:?} expected {exp:?}"));
+                failures.push(format!(
+                    "{filename}[{i}].text: got {got:?} expected {exp:?}"
+                ));
             }
             if ev.kind.as_str() != gt_type {
                 failures.push(format!(

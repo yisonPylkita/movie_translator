@@ -28,12 +28,7 @@ pub trait GpuExecutor {
     fn translate(&self, req: &TranslateRequest) -> Result<Vec<DialogueLine>>;
 
     /// OCR a PGS bitmap subtitle track (mirrors [`mt_ml::ocr_pgs`]).
-    fn ocr_pgs(
-        &self,
-        video: &Path,
-        track_index: u32,
-        work_dir: &Path,
-    ) -> Result<Option<PathBuf>>;
+    fn ocr_pgs(&self, video: &Path, track_index: u32, work_dir: &Path) -> Result<Option<PathBuf>>;
 
     /// OCR burned-in subtitles (mirrors [`mt_ml::ocr_burned_in`]).
     fn ocr_burned_in(
@@ -70,12 +65,7 @@ impl GpuExecutor for DirectGpuExecutor {
         mt_ml::translate(req).map_err(PipelineError::from)
     }
 
-    fn ocr_pgs(
-        &self,
-        video: &Path,
-        track_index: u32,
-        work_dir: &Path,
-    ) -> Result<Option<PathBuf>> {
+    fn ocr_pgs(&self, video: &Path, track_index: u32, work_dir: &Path) -> Result<Option<PathBuf>> {
         mt_ml::ocr_pgs(video, track_index, work_dir).map_err(PipelineError::from)
     }
 
@@ -228,13 +218,7 @@ mod tests {
             self.calls.borrow_mut().push("ocr_pgs".into());
             Ok(self.pgs_result.clone())
         }
-        fn ocr_burned_in(
-            &self,
-            _v: &Path,
-            _o: &Path,
-            _c: f64,
-            _f: u32,
-        ) -> Result<BurnedInResult> {
+        fn ocr_burned_in(&self, _v: &Path, _o: &Path, _c: f64, _f: u32) -> Result<BurnedInResult> {
             self.calls.borrow_mut().push("ocr_burned_in".into());
             self.burned_in
                 .clone()
@@ -287,7 +271,10 @@ mod tests {
             output_dir: PathBuf::from("/tmp/ref"),
         });
         resolve_pending_ocr(&mut ctx, &gpu, OcrStageLabel::ExtractRef).unwrap();
-        assert_eq!(ctx.reference_path.as_deref(), Some(Path::new("/tmp/ref.srt")));
+        assert_eq!(
+            ctx.reference_path.as_deref(),
+            Some(Path::new("/tmp/ref.srt"))
+        );
         assert!(ctx.pending_ocr.is_none());
     }
 
@@ -328,7 +315,10 @@ mod tests {
             output_dir: PathBuf::from("/tmp/wd"),
         });
         resolve_pending_ocr(&mut ctx, &gpu, OcrStageLabel::ExtractRef).unwrap();
-        assert_eq!(ctx.reference_path.as_deref(), Some(Path::new("/tmp/burn.srt")));
+        assert_eq!(
+            ctx.reference_path.as_deref(),
+            Some(Path::new("/tmp/burn.srt"))
+        );
         assert_eq!(ctx.ocr_results.as_ref().unwrap().len(), 1);
         assert!(ctx.burned_in_probed);
     }

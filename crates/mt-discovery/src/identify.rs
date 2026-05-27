@@ -36,10 +36,7 @@ pub(crate) fn assemble_identity(
         .to_string();
 
     // parsed_title is the clean filename-derived title (better for text search)
-    let parsed_title = parsed
-        .title
-        .clone()
-        .unwrap_or_else(|| raw_filename.clone());
+    let parsed_title = parsed.title.clone().unwrap_or_else(|| raw_filename.clone());
 
     // container metadata overrides when available
     let title = container
@@ -121,10 +118,7 @@ pub fn identify_media(video_path: &Path) -> Result<MediaIdentity> {
 
     // Signal 4: TMDB enrichment (optional, requires TMDB_API_KEY)
     // TODO: metrics span 'lookup_tmdb'
-    let parsed_title = parsed
-        .title
-        .clone()
-        .unwrap_or_else(|| filename.to_string());
+    let parsed_title = parsed.title.clone().unwrap_or_else(|| filename.to_string());
     let tmdb_result = lookup_tmdb(&parsed_title, parsed.year, &parsed.media_type);
 
     Ok(assemble_identity(
@@ -231,14 +225,7 @@ mod tests {
             is_anime: false,
             release_group: None,
         };
-        let id = assemble_identity(
-            video,
-            &parsed,
-            &no_container(),
-            "".to_string(),
-            0,
-            None,
-        );
+        let id = assemble_identity(video, &parsed, &no_container(), "".to_string(), 0, None);
         assert_eq!(id.title, "unknown_video.mkv");
         assert_eq!(id.parsed_title, "unknown_video.mkv");
     }
@@ -279,14 +266,7 @@ mod tests {
             title: None,
             episode: Some("999".to_string()),
         };
-        let id = assemble_identity(
-            video,
-            &anime_parsed(),
-            &container,
-            "".to_string(),
-            0,
-            None,
-        );
+        let id = assemble_identity(video, &anime_parsed(), &container, "".to_string(), 0, None);
         // parsed episode (1000) wins because episode was already Some
         assert_eq!(id.episode, Some(1000));
     }

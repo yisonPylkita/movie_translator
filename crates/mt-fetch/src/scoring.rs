@@ -67,10 +67,7 @@ mod tests {
 
     #[test]
     fn partial_overlap_between_zero_and_one() {
-        let s = compute_release_score(
-            "Breaking.Bad.S01E03.720p",
-            "Breaking.Bad.S01E03.1080p",
-        );
+        let s = compute_release_score("Breaking.Bad.S01E03.720p", "Breaking.Bad.S01E03.1080p");
         assert!(s > 0.0 && s < 1.0);
     }
 

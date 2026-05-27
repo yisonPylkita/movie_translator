@@ -5,7 +5,10 @@ fn tempfile_path() -> std::path::PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = std::env::temp_dir().join(format!("mt_enc_test_{id}_{:?}", std::thread::current().id()));
+    let p = std::env::temp_dir().join(format!(
+        "mt_enc_test_{id}_{:?}",
+        std::thread::current().id()
+    ));
     std::fs::create_dir_all(&p).unwrap();
     p
 }

@@ -104,7 +104,10 @@ pub fn load_ass(input: &str) -> Result<Subtitles, String> {
             Section::Styles => {
                 if let Some(fields_str) = trimmed.strip_prefix("Format:") {
                     let fields_str = fields_str.trim_start();
-                    styles_format = fields_str.split(',').map(|s| s.trim().to_string()).collect();
+                    styles_format = fields_str
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
                 } else if let Some(raw) = trimmed.strip_prefix("Style:") {
                     let raw = raw.trim_start().to_string();
                     let name = raw.split(',').next().unwrap_or("").to_string();
@@ -115,7 +118,10 @@ pub fn load_ass(input: &str) -> Result<Subtitles, String> {
             Section::Events => {
                 if let Some(fields_str) = trimmed.strip_prefix("Format:") {
                     let fields_str = fields_str.trim_start();
-                    events_format = fields_str.split(',').map(|s| s.trim().to_string()).collect();
+                    events_format = fields_str
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .collect();
                 } else if trimmed.starts_with("Dialogue:") || trimmed.starts_with("Comment:") {
                     if events_format.is_empty() {
                         return Err("encountered Dialogue/Comment before Format line".to_string());
@@ -168,7 +174,10 @@ fn parse_event(line: &str, field_order: &[String]) -> Result<Event, String> {
     let n = field_order.len();
     let fields: Vec<&str> = rest.splitn(n, ',').collect();
     if fields.len() < n {
-        return Err(format!("expected {n} fields, got {} in: {line}", fields.len()));
+        return Err(format!(
+            "expected {n} fields, got {} in: {line}",
+            fields.len()
+        ));
     }
 
     // Build map from field name to raw value

@@ -141,11 +141,7 @@ mod tests {
     }
 
     fn write_srt(path: &std::path::Path) {
-        std::fs::write(
-            path,
-            "1\n00:00:01,000 --> 00:00:02,000\nHello there\n",
-        )
-        .unwrap();
+        std::fs::write(path, "1\n00:00:01,000 --> 00:00:02,000\nHello there\n").unwrap();
     }
 
     #[test]

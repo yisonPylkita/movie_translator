@@ -54,10 +54,7 @@ pub fn parse_results(
             None => continue,
         };
 
-        let os_lang = attrs
-            .get("language")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let os_lang = attrs.get("language").and_then(|v| v.as_str()).unwrap_or("");
         let lang_3 = lang_from_os(os_lang);
 
         if !languages.contains(&lang_3) {
@@ -88,10 +85,7 @@ pub fn parse_results(
         let score = if is_hash {
             1.0
         } else {
-            let release = attrs
-                .get("release")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let release = attrs.get("release").and_then(|v| v.as_str()).unwrap_or("");
             let base_score = 0.6;
             let release_bonus = compute_release_score(raw_filename, release) * 0.3;
             base_score + release_bonus
@@ -212,9 +206,7 @@ impl OpenSubtitlesProvider {
             req = req.json(b);
         }
 
-        let resp = req
-            .send()
-            .map_err(|e| FetchError::Network(e.to_string()))?;
+        let resp = req.send().map_err(|e| FetchError::Network(e.to_string()))?;
 
         let status = resp.status().as_u16();
 
@@ -262,9 +254,7 @@ impl OpenSubtitlesProvider {
             });
         }
 
-        let json: serde_json::Value = resp
-            .json()
-            .map_err(|e| FetchError::Parse(e.to_string()))?;
+        let json: serde_json::Value = resp.json().map_err(|e| FetchError::Parse(e.to_string()))?;
         Ok(json)
     }
 
@@ -374,20 +364,21 @@ impl super::SubtitleProvider for OpenSubtitlesProvider {
             Err(e) => tracing::debug!("OpenSubtitles query search failed: {e}"),
         }
 
-        matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        matches.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         Ok(matches)
     }
 
-    fn download(
-        &self,
-        match_: &SubtitleMatch,
-        output_path: &Path,
-    ) -> Result<(), FetchError> {
+    fn download(&self, match_: &SubtitleMatch, output_path: &Path) -> Result<(), FetchError> {
         self.ensure_logged_in()?;
 
-        let file_id: i64 = match_.subtitle_id.parse().map_err(|_| {
-            FetchError::Parse(format!("invalid file_id: {}", match_.subtitle_id))
-        })?;
+        let file_id: i64 = match_
+            .subtitle_id
+            .parse()
+            .map_err(|_| FetchError::Parse(format!("invalid file_id: {}", match_.subtitle_id)))?;
         let body = serde_json::json!({ "file_id": file_id });
         let data = self.api_request("POST", "/download", None, Some(&body))?;
 
@@ -631,11 +622,7 @@ mod tests {
                 }
             }]
         });
-        let m1 = parse_results(
-            &api_response_matching,
-            &["eng"],
-            "Breaking.Bad.S01E03.mkv",
-        );
+        let m1 = parse_results(&api_response_matching, &["eng"], "Breaking.Bad.S01E03.mkv");
         let m2 = parse_results(
             &api_response_nonmatching,
             &["eng"],

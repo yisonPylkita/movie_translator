@@ -85,7 +85,9 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
     let primary_model = ctx.config.model.clone();
     let mut polish_files: Vec<(String, PathBuf)> = Vec::new();
 
-    let primary_ass = ctx.work_dir.join(format!("{stem}_polish_{primary_model}.ass"));
+    let primary_ass = ctx
+        .work_dir
+        .join(format!("{stem}_polish_{primary_model}.ass"));
     SubtitleProcessor::create_polish_subtitles(
         &english_source,
         &translated_lines,
@@ -98,7 +100,9 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
     // stable, so drive from config.extra_models which preserves order).
     for extra_model in &ctx.config.extra_models {
         if let Some(extra_lines) = ctx.extra_translations.get(extra_model) {
-            let extra_ass = ctx.work_dir.join(format!("{stem}_polish_{extra_model}.ass"));
+            let extra_ass = ctx
+                .work_dir
+                .join(format!("{stem}_polish_{extra_model}.ass"));
             SubtitleProcessor::create_polish_subtitles(
                 &english_source,
                 extra_lines,
@@ -114,7 +118,9 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
         if ctx.config.extra_models.contains(extra_model) {
             continue;
         }
-        let extra_ass = ctx.work_dir.join(format!("{stem}_polish_{extra_model}.ass"));
+        let extra_ass = ctx
+            .work_dir
+            .join(format!("{stem}_polish_{extra_model}.ass"));
         SubtitleProcessor::create_polish_subtitles(
             &english_source,
             extra_lines,

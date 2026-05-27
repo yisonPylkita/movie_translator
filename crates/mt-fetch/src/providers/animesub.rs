@@ -99,7 +99,12 @@ pub fn parse_search_html(html: &str) -> Vec<AnimeSubEntry> {
         };
         let format = format.unwrap_or_default();
 
-        entries.push(AnimeSubEntry { id, sh, title, format });
+        entries.push(AnimeSubEntry {
+            id,
+            sh,
+            title,
+            format,
+        });
     }
 
     entries
@@ -116,7 +121,10 @@ pub fn parse_search_html(html: &str) -> Vec<AnimeSubEntry> {
 /// - `"Title OVA ep01"` → `None` (special)
 pub fn extract_season_from_title(base_title: &str, entry_title: &str) -> Option<i32> {
     // Strip base_title prefix (case-insensitive) to get the suffix
-    let suffix = if entry_title.to_lowercase().starts_with(&base_title.to_lowercase()) {
+    let suffix = if entry_title
+        .to_lowercase()
+        .starts_with(&base_title.to_lowercase())
+    {
         entry_title[base_title.len()..].trim().to_string()
     } else {
         entry_title.to_string()
@@ -201,9 +209,7 @@ pub fn entry_matches(title: &str, base_title: &str, season: Option<i32>, episode
 /// Build the search URL for an AnimeSub title query.
 pub fn build_search_url(title: &str, title_type: &str, page: usize) -> String {
     let encoded = urlencoding::encode(title);
-    format!(
-        "{BASE_URL}/szukaj.php?szukane={encoded}&pTitle={title_type}&od={page}"
-    )
+    format!("{BASE_URL}/szukaj.php?szukane={encoded}&pTitle={title_type}&od={page}")
 }
 
 /// Build the form-encoded body for a subtitle download POST.
@@ -323,11 +329,7 @@ impl super::SubtitleProvider for AnimeSubProvider {
         Ok(matches)
     }
 
-    fn download(
-        &self,
-        match_: &SubtitleMatch,
-        output_path: &Path,
-    ) -> Result<(), FetchError> {
+    fn download(&self, match_: &SubtitleMatch, output_path: &Path) -> Result<(), FetchError> {
         let (sub_id, sh) = match_
             .subtitle_id
             .split_once(':')
@@ -382,8 +384,7 @@ impl super::SubtitleProvider for AnimeSubProvider {
             .map_err(|e| FetchError::Parse(format!("cannot read zip entry: {e}")))?;
 
         let mut content = Vec::new();
-        file.read_to_end(&mut content)
-            .map_err(FetchError::Io)?;
+        file.read_to_end(&mut content).map_err(FetchError::Io)?;
 
         std::fs::write(output_path, &content).map_err(FetchError::Io)?;
         tracing::info!(
@@ -631,7 +632,12 @@ mod tests {
 
     #[test]
     fn episode_range_rejects_outside() {
-        assert!(!entry_matches(&format!("{BASE} ep01-10"), BASE, Some(1), 11));
+        assert!(!entry_matches(
+            &format!("{BASE} ep01-10"),
+            BASE,
+            Some(1),
+            11
+        ));
     }
 
     #[test]
@@ -794,11 +800,8 @@ mod tests {
         let mut buf = Vec::new();
         {
             let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-            zip.start_file(
-                "Naruto_01.ass",
-                zip::write::SimpleFileOptions::default(),
-            )
-            .unwrap();
+            zip.start_file("Naruto_01.ass", zip::write::SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(b"[Script Info]\nTitle: Naruto").unwrap();
             zip.finish().unwrap();
         }

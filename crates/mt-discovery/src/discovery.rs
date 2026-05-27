@@ -66,25 +66,22 @@ fn collect_videos(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
 
     for entry in entries {
         // Skip hidden directories/files at any level
-        let component_name = entry
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
+        let component_name = entry.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if component_name.starts_with('.') {
             continue;
         }
 
         if entry.is_dir() {
             collect_videos(root, &entry, out);
-        } else if entry.is_file()
-            && has_video_extension(&entry)
-            && !is_in_place_temp(&entry)
-        {
+        } else if entry.is_file() && has_video_extension(&entry) && !is_in_place_temp(&entry) {
             // Verify no hidden component in relative path
             if let Ok(rel) = entry.strip_prefix(root) {
-                let has_hidden = rel
-                    .components()
-                    .any(|c| c.as_os_str().to_str().map(|s| s.starts_with('.')).unwrap_or(false));
+                let has_hidden = rel.components().any(|c| {
+                    c.as_os_str()
+                        .to_str()
+                        .map(|s| s.starts_with('.'))
+                        .unwrap_or(false)
+                });
                 if !has_hidden {
                     out.push(entry);
                 }
@@ -105,9 +102,7 @@ pub fn create_work_dir(video_path: &Path, root_input: &Path) -> Result<PathBuf> 
         .and_then(|p| p.strip_prefix(root_input).ok())
         .unwrap_or(Path::new(""));
 
-    let stem = video_path
-        .file_stem()
-        .unwrap_or_default();
+    let stem = video_path.file_stem().unwrap_or_default();
 
     let temp_root = root_input.join(".translate_temp");
     let work_dir = temp_root.join(relative).join(stem);
@@ -228,11 +223,7 @@ mod tests {
         touch(&video);
 
         let work_dir = create_work_dir(&video, dir.path()).unwrap();
-        let expected = dir
-            .path()
-            .join(".translate_temp")
-            .join("Show")
-            .join("ep01");
+        let expected = dir.path().join(".translate_temp").join("Show").join("ep01");
         assert_eq!(work_dir, expected);
         assert!(work_dir.join("candidates").exists());
         assert!(work_dir.join("reference").exists());

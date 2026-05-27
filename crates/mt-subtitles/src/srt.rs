@@ -103,8 +103,14 @@ fn parse_srt_time(s: &str) -> Result<i64, String> {
         return Err(format!("expected HH:MM:SS, got: {hms}"));
     }
     let h: i64 = parts[0].trim().parse().map_err(|e| format!("hours: {e}"))?;
-    let m: i64 = parts[1].trim().parse().map_err(|e| format!("minutes: {e}"))?;
-    let sec: i64 = parts[2].trim().parse().map_err(|e| format!("seconds: {e}"))?;
+    let m: i64 = parts[1]
+        .trim()
+        .parse()
+        .map_err(|e| format!("minutes: {e}"))?;
+    let sec: i64 = parts[2]
+        .trim()
+        .parse()
+        .map_err(|e| format!("seconds: {e}"))?;
 
     Ok(h * 3_600_000 + m * 60_000 + sec * 1_000 + ms)
 }

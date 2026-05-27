@@ -111,6 +111,9 @@ mod tests {
         .expect("self-test inpaint");
 
         assert_eq!(result, output);
-        assert_eq!(std::fs::read(&output).expect("read output"), b"dummy video bytes");
+        assert_eq!(
+            std::fs::read(&output).expect("read output"),
+            b"dummy video bytes"
+        );
     }
 }

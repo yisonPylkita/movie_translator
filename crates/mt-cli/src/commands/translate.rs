@@ -120,9 +120,18 @@ impl TranslateArgs {
 /// Port of `_show_summary`. Returns the summary string (so it is testable) and
 /// whether the dry-run note should be appended.
 pub fn format_summary(results: &[(PathBuf, FileStatus)], dry_run: bool) -> String {
-    let successful = results.iter().filter(|(_, s)| *s == FileStatus::Success).count();
-    let failed = results.iter().filter(|(_, s)| *s == FileStatus::Failed).count();
-    let skipped = results.iter().filter(|(_, s)| *s == FileStatus::Skipped).count();
+    let successful = results
+        .iter()
+        .filter(|(_, s)| *s == FileStatus::Success)
+        .count();
+    let failed = results
+        .iter()
+        .filter(|(_, s)| *s == FileStatus::Failed)
+        .count();
+    let skipped = results
+        .iter()
+        .filter(|(_, s)| *s == FileStatus::Skipped)
+        .count();
 
     let mut parts = Vec::new();
     if successful > 0 {
@@ -158,7 +167,10 @@ pub fn cleanup_in_place_orphans(video_files: &[PathBuf]) -> usize {
                     removed += 1;
                     tracing::warn!(
                         "Removed orphan temp: {}",
-                        orphan.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+                        orphan
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default()
                     );
                 }
                 Err(e) => tracing::warn!("Could not remove orphan {}: {e}", orphan.display()),
@@ -240,7 +252,12 @@ pub async fn run(args: TranslateArgs) -> i32 {
     };
 
     for (vp, status) in &results {
-        progress.finish_file(&vp.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), status.as_str());
+        progress.finish_file(
+            &vp.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            status.as_str(),
+        );
     }
     progress.finish();
 

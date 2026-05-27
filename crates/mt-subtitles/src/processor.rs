@@ -224,7 +224,9 @@ impl SubtitleProcessor {
             .iter()
             .filter(|e| {
                 let style_lower = e.style.to_lowercase();
-                !NON_DIALOGUE_STYLES.iter().any(|kw| style_lower.contains(kw))
+                !NON_DIALOGUE_STYLES
+                    .iter()
+                    .any(|kw| style_lower.contains(kw))
             })
             .copied()
             .collect();
@@ -325,7 +327,10 @@ impl SubtitleProcessor {
             }
 
             let style_lower = event.style.to_lowercase();
-            if NON_DIALOGUE_STYLES.iter().any(|kw| style_lower.contains(kw)) {
+            if NON_DIALOGUE_STYLES
+                .iter()
+                .any(|kw| style_lower.contains(kw))
+            {
                 continue;
             }
 
@@ -362,10 +367,12 @@ fn load_file(path: &Path) -> std::result::Result<Subtitles, SubtitleProcessingEr
         .map(|e| e.to_ascii_lowercase())
         .as_deref()
     {
-        Some("ass") | Some("ssa") => load_ass(&content)
-            .map_err(|e| SubtitleProcessingError::new(format!("Failed to parse subtitle file: {e}"))),
-        Some("srt") => load_srt(&content)
-            .map_err(|e| SubtitleProcessingError::new(format!("Failed to parse subtitle file: {e}"))),
+        Some("ass") | Some("ssa") => load_ass(&content).map_err(|e| {
+            SubtitleProcessingError::new(format!("Failed to parse subtitle file: {e}"))
+        }),
+        Some("srt") => load_srt(&content).map_err(|e| {
+            SubtitleProcessingError::new(format!("Failed to parse subtitle file: {e}"))
+        }),
         other => Err(SubtitleProcessingError::new(format!(
             "unsupported extension: {other:?}"
         ))),

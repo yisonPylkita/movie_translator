@@ -139,11 +139,7 @@ pub fn compute_similarity(
 /// fraction of candidate lines that matched.
 ///
 /// Mirrors Python `compute_line_match_score(ref_starts, cand_starts, tolerance_ms)`.
-pub fn compute_line_match_score(
-    ref_starts: &[i64],
-    cand_starts: &[i64],
-    tolerance_ms: i64,
-) -> f64 {
+pub fn compute_line_match_score(ref_starts: &[i64], cand_starts: &[i64], tolerance_ms: i64) -> f64 {
     if ref_starts.is_empty() || cand_starts.is_empty() {
         return 0.0;
     }
@@ -245,9 +241,7 @@ pub fn compute_density_correlation(
         let (r_slice, c_slice) = if shift_abs >= 0 {
             let s = shift_abs as usize;
             let r = ref_padded.slice(ndarray::s![s..]).to_owned();
-            let c = cand_padded
-                .slice(ndarray::s![..max_len - s])
-                .to_owned();
+            let c = cand_padded.slice(ndarray::s![..max_len - s]).to_owned();
             (r, c)
         } else {
             let s = (-shift_abs) as usize;
@@ -270,13 +264,12 @@ pub fn compute_density_correlation(
         }
 
         let len = r_slice.len() as f64;
-        let corr: f64 =
-            r_slice
-                .iter()
-                .zip(c_slice.iter())
-                .map(|(&ri, &ci)| (ri - r_mean) * (ci - c_mean))
-                .sum::<f64>()
-                / (len * r_std_s * c_std_s);
+        let corr: f64 = r_slice
+            .iter()
+            .zip(c_slice.iter())
+            .map(|(&ri, &ci)| (ri - r_mean) * (ci - c_mean))
+            .sum::<f64>()
+            / (len * r_std_s * c_std_s);
 
         if corr > best {
             best = corr;
@@ -630,10 +623,7 @@ mod tests {
         let ref_ = Array1::from(ref_vals);
         let cand = Array1::from(cand_vals);
         let score = compute_similarity(&ref_, &cand, 15);
-        assert!(
-            (0.0..=1.0).contains(&score),
-            "expected 0..=1 got {score}"
-        );
+        assert!((0.0..=1.0).contains(&score), "expected 0..=1 got {score}");
     }
 
     #[test]
@@ -657,7 +647,10 @@ mod tests {
         let ref_ = Array1::from(vec![1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         let cand = Array1::from(vec![1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
         let score = compute_similarity(&ref_, &cand, 0);
-        assert!(score > 0.0 && score < 1.0, "expected 0 < score < 1 got {score}");
+        assert!(
+            score > 0.0 && score < 1.0,
+            "expected 0 < score < 1 got {score}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -736,7 +729,8 @@ Dialogue: 0,0:00:15.00,0:00:17.00,Song-Lyrics,,0,0,0,,La la la
 
     #[test]
     fn srt_with_empty_text_lines_skipped() {
-        let content = "1\n00:00:01,000 --> 00:00:03,000\nHello\n\n2\n00:00:05,000 --> 00:00:07,000\n\n";
+        let content =
+            "1\n00:00:01,000 --> 00:00:03,000\nHello\n\n2\n00:00:05,000 --> 00:00:07,000\n\n";
         let tmp = TempDir::new().unwrap();
         let path = write_file(&tmp, "sparse.srt", content);
         let (timestamps, duration) = extract_timestamps(&path);
@@ -747,7 +741,8 @@ Dialogue: 0,0:00:15.00,0:00:17.00,Song-Lyrics,,0,0,0,,La la la
 
     #[test]
     fn duration_is_max_end_time() {
-        let content = "1\n00:00:01,000 --> 00:00:03,000\nFirst\n\n2\n00:00:20,000 --> 00:00:25,000\nLast\n";
+        let content =
+            "1\n00:00:01,000 --> 00:00:03,000\nFirst\n\n2\n00:00:20,000 --> 00:00:25,000\nLast\n";
         let tmp = TempDir::new().unwrap();
         let path = write_file(&tmp, "duration.srt", content);
         let (_, duration) = extract_timestamps(&path);

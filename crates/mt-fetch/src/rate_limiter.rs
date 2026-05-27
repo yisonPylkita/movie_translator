@@ -207,7 +207,7 @@ mod tests {
     fn second_call_delayed_by_min_interval() {
         let limiter = fake_limiter(0.3, 100.0);
         limiter.wait(); // first call — no sleep
-        // No real time passes (fake clock only moves via sleep)
+                        // No real time passes (fake clock only moves via sleep)
         limiter.wait(); // second call — should sleep 0.3s
         assert!((limiter.clock.total_slept() - 0.3).abs() < 1e-9);
     }
@@ -284,7 +284,10 @@ mod tests {
     fn update_from_headers_bad_value_is_noop() {
         let limiter = fake_limiter(0.0, 100.0);
         let mut headers = HashMap::new();
-        headers.insert("X-RateLimit-Remaining".to_string(), "not-a-number".to_string());
+        headers.insert(
+            "X-RateLimit-Remaining".to_string(),
+            "not-a-number".to_string(),
+        );
         headers.insert("X-RateLimit-Reset".to_string(), "60".to_string());
         limiter.update_from_headers(&headers);
         limiter.wait();

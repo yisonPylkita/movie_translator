@@ -47,10 +47,7 @@ pub(crate) fn parse_ffprobe_output(json: &str) -> ContainerMetadata {
     let tags = &probe.format.tags;
 
     // Common tag names across containers (match Python exactly)
-    let title = tags
-        .get("title")
-        .or_else(|| tags.get("TITLE"))
-        .cloned();
+    let title = tags.get("title").or_else(|| tags.get("TITLE")).cloned();
 
     let episode = tags
         .get("episode_id")

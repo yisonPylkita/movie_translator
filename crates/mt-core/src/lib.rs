@@ -11,8 +11,8 @@ pub use context::{
 };
 pub use error::{MtError, Result};
 pub use identity::MediaIdentity;
+pub use types::replace_polish_chars;
 pub use types::{
     BoundingBox, BurnedInResult, DialogueLine, OCRResult, SubtitleFile, NON_DIALOGUE_STYLES,
     POLISH_CHARS,
 };
-pub use types::replace_polish_chars;

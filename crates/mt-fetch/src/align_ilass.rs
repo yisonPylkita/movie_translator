@@ -22,8 +22,8 @@ pub fn ilass_binary_path() -> PathBuf {
     // Resolve from this source file: src/align_ilass.rs → crates/mt-fetch → project root
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
-        .join("..")     // crates/
-        .join("..")     // project root
+        .join("..") // crates/
+        .join("..") // project root
         .join("vendor")
         .join("ilass")
         .join("target")
@@ -81,11 +81,7 @@ pub fn build_ilass_argv(
 /// aligner in `align.rs`.
 ///
 /// Mirrors Python `align_to_reference(subtitle_path, reference_path, split_penalty) -> bool`.
-pub fn align_to_reference(
-    subtitle_path: &Path,
-    reference_path: &Path,
-    split_penalty: f64,
-) -> bool {
+pub fn align_to_reference(subtitle_path: &Path, reference_path: &Path, split_penalty: f64) -> bool {
     if !is_available() {
         tracing::warn!(
             "ilass binary not found at {}, falling back to cross-correlation",
@@ -131,11 +127,7 @@ pub fn align_to_reference(
 
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
-        tracing::warn!(
-            "ilass failed (exit {:?}): {}",
-            result.status.code(),
-            stderr
-        );
+        tracing::warn!("ilass failed (exit {:?}): {}", result.status.code(), stderr);
         let _ = std::fs::remove_file(&output_path);
         return false;
     }
@@ -181,8 +173,8 @@ mod tests {
 
         assert_eq!(argv.len(), 7);
         assert_eq!(argv[0], "/path/to/ilass");
-        assert_eq!(argv[1], "/subs/ref.srt");      // reference_path first
-        assert_eq!(argv[2], "/subs/cand.srt");     // subtitle_path second
+        assert_eq!(argv[1], "/subs/ref.srt"); // reference_path first
+        assert_eq!(argv[2], "/subs/cand.srt"); // subtitle_path second
         assert_eq!(argv[3], "/subs/cand.ilass_tmp.srt"); // output_path third
         assert_eq!(argv[4], "--split-penalty");
         assert_eq!(argv[5], "7");
@@ -280,8 +272,10 @@ mod tests {
 
         let tmp = TempDir::new().unwrap();
 
-        let ref_content = "1\n00:00:01,000 --> 00:00:03,000\nHello\n\n2\n00:00:05,000 --> 00:00:07,000\nWorld\n";
-        let cand_content = "1\n00:00:03,000 --> 00:00:05,000\nHello\n\n2\n00:00:07,000 --> 00:00:09,000\nWorld\n";
+        let ref_content =
+            "1\n00:00:01,000 --> 00:00:03,000\nHello\n\n2\n00:00:05,000 --> 00:00:07,000\nWorld\n";
+        let cand_content =
+            "1\n00:00:03,000 --> 00:00:05,000\nHello\n\n2\n00:00:07,000 --> 00:00:09,000\nWorld\n";
 
         let ref_path = tmp.path().join("ref.srt");
         let cand_path = tmp.path().join("cand.srt");

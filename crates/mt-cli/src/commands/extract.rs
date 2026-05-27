@@ -58,7 +58,11 @@ fn build_output_stem(identity: &MediaIdentity) -> String {
         .trim()
         .to_string();
 
-    match (identity.media_type.as_str(), identity.season, identity.episode) {
+    match (
+        identity.media_type.as_str(),
+        identity.season,
+        identity.episode,
+    ) {
         ("episode", Some(s), Some(e)) => format!("{title} - S{s:02}E{e:02}"),
         (_, _, Some(e)) => format!("{title} - E{e:02}"),
         _ => title,
@@ -104,13 +108,18 @@ fn extract_text_tracks(
         };
 
         let codec = track.codec.to_ascii_lowercase();
-        if IMAGE_CODECS.iter().any(|c| codec == *c || codec.starts_with(c)) {
+        if IMAGE_CODECS
+            .iter()
+            .any(|c| codec == *c || codec.starts_with(c))
+        {
             continue;
         }
 
         let track_name = track.properties.track_name.to_ascii_lowercase();
         if !track_name.is_empty()
-            && ["sign", "song", "op", "ed"].iter().any(|kw| track_name.contains(kw))
+            && ["sign", "song", "op", "ed"]
+                .iter()
+                .any(|kw| track_name.contains(kw))
         {
             continue;
         }
@@ -119,7 +128,12 @@ fn extract_text_tracks(
         let out_file = format!("{output_stem}.{out_lang}{ext}");
         let out_path = output_dir.join(&out_file);
 
-        match extractor.extract_subtitle(video_path, track.id, &out_path, Some(track.subtitle_index)) {
+        match extractor.extract_subtitle(
+            video_path,
+            track.id,
+            &out_path,
+            Some(track.subtitle_index),
+        ) {
             Ok(()) => {
                 let line_count = count_subtitle_lines(&out_path);
                 tracing::info!("Extracted {out_lang} text track: {out_file} ({line_count} lines)");
@@ -165,7 +179,9 @@ async fn extract_ocr(
             let out_path = output_dir.join(&out_file);
             if std::fs::copy(&r.srt_path, &out_path).is_ok() {
                 let line_count = count_subtitle_lines(&out_path);
-                tracing::info!("Extracted {language} OCR subtitles: {out_file} ({line_count} lines)");
+                tracing::info!(
+                    "Extracted {language} OCR subtitles: {out_file} ({line_count} lines)"
+                );
                 vec![json!({
                     "file": out_file,
                     "language": language,
@@ -179,7 +195,10 @@ async fn extract_ocr(
         Err(_) => {
             tracing::warn!(
                 "No burned-in subtitles found in {}",
-                video_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+                video_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
             );
             Vec::new()
         }
@@ -217,7 +236,10 @@ pub async fn run(args: ExtractArgs) -> i32 {
             let root = if input_path.is_dir() {
                 input_path.clone()
             } else {
-                input_path.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."))
+                input_path
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| PathBuf::from("."))
             };
             root.join("extracted_subs")
         }
@@ -243,7 +265,10 @@ pub async fn run(args: ExtractArgs) -> i32 {
     for video_path in &video_files {
         eprintln!(
             "\n{}",
-            video_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+            video_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
         );
 
         let identity = match identify_media(video_path) {
@@ -259,10 +284,15 @@ pub async fn run(args: ExtractArgs) -> i32 {
             identity.title, identity.season, identity.episode
         );
 
-        let mut subtitles =
-            extract_text_tracks(video_path, &output_dir, &extractor, &output_stem);
-        let ocr =
-            extract_ocr(&worker, video_path, &output_dir, &output_stem, &args.ocr_language).await;
+        let mut subtitles = extract_text_tracks(video_path, &output_dir, &extractor, &output_stem);
+        let ocr = extract_ocr(
+            &worker,
+            video_path,
+            &output_dir,
+            &output_stem,
+            &args.ocr_language,
+        )
+        .await;
         subtitles.extend(ocr);
 
         if subtitles.is_empty() {
@@ -333,7 +363,12 @@ mod tests {
         assert_eq!(args.ocr_language, "en");
     }
 
-    fn identity(media_type: &str, season: Option<i32>, episode: Option<i32>, title: &str) -> MediaIdentity {
+    fn identity(
+        media_type: &str,
+        season: Option<i32>,
+        episode: Option<i32>,
+        title: &str,
+    ) -> MediaIdentity {
         MediaIdentity {
             title: title.to_string(),
             parsed_title: title.to_string(),

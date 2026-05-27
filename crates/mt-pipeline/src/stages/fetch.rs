@@ -72,12 +72,16 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
     ctx.fetched_subtitles = Some(selected);
 
     // Realign fetched Polish subtitles against the English reference.
-    if let (Some(reference), Some(map)) = (ctx.reference_path.clone(), ctx.fetched_subtitles.clone())
+    if let (Some(reference), Some(map)) =
+        (ctx.reference_path.clone(), ctx.fetched_subtitles.clone())
     {
         if let Some(pol_subs) = map.get("pol") {
             for sub in pol_subs {
                 let (method, offset) = align_subtitle(&sub.path, &reference);
-                tracing::debug!("aligned {} via {method} (offset={offset:?})", sub.path.display());
+                tracing::debug!(
+                    "aligned {} via {method} (offset={offset:?})",
+                    sub.path.display()
+                );
             }
         }
     }

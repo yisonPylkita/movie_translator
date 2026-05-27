@@ -158,6 +158,9 @@ mod tests {
         let pending = result.pending_ocr.expect("pending ocr");
         assert_eq!(pending.r#type, "burned_in");
         assert!(pending.track_id.is_none());
-        assert_eq!(pending.output_dir, PathBuf::from(dir.path()).join("work").join("reference"));
+        assert_eq!(
+            pending.output_dir,
+            PathBuf::from(dir.path()).join("work").join("reference")
+        );
     }
 }

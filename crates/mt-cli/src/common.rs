@@ -60,8 +60,7 @@ pub fn resolve_models_with(
 
 /// Directory holding the Apple Translation Swift bridge, relative to the repo.
 fn apple_swift_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../movie_translator/translation/swift")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../movie_translator/translation/swift")
 }
 
 /// Port of `apple_backend.is_available()` + `check_languages_installed()`.
@@ -130,12 +129,7 @@ fn ensure_apple_bridge(source: &Path, binary: &Path) -> Option<PathBuf> {
         let swiftc = which_swiftc()?;
         tracing::info!("Compiling Apple Translation bridge...");
         let status = std::process::Command::new(swiftc)
-            .args([
-                "-parse-as-library",
-                "-O",
-                "-framework",
-                "Translation",
-            ])
+            .args(["-parse-as-library", "-O", "-framework", "Translation"])
             .arg(source)
             .arg("-o")
             .arg(binary)

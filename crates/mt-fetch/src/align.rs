@@ -179,12 +179,7 @@ pub fn detect_op_gap(
 
 /// Detect OP gap using default search parameters.
 pub fn detect_op_gap_default(timestamps: &[(i64, i64)]) -> Option<(i64, i64)> {
-    detect_op_gap(
-        timestamps,
-        MIN_GAP_MS,
-        OP_SEARCH_START_MS,
-        OP_SEARCH_END_MS,
-    )
+    detect_op_gap(timestamps, MIN_GAP_MS, OP_SEARCH_START_MS, OP_SEARCH_END_MS)
 }
 
 // ---------------------------------------------------------------------------
@@ -256,11 +251,7 @@ fn save_subs(subs: &mt_subtitles::model::Subtitles, path: &Path) -> Result<(), S
 /// correction was needed.
 ///
 /// Mirrors Python `align_to_reference(subtitle_path, reference_path, min_offset_ms)`.
-pub fn align_to_reference(
-    subtitle_path: &Path,
-    reference_path: &Path,
-    min_offset_ms: i64,
-) -> i64 {
+pub fn align_to_reference(subtitle_path: &Path, reference_path: &Path, min_offset_ms: i64) -> i64 {
     let (ref_timestamps, _) = extract_timestamps(reference_path);
     let (cand_timestamps, _) = extract_timestamps(subtitle_path);
 
@@ -271,9 +262,20 @@ pub fn align_to_reference(
     let op_gap = detect_op_gap_default(&ref_timestamps);
 
     if let Some(gap) = op_gap {
-        align_piecewise(subtitle_path, &ref_timestamps, &cand_timestamps, gap, min_offset_ms)
+        align_piecewise(
+            subtitle_path,
+            &ref_timestamps,
+            &cand_timestamps,
+            gap,
+            min_offset_ms,
+        )
     } else {
-        align_global(subtitle_path, &ref_timestamps, &cand_timestamps, min_offset_ms)
+        align_global(
+            subtitle_path,
+            &ref_timestamps,
+            &cand_timestamps,
+            min_offset_ms,
+        )
     }
 }
 
@@ -521,7 +523,12 @@ mod tests {
     #[test]
     fn detect_op_gap_ignores_gaps_outside_search_window() {
         // Gap at 500s — outside the 30s–360s search window
-        let ts: Vec<(i64, i64)> = vec![(1000, 3000), (5000, 7000), (500000, 502000), (600000, 602000)];
+        let ts: Vec<(i64, i64)> = vec![
+            (1000, 3000),
+            (5000, 7000),
+            (500000, 502000),
+            (600000, 602000),
+        ];
         let gap = detect_op_gap(&ts, MIN_GAP_MS, 30_000, 360_000);
         assert_eq!(gap, None);
     }
@@ -540,7 +547,11 @@ mod tests {
         let gap = detect_op_gap_default(&ts);
         assert!(gap.is_some());
         let (gap_start, gap_end) = gap.unwrap();
-        assert!(gap_end - gap_start > 150_000, "expected >150s gap, got {}ms", gap_end - gap_start);
+        assert!(
+            gap_end - gap_start > 150_000,
+            "expected >150s gap, got {}ms",
+            gap_end - gap_start
+        );
     }
 
     #[test]
@@ -567,10 +578,7 @@ mod tests {
         let cand = to_timestamps(&shifted, 2000);
         let offset = estimate_offset(&ref_, &cand, 100, 15_000, 0.4);
         let off = offset.unwrap_or(i64::MAX);
-        assert!(
-            (off - 1500).abs() <= 100,
-            "expected ~1500, got {off}"
-        );
+        assert!((off - 1500).abs() <= 100, "expected ~1500, got {off}");
     }
 
     #[test]
@@ -581,10 +589,7 @@ mod tests {
         let cand = to_timestamps(&shifted, 2000);
         let offset = estimate_offset(&ref_, &cand, 100, 15_000, 0.4);
         let off = offset.unwrap_or(i64::MAX);
-        assert!(
-            (off - (-2000)).abs() <= 100,
-            "expected ~-2000, got {off}"
-        );
+        assert!((off - (-2000)).abs() <= 100, "expected ~-2000, got {off}");
     }
 
     #[test]
@@ -595,10 +600,7 @@ mod tests {
         let cand = to_timestamps(&shifted, 2000);
         let offset = estimate_offset(&ref_, &cand, 100, 15_000, 0.4);
         let off = offset.unwrap_or(i64::MAX);
-        assert!(
-            (off - (-5000)).abs() <= 200,
-            "expected ~-5000, got {off}"
-        );
+        assert!((off - (-5000)).abs() <= 200, "expected ~-5000, got {off}");
     }
 
     #[test]
@@ -730,15 +732,29 @@ mod tests {
 
         for &cs in &cand_starts {
             if cs < 105_000 {
-                let min_dist = ref_starts.iter().map(|&rs| (cs - rs).abs()).min().unwrap_or(i64::MAX);
-                assert!(min_dist < 500, "pre-OP line at {cs}ms not aligned: min_dist={min_dist}");
+                let min_dist = ref_starts
+                    .iter()
+                    .map(|&rs| (cs - rs).abs())
+                    .min()
+                    .unwrap_or(i64::MAX);
+                assert!(
+                    min_dist < 500,
+                    "pre-OP line at {cs}ms not aligned: min_dist={min_dist}"
+                );
             }
         }
 
         for &cs in &cand_starts {
             if cs > 200_000 {
-                let min_dist = ref_starts.iter().map(|&rs| (cs - rs).abs()).min().unwrap_or(i64::MAX);
-                assert!(min_dist < 2000, "post-OP line at {cs}ms not aligned: min_dist={min_dist}");
+                let min_dist = ref_starts
+                    .iter()
+                    .map(|&rs| (cs - rs).abs())
+                    .min()
+                    .unwrap_or(i64::MAX);
+                assert!(
+                    min_dist < 2000,
+                    "post-OP line at {cs}ms not aligned: min_dist={min_dist}"
+                );
             }
         }
     }
@@ -751,10 +767,7 @@ mod tests {
         let cand_path = write_file(&tmp, "cand.srt", &make_srt(&cand_lines));
 
         let offset = align_to_reference(&cand_path, &ref_path, MIN_OFFSET_MS);
-        assert!(
-            (offset - 2000).abs() <= 200,
-            "expected ~2000, got {offset}"
-        );
+        assert!((offset - 2000).abs() <= 200, "expected ~2000, got {offset}");
     }
 
     #[test]
@@ -799,9 +812,9 @@ mod tests {
         // Simulate Konosuba S1E1 pattern: 22 lines spread over ~22 minutes,
         // candidate is +20s (20000ms) late relative to reference.
         let ref_starts: Vec<i64> = vec![
-            10_000, 20_000, 35_000, 50_000, 80_000, 120_000, 160_000, 200_000,
-            240_000, 300_000, 360_000, 420_000, 480_000, 540_000, 600_000,
-            660_000, 720_000, 780_000, 840_000, 900_000, 960_000, 1_020_000,
+            10_000, 20_000, 35_000, 50_000, 80_000, 120_000, 160_000, 200_000, 240_000, 300_000,
+            360_000, 420_000, 480_000, 540_000, 600_000, 660_000, 720_000, 780_000, 840_000,
+            900_000, 960_000, 1_020_000,
         ];
         let ref_ts = to_timestamps(&ref_starts, 2000);
         let cand_starts: Vec<i64> = ref_starts.iter().map(|s| s + 20_000).collect();

@@ -186,13 +186,7 @@ mod tests {
         fn ocr_pgs(&self, _v: &Path, _t: u32, _w: &Path) -> Result<Option<PathBuf>> {
             unreachable!()
         }
-        fn ocr_burned_in(
-            &self,
-            _v: &Path,
-            _o: &Path,
-            _c: f64,
-            _f: u32,
-        ) -> Result<BurnedInResult> {
+        fn ocr_burned_in(&self, _v: &Path, _o: &Path, _c: f64, _f: u32) -> Result<BurnedInResult> {
             unreachable!()
         }
         fn inpaint(
@@ -242,7 +236,10 @@ mod tests {
         let result = run(ctx(dir.path(), vec![]), &gpu, Some(vec!["Luffy".into()])).unwrap();
         assert_eq!(result.translated_lines.unwrap()[0].text, "Cześć");
         assert!(result.font_info.is_some());
-        assert_eq!(gpu.seen_proper_nouns.borrow().as_deref(), Some(&["Luffy".to_string()][..]));
+        assert_eq!(
+            gpu.seen_proper_nouns.borrow().as_deref(),
+            Some(&["Luffy".to_string()][..])
+        );
     }
 
     #[test]
@@ -310,12 +307,28 @@ mod tests {
         let mut c = ctx(dir.path(), vec![]);
         // Repeated capitalized name in direct address → derived as a proper noun.
         c.dialogue_lines = Some(vec![
-            DialogueLine { start_ms: 0, end_ms: 1, text: "Guts! Get up.".into() },
-            DialogueLine { start_ms: 1, end_ms: 2, text: "We follow Guts into battle.".into() },
-            DialogueLine { start_ms: 2, end_ms: 3, text: "I trust Guts with my life.".into() },
+            DialogueLine {
+                start_ms: 0,
+                end_ms: 1,
+                text: "Guts! Get up.".into(),
+            },
+            DialogueLine {
+                start_ms: 1,
+                end_ms: 2,
+                text: "We follow Guts into battle.".into(),
+            },
+            DialogueLine {
+                start_ms: 2,
+                end_ms: 3,
+                text: "I trust Guts with my life.".into(),
+            },
         ]);
         let gpu = FakeGpu {
-            primary: vec![DialogueLine { start_ms: 0, end_ms: 1, text: "x".into() }],
+            primary: vec![DialogueLine {
+                start_ms: 0,
+                end_ms: 1,
+                text: "x".into(),
+            }],
             extra: std::collections::HashMap::new(),
             seen_models: RefCell::new(vec![]),
             seen_proper_nouns: RefCell::new(None),
@@ -338,7 +351,11 @@ mod tests {
             text: "Guts! Guts! Guts!".into(),
         }]);
         let gpu = FakeGpu {
-            primary: vec![DialogueLine { start_ms: 0, end_ms: 1, text: "x".into() }],
+            primary: vec![DialogueLine {
+                start_ms: 0,
+                end_ms: 1,
+                text: "x".into(),
+            }],
             extra: std::collections::HashMap::new(),
             seen_models: RefCell::new(vec![]),
             seen_proper_nouns: RefCell::new(None),

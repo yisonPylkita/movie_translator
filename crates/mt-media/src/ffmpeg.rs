@@ -226,8 +226,8 @@ pub fn parse_video_encoding_from_info(
         .ok_or_else(|| VideoMuxError::NoVideoStream(video_path.to_string_lossy().to_string()))?;
 
     // Parse r_frame_rate: "24/1" or "24000/1001"
-    let fps = parse_frame_rate(video_stream.r_frame_rate.as_deref().unwrap_or("24/1"))
-        .unwrap_or(24.0);
+    let fps =
+        parse_frame_rate(video_stream.r_frame_rate.as_deref().unwrap_or("24/1")).unwrap_or(24.0);
 
     let bit_rate = video_stream
         .bit_rate
@@ -470,7 +470,9 @@ fn run_mkvmerge(mkvmerge: &Path, args: &[String]) -> Result<(), VideoMuxError> {
         } else {
             "Unknown mkvmerge error".to_string()
         };
-        return Err(VideoMuxError::MuxFailed(format!("Failed to mux video: {msg}")));
+        return Err(VideoMuxError::MuxFailed(format!(
+            "Failed to mux video: {msg}"
+        )));
     }
     Ok(())
 }
@@ -596,7 +598,9 @@ fn run_ffmpeg_mux(ffmpeg: &Path, args: &[String]) -> Result<(), VideoMuxError> {
         } else {
             "Unknown ffmpeg error".to_string()
         };
-        return Err(VideoMuxError::MuxFailed(format!("Failed to mux video: {msg}")));
+        return Err(VideoMuxError::MuxFailed(format!(
+            "Failed to mux video: {msg}"
+        )));
     }
     Ok(())
 }
@@ -763,7 +767,8 @@ mod tests {
 
     #[test]
     fn version_parse_git_build() {
-        let line = "ffmpeg version N-113757-g12345abcd Copyright (c) 2000-2024 the FFmpeg developers";
+        let line =
+            "ffmpeg version N-113757-g12345abcd Copyright (c) 2000-2024 the FFmpeg developers";
         assert_eq!(parse_ffmpeg_version_string(line), "N-113757-g12345abcd");
     }
 
@@ -837,7 +842,7 @@ mod tests {
             &subs,
             Path::new("/tmp/output.mkv"),
             None,
-            Some(0),   // original_sub_index
+            Some(0), // original_sub_index
             Some("English"),
         );
 
@@ -935,7 +940,13 @@ mod tests {
             .filter(|s| s.codec_type.as_deref() == Some("subtitle"))
             .collect();
         assert_eq!(sub_streams.len(), 2);
-        assert_eq!(sub_streams[0].tags.get("title").map(|s| s.as_str()), Some("English Full Dialogue"));
-        assert_eq!(sub_streams[1].tags.get("title").map(|s| s.as_str()), Some("English Signs/Songs"));
+        assert_eq!(
+            sub_streams[0].tags.get("title").map(|s| s.as_str()),
+            Some("English Full Dialogue")
+        );
+        assert_eq!(
+            sub_streams[1].tags.get("title").map(|s| s.as_str()),
+            Some("English Signs/Songs")
+        );
     }
 }

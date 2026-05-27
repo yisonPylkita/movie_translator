@@ -86,13 +86,7 @@ pub(crate) fn build_search_url(
 
     let qs: Vec<String> = params
         .iter()
-        .map(|(k, v)| {
-            format!(
-                "{}={}",
-                k,
-                url_encode(v)
-            )
-        })
+        .map(|(k, v)| format!("{}={}", k, url_encode(v)))
         .collect();
 
     format!("{TMDB_BASE}{endpoint}?{}", qs.join("&"))
@@ -128,7 +122,9 @@ pub fn lookup_tmdb(title: &str, year: Option<i32>, media_type: &str) -> Option<T
         return None;
     }
 
-    lookup_tmdb_with_client(api_key.as_str(), title, year, media_type).ok().flatten()
+    lookup_tmdb_with_client(api_key.as_str(), title, year, media_type)
+        .ok()
+        .flatten()
 }
 
 /// Inner function that performs the actual HTTP calls.

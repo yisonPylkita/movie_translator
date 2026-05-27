@@ -78,10 +78,7 @@ impl SubtitleExtractor {
     /// Return subtitle track info for a video file.
     ///
     /// Port of `get_track_info`.
-    pub fn get_track_info(
-        &self,
-        video_path: &Path,
-    ) -> Result<TrackInfo, SubtitleExtractionError> {
+    pub fn get_track_info(&self, video_path: &Path) -> Result<TrackInfo, SubtitleExtractionError> {
         if !video_path.exists() {
             return Err(SubtitleExtractionError::VideoNotFound(
                 video_path.to_string_lossy().to_string(),
@@ -94,10 +91,7 @@ impl SubtitleExtractor {
     /// Return `true` if the video contains a Polish (`pol`/`pl`) subtitle track.
     ///
     /// Port of `has_polish_subtitles`.
-    pub fn has_polish_subtitles(
-        &self,
-        video_path: &Path,
-    ) -> Result<bool, SubtitleExtractionError> {
+    pub fn has_polish_subtitles(&self, video_path: &Path) -> Result<bool, SubtitleExtractionError> {
         let track_info = self.get_track_info(video_path)?;
         Ok(track_info
             .tracks
@@ -201,7 +195,11 @@ pub fn convert_ffprobe_info(info: &crate::ffmpeg::VideoInfo) -> TrackInfo {
         if stream.codec_type.as_deref() != Some("subtitle") {
             continue;
         }
-        let language = stream.tags.get("language").cloned().unwrap_or_else(|| "und".to_string());
+        let language = stream
+            .tags
+            .get("language")
+            .cloned()
+            .unwrap_or_else(|| "und".to_string());
         let track_name = stream.tags.get("title").cloned().unwrap_or_default();
         let codec = stream.codec_name.clone().unwrap_or_default();
         let forced = stream.disposition.get("forced").copied().unwrap_or(0) == 1;
@@ -280,7 +278,9 @@ pub fn categorize_tracks(tracks: &[SubtitleTrack]) -> (Vec<SubtitleTrack>, Vec<S
         }
 
         // Only mark as signs if the name explicitly indicates it
-        let is_signs = NON_DIALOGUE_STYLES.iter().any(|kw| name_has_keyword(&track_name, kw));
+        let is_signs = NON_DIALOGUE_STYLES
+            .iter()
+            .any(|kw| name_has_keyword(&track_name, kw));
 
         if is_signs {
             signs_tracks.push(track.clone());
@@ -319,7 +319,11 @@ fn name_has_keyword(track_name: &str, keyword: &str) -> bool {
                     end_simple
                 };
                 end >= search.len()
-                    || search[end..].chars().next().map(|c| !c.is_alphanumeric()).unwrap_or(true)
+                    || search[end..]
+                        .chars()
+                        .next()
+                        .map(|c| !c.is_alphanumeric())
+                        .unwrap_or(true)
             };
             if before_ok && after_ok {
                 return true;
@@ -488,7 +492,10 @@ mod tests {
         let info = parse_video_info(FFPROBE_WITH_SUBS).unwrap();
         let track_info = convert_ffprobe_info(&info);
         assert_eq!(track_info.tracks[0].properties.language, "eng");
-        assert_eq!(track_info.tracks[0].properties.track_name, "English Full Dialogue");
+        assert_eq!(
+            track_info.tracks[0].properties.track_name,
+            "English Full Dialogue"
+        );
         assert_eq!(track_info.tracks[2].properties.language, "pol");
     }
 
@@ -642,9 +649,8 @@ mod tests {
     fn single_signs_track_rejected() {
         // Port of test_single_signs_track_rejected
         let extractor = SubtitleExtractor::new();
-        let track_info = make_track_info(vec![
-            make_track(0, 0, "ass", "eng", "English Signs/Songs"),
-        ]);
+        let track_info =
+            make_track_info(vec![make_track(0, 0, "ass", "eng", "English Signs/Songs")]);
         let result = extractor.find_english_track(&track_info);
         assert!(result.is_none());
     }

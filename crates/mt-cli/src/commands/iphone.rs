@@ -47,7 +47,10 @@ pub struct IphoneArgs {
 // ── converter port ─────────────────────────────────────────────────────────
 
 fn converting_temp_path(mkv_path: &Path) -> PathBuf {
-    let stem = mkv_path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let stem = mkv_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
     mkv_path.with_file_name(format!("{stem}{CONVERTING_MARKER}.mp4"))
 }
 
@@ -97,7 +100,10 @@ fn should_skip(mkv_path: &Path, p: &Probe) -> Option<String> {
     if target.exists() {
         return Some(format!(
             "{} already exists",
-            target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+            target
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
         ));
     }
     if !SUPPORTED_VIDEO_CODECS.contains(&p.video_codec.as_str()) {
@@ -112,7 +118,11 @@ fn should_skip(mkv_path: &Path, p: &Probe) -> Option<String> {
     None
 }
 
-fn build_ffmpeg_cmd(mkv_path: &Path, temp_path: &Path, include_subs: bool) -> Result<Vec<String>, String> {
+fn build_ffmpeg_cmd(
+    mkv_path: &Path,
+    temp_path: &Path,
+    include_subs: bool,
+) -> Result<Vec<String>, String> {
     let ffmpeg = get_ffmpeg().map_err(|e| e.to_string())?;
     let mut cmd: Vec<String> = vec![
         ffmpeg.to_string_lossy().to_string(),
@@ -134,7 +144,11 @@ fn build_ffmpeg_cmd(mkv_path: &Path, temp_path: &Path, include_subs: bool) -> Re
     if include_subs {
         cmd.extend(["-c:s".into(), "mov_text".into()]);
     }
-    cmd.extend(["-movflags".into(), "+faststart".into(), temp_path.to_string_lossy().to_string()]);
+    cmd.extend([
+        "-movflags".into(),
+        "+faststart".into(),
+        temp_path.to_string_lossy().to_string(),
+    ]);
     Ok(cmd)
 }
 
@@ -167,7 +181,10 @@ fn video_duration(info: &mt_media::VideoInfo) -> f64 {
             }
         }
     }
-    info.format_duration.as_ref().and_then(|d| d.parse::<f64>().ok()).unwrap_or(0.0)
+    info.format_duration
+        .as_ref()
+        .and_then(|d| d.parse::<f64>().ok())
+        .unwrap_or(0.0)
 }
 
 fn verify_output(src: &Path, dst: &Path) -> Result<(), String> {
@@ -178,12 +195,22 @@ fn verify_output(src: &Path, dst: &Path) -> Result<(), String> {
     let src_dur = video_duration(&src_info);
     let dst_dur = video_duration(&dst_info);
     if src_dur > 0.0 && (src_dur - dst_dur).abs() > tolerance {
-        return Err(format!("duration mismatch: src={src_dur:.2}s dst={dst_dur:.2}s"));
+        return Err(format!(
+            "duration mismatch: src={src_dur:.2}s dst={dst_dur:.2}s"
+        ));
     }
-    if !dst_info.streams.iter().any(|s| s.codec_type.as_deref() == Some("video")) {
+    if !dst_info
+        .streams
+        .iter()
+        .any(|s| s.codec_type.as_deref() == Some("video"))
+    {
         return Err("output has no video stream".into());
     }
-    if !dst_info.streams.iter().any(|s| s.codec_type.as_deref() == Some("audio")) {
+    if !dst_info
+        .streams
+        .iter()
+        .any(|s| s.codec_type.as_deref() == Some("audio"))
+    {
         return Err("output has no audio stream".into());
     }
     Ok(())
@@ -200,7 +227,10 @@ fn convert_file(mkv_path: &Path, dry_run: bool) -> (String, String) {
         return ("skipped".into(), detail);
     }
     if dry_run {
-        return ("dry_run".into(), format!("would convert (subs={})", p.has_pol_subs));
+        return (
+            "dry_run".into(),
+            format!("would convert (subs={})", p.has_pol_subs),
+        );
     }
 
     let temp = converting_temp_path(mkv_path);
@@ -218,7 +248,15 @@ fn convert_file(mkv_path: &Path, dry_run: bool) -> (String, String) {
             .map_err(|e| e.to_string())?;
         if !out.status.success() {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            let tail: Vec<&str> = stderr.trim().lines().rev().take(5).collect::<Vec<_>>().into_iter().rev().collect();
+            let tail: Vec<&str> = stderr
+                .trim()
+                .lines()
+                .rev()
+                .take(5)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
             return Err(format!("ffmpeg failed: {}", tail.join(" | ")));
         }
         verify_output(mkv_path, &temp)?;
@@ -242,7 +280,11 @@ fn convert_file(mkv_path: &Path, dry_run: bool) -> (String, String) {
 fn find_mkvs(input_path: &Path) -> Vec<PathBuf> {
     find_videos(input_path)
         .into_iter()
-        .filter(|v| v.extension().map(|e| e.eq_ignore_ascii_case("mkv")).unwrap_or(false))
+        .filter(|v| {
+            v.extension()
+                .map(|e| e.eq_ignore_ascii_case("mkv"))
+                .unwrap_or(false)
+        })
         .collect()
 }
 
@@ -263,14 +305,20 @@ fn cleanup_orphans(mkv_files: &[PathBuf]) -> usize {
 /// Pack `mp4_files` into `<input_dir>.zip` then delete them.
 /// Port of `pack_and_clean` (store-only zip, atomic via `.partial`).
 fn pack_and_clean(input_dir: &Path, mp4_files: &[PathBuf]) -> Result<PathBuf, String> {
-    let name = input_dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let name = input_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
     let zip_path = input_dir
         .parent()
         .unwrap_or(Path::new("."))
         .join(format!("{name}.zip"));
     let partial = zip_path.with_file_name(format!(
         "{}.partial",
-        zip_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+        zip_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default()
     ));
 
     let build = || -> Result<(), String> {
@@ -411,7 +459,10 @@ fn write_store_zip(
 
 /// Read arcnames from a store-only zip (central directory scan).
 fn read_zip_arcnames(zip_path: &Path) -> Result<std::collections::HashSet<String>, String> {
-    Ok(read_zip_entries(zip_path)?.into_iter().map(|(n, _)| n).collect())
+    Ok(read_zip_entries(zip_path)?
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect())
 }
 
 /// Read (name, data) for every entry of a STORE-only zip we wrote.
@@ -433,8 +484,18 @@ fn read_zip_entries_with_crc(zip_path: &Path) -> Result<Vec<(String, Vec<u8>, u3
         if sig != 0x0403_4b50 {
             break; // reached central directory
         }
-        let stored_crc = u32::from_le_bytes([bytes[pos + 14], bytes[pos + 15], bytes[pos + 16], bytes[pos + 17]]);
-        let size = u32::from_le_bytes([bytes[pos + 18], bytes[pos + 19], bytes[pos + 20], bytes[pos + 21]]) as usize;
+        let stored_crc = u32::from_le_bytes([
+            bytes[pos + 14],
+            bytes[pos + 15],
+            bytes[pos + 16],
+            bytes[pos + 17],
+        ]);
+        let size = u32::from_le_bytes([
+            bytes[pos + 18],
+            bytes[pos + 19],
+            bytes[pos + 20],
+            bytes[pos + 21],
+        ]) as usize;
         let name_len = u16::from_le_bytes([bytes[pos + 26], bytes[pos + 27]]) as usize;
         let extra_len = u16::from_le_bytes([bytes[pos + 28], bytes[pos + 29]]) as usize;
         let name_start = pos + 30;
@@ -488,7 +549,12 @@ async fn run_conversions(
         let sem = sem.clone();
         joins.push(tokio::spawn(async move {
             let _permit = sem.acquire_owned().await.expect("semaphore");
-            eprintln!("-> {}", mkv.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
+            eprintln!(
+                "-> {}",
+                mkv.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            );
             let m = mkv.clone();
             let (status, detail) = tokio::task::spawn_blocking(move || convert_file(&m, dry_run))
                 .await
@@ -500,8 +566,17 @@ async fn run_conversions(
                 "failed" => "✗",
                 _ => "?",
             };
-            let suffix = if detail.is_empty() { String::new() } else { format!(" — {detail}") };
-            eprintln!("{tag} {}{suffix}", mkv.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
+            let suffix = if detail.is_empty() {
+                String::new()
+            } else {
+                format!(" — {detail}")
+            };
+            eprintln!(
+                "{tag} {}{suffix}",
+                mkv.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            );
             (mkv, status, detail)
         }));
     }
@@ -535,7 +610,11 @@ fn print_summary(results: &[(PathBuf, String, String)]) -> (usize, usize, usize)
     if fail > 0 {
         parts.push(format!("✗ {fail} failed"));
     }
-    let line = if parts.is_empty() { "(no files)".to_string() } else { parts.join(" | ") };
+    let line = if parts.is_empty() {
+        "(no files)".to_string()
+    } else {
+        parts.join(" | ")
+    };
     println!("{line}");
     (succ, skip, fail)
 }
@@ -595,7 +674,10 @@ pub async fn run(args: IphoneArgs) -> i32 {
             eprintln!("No .mp4 files to pack");
             return 0;
         }
-        eprintln!("Packing {} file(s) into a store-only zip...", mp4_files.len());
+        eprintln!(
+            "Packing {} file(s) into a store-only zip...",
+            mp4_files.len()
+        );
         match pack_and_clean(&input_path, &mp4_files) {
             Ok(zip_path) => eprintln!("✓ Zip created: {}", zip_path.display()),
             Err(e) => {
@@ -618,7 +700,9 @@ fn walk_mp4s(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name();
@@ -628,7 +712,11 @@ fn walk_mp4s(dir: &Path) -> Vec<PathBuf> {
             }
             if path.is_dir() {
                 stack.push(path);
-            } else if path.extension().map(|e| e.eq_ignore_ascii_case("mp4")).unwrap_or(false) {
+            } else if path
+                .extension()
+                .map(|e| e.eq_ignore_ascii_case("mp4"))
+                .unwrap_or(false)
+            {
                 out.push(path);
             }
         }
@@ -667,7 +755,10 @@ mod tests {
     #[test]
     fn temp_and_target_paths() {
         let mkv = Path::new("/movies/Show.S01E01.mkv");
-        assert_eq!(converting_temp_path(mkv), Path::new("/movies/Show.S01E01.converting.mp4"));
+        assert_eq!(
+            converting_temp_path(mkv),
+            Path::new("/movies/Show.S01E01.converting.mp4")
+        );
         assert_eq!(target_mp4_path(mkv), Path::new("/movies/Show.S01E01.mp4"));
     }
 
@@ -759,8 +850,16 @@ mod tests {
     fn summary_counts() {
         let results = vec![
             (PathBuf::from("a.mkv"), "success".to_string(), String::new()),
-            (PathBuf::from("b.mkv"), "skipped".to_string(), "x".to_string()),
-            (PathBuf::from("c.mkv"), "failed".to_string(), "boom".to_string()),
+            (
+                PathBuf::from("b.mkv"),
+                "skipped".to_string(),
+                "x".to_string(),
+            ),
+            (
+                PathBuf::from("c.mkv"),
+                "failed".to_string(),
+                "boom".to_string(),
+            ),
         ];
         let (s, sk, f) = print_summary(&results);
         assert_eq!((s, sk, f), (1, 1, 1));

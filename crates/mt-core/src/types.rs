@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 /// Styles that indicate non-dialogue content (signs, songs, etc.).
 /// Covers common fansub naming: OP/ED/IN (insert song) layers with
 /// romaji (OPRO/INRO) and English (OPEN/INEN) suffixes.
-pub const NON_DIALOGUE_STYLES: &[&str] =
-    &["sign", "song", "title", "op", "ed", "insert", "inro", "inen"];
+pub const NON_DIALOGUE_STYLES: &[&str] = &[
+    "sign", "song", "title", "op", "ed", "insert", "inro", "inen",
+];
 
 /// Polish diacritical characters.
 pub const POLISH_CHARS: &str = "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ";

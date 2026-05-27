@@ -48,8 +48,7 @@ pub trait MuxOps {
     ) -> Result<()>;
 
     /// Mirror of `VideoOperations.verify_result`.
-    fn verify_result(&self, output: &Path, expected_tracks: Option<&[SubtitleFile]>)
-        -> Result<()>;
+    fn verify_result(&self, output: &Path, expected_tracks: Option<&[SubtitleFile]>) -> Result<()>;
 }
 
 /// Production [`MuxOps`] backed by ffmpeg via [`mt_media::VideoOperations`].
@@ -78,11 +77,7 @@ impl MuxOps for FfmpegMuxOps {
             .map_err(PipelineError::from)
     }
 
-    fn verify_result(
-        &self,
-        output: &Path,
-        expected_tracks: Option<&[SubtitleFile]>,
-    ) -> Result<()> {
+    fn verify_result(&self, output: &Path, expected_tracks: Option<&[SubtitleFile]>) -> Result<()> {
         VideoOperations::new()
             .verify_result(output, expected_tracks)
             .map(|_| ())
@@ -185,7 +180,9 @@ pub fn run_with_ops(
                 SubtitleFile {
                     path: PathBuf::new(),
                     language: lang,
-                    title: original_sub_title.unwrap_or("English (Original)").to_string(),
+                    title: original_sub_title
+                        .unwrap_or("English (Original)")
+                        .to_string(),
                     is_default: false,
                 },
             );
@@ -318,11 +315,14 @@ mod tests {
             original_sub_index: Option<usize>,
             original_sub_title: Option<&str>,
         ) -> Result<()> {
-            self.observed_sources.borrow_mut().push(source.to_path_buf());
-            self.observed_outputs.borrow_mut().push(output.to_path_buf());
+            self.observed_sources
+                .borrow_mut()
+                .push(source.to_path_buf());
+            self.observed_outputs
+                .borrow_mut()
+                .push(output.to_path_buf());
             *self.observed_orig_index.borrow_mut() = original_sub_index;
-            *self.observed_orig_title.borrow_mut() =
-                original_sub_title.map(|s| s.to_string());
+            *self.observed_orig_title.borrow_mut() = original_sub_title.map(|s| s.to_string());
             *self.observed_fonts.borrow_mut() = font_attachments.map(|f| f.to_vec());
             std::fs::write(output, b"muxed content").unwrap();
             Ok(())

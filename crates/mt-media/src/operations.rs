@@ -265,10 +265,7 @@ mod tests {
         let result = validate_tracks(&actual, &expected);
         assert!(matches!(
             result,
-            Err(VideoOperationError::TrackLanguageMismatch {
-                index: 1,
-                ..
-            })
+            Err(VideoOperationError::TrackLanguageMismatch { index: 1, .. })
         ));
     }
 

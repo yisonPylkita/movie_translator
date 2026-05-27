@@ -287,7 +287,9 @@ pub fn iter_system_fonts() -> Vec<PathBuf> {
 
 fn walkdir_fonts(dir: &Path) -> Vec<PathBuf> {
     let mut result = Vec::new();
-    let Ok(rd) = std::fs::read_dir(dir) else { return result; };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return result;
+    };
     for entry in rd.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -354,9 +356,7 @@ pub fn font_filename_matches(font_path: &Path, target_name: &str) -> bool {
         .unwrap_or("")
         .to_ascii_lowercase()
         .replace(['-', '_'], " ");
-    let target = target_name
-        .to_ascii_lowercase()
-        .replace(['-', '_'], " ");
+    let target = target_name.to_ascii_lowercase().replace(['-', '_'], " ");
     stem == target || stem.starts_with(&target)
 }
 
@@ -376,8 +376,7 @@ pub fn find_system_font_for_polish(ass_font_names: &HashSet<String>) -> Option<(
     for ass_name in ass_font_names {
         for font_path in &system_fonts {
             if font_filename_matches(font_path, ass_name) && font_supports_polish(font_path) {
-                let family = get_font_family_name(font_path)
-                    .unwrap_or_else(|| ass_name.clone());
+                let family = get_font_family_name(font_path).unwrap_or_else(|| ass_name.clone());
                 return Some((font_path.clone(), family));
             }
         }
@@ -387,8 +386,8 @@ pub fn find_system_font_for_polish(ass_font_names: &HashSet<String>) -> Option<(
     for fallback_name in PREFERRED_FALLBACK_FONTS {
         for font_path in &system_fonts {
             if font_filename_matches(font_path, fallback_name) && font_supports_polish(font_path) {
-                let family = get_font_family_name(font_path)
-                    .unwrap_or_else(|| fallback_name.to_string());
+                let family =
+                    get_font_family_name(font_path).unwrap_or_else(|| fallback_name.to_string());
                 return Some((font_path.clone(), family));
             }
         }

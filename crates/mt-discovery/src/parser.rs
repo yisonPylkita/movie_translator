@@ -71,21 +71,18 @@ pub fn parse_filename(filename: &str, folder: Option<&str>) -> Result<ParsedName
     let repo_root = find_repo_root();
 
     // Try `uv run python` first; if uv isn't available fall back to `python3`.
-    let output =
-        try_run_script(&input, &["uv", "run", "python", "ml/parse_filename.py"], &repo_root)
-            .or_else(|_| {
-                try_run_script(&input, &["python3", "ml/parse_filename.py"], &repo_root)
-            })?;
+    let output = try_run_script(
+        &input,
+        &["uv", "run", "python", "ml/parse_filename.py"],
+        &repo_root,
+    )
+    .or_else(|_| try_run_script(&input, &["python3", "ml/parse_filename.py"], &repo_root))?;
 
     serde_json::from_slice(&output)
         .map_err(|e| MtError::Parse(format!("failed to parse script output: {e}")))
 }
 
-fn try_run_script(
-    input: &str,
-    argv: &[&str],
-    cwd: &std::path::Path,
-) -> Result<Vec<u8>> {
+fn try_run_script(input: &str, argv: &[&str], cwd: &std::path::Path) -> Result<Vec<u8>> {
     let mut child = Command::new(argv[0])
         .args(&argv[1..])
         .current_dir(cwd)
@@ -169,14 +166,16 @@ mod tests {
     #[test]
     #[ignore]
     fn integration_parse_anime_filename() {
-        let result =
-            parse_filename("[HorribleSubs] One Piece - 1000 [1080p].mkv", None).unwrap();
+        let result = parse_filename("[HorribleSubs] One Piece - 1000 [1080p].mkv", None).unwrap();
         assert!(
             result.title.as_deref().is_some_and(|t| !t.is_empty()),
             "expected non-empty parsed_title, got {:?}",
             result.title
         );
-        assert!(result.is_anime, "expected is_anime=true for fansub filename");
+        assert!(
+            result.is_anime,
+            "expected is_anime=true for fansub filename"
+        );
         assert_eq!(result.release_group.as_deref(), Some("HorribleSubs"));
         assert_eq!(result.episode, Some(1000));
     }

@@ -86,7 +86,10 @@ fn ocr_pgs_self_test_roundtrip() {
     )
     .expect("ocr pgs self-test");
 
-    assert_eq!(resp.srt_path.as_deref(), Some(std::path::Path::new("/tmp/foo.mkv.srt")));
+    assert_eq!(
+        resp.srt_path.as_deref(),
+        Some(std::path::Path::new("/tmp/foo.mkv.srt"))
+    );
 }
 
 /// ocr.py --type burned_in --self-test returns a fixed BurnedInResult.

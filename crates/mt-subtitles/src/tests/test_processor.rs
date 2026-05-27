@@ -85,7 +85,10 @@ fn filters_signs_style() {
     let ass_file = make_ass_file(&tmp);
     let lines = SubtitleProcessor::extract_dialogue_lines(&ass_file).unwrap();
     let texts: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
-    assert!(!texts.contains(&"EPISODE 1"), "Signs events should be filtered");
+    assert!(
+        !texts.contains(&"EPISODE 1"),
+        "Signs events should be filtered"
+    );
     std::fs::remove_dir_all(&tmp).ok();
 }
 

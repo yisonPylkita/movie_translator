@@ -152,11 +152,7 @@ impl super::SubtitleProvider for NapiProjektProvider {
         }])
     }
 
-    fn download(
-        &self,
-        match_: &SubtitleMatch,
-        output_path: &Path,
-    ) -> Result<(), FetchError> {
+    fn download(&self, match_: &SubtitleMatch, output_path: &Path) -> Result<(), FetchError> {
         let file_hash = &match_.subtitle_id;
 
         // Use cached content if available
@@ -290,7 +286,9 @@ mod tests {
 
     #[test]
     fn is_not_found_valid_content() {
-        assert!(!is_not_found(b"This is a valid subtitle with more than 10 bytes"));
+        assert!(!is_not_found(
+            b"This is a valid subtitle with more than 10 bytes"
+        ));
     }
 
     #[test]

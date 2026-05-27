@@ -7,8 +7,8 @@ pub mod podnapisi;
 
 use std::path::Path;
 
-use crate::types::SubtitleMatch;
 use crate::retry::FetchError;
+use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
 
 /// Trait for subtitle providers (mirrors Python `SubtitleProvider` Protocol).
@@ -21,9 +21,5 @@ pub trait SubtitleProvider: Send + Sync {
         languages: &[&str],
     ) -> Result<Vec<SubtitleMatch>, FetchError>;
 
-    fn download(
-        &self,
-        match_: &SubtitleMatch,
-        output_path: &Path,
-    ) -> Result<(), FetchError>;
+    fn download(&self, match_: &SubtitleMatch, output_path: &Path) -> Result<(), FetchError>;
 }

@@ -40,9 +40,7 @@ pub fn classify_styles(events: &[Event]) -> HashSet<String> {
         }
 
         let style = event.style.as_str();
-        let m = style_metrics
-            .entry(style.to_string())
-            .or_default();
+        let m = style_metrics.entry(style.to_string()).or_default();
 
         m.count += 1;
         m.total_duration += event.end_ms - event.start_ms;
@@ -243,10 +241,7 @@ mod tests {
 
         let result = classify_styles(&events);
         assert!(result.contains("Default"), "expected 'Default' in result");
-        assert!(
-            !result.contains("Signs"),
-            "expected 'Signs' NOT in result"
-        );
+        assert!(!result.contains("Signs"), "expected 'Signs' NOT in result");
         assert!(!result.contains("OP"), "expected 'OP' NOT in result");
     }
 

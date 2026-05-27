@@ -153,10 +153,7 @@ pub fn build_search_url(
     year: Option<i32>,
     oshash: Option<&str>,
 ) -> String {
-    let mut params = vec![
-        ("sXML", "1".to_string()),
-        ("sJ", podnapi_langs.join(",")),
-    ];
+    let mut params = vec![("sXML", "1".to_string()), ("sJ", podnapi_langs.join(","))];
     if let Some(hash) = oshash {
         params.push(("sH", hash.to_string()));
     } else {
@@ -205,8 +202,7 @@ impl PodnapisiProvider {
             .get(url)
             .send()
             .map_err(|e| FetchError::Network(e.to_string()))?;
-        resp.text()
-            .map_err(|e| FetchError::Network(e.to_string()))
+        resp.text().map_err(|e| FetchError::Network(e.to_string()))
     }
 }
 
@@ -283,11 +279,7 @@ impl super::SubtitleProvider for PodnapisiProvider {
         Ok(matches)
     }
 
-    fn download(
-        &self,
-        match_: &SubtitleMatch,
-        output_path: &Path,
-    ) -> Result<(), FetchError> {
+    fn download(&self, match_: &SubtitleMatch, output_path: &Path) -> Result<(), FetchError> {
         let url = format!("{API_BASE}/subtitles/{}/download", match_.subtitle_id);
         let resp = self
             .client
@@ -324,9 +316,9 @@ impl super::SubtitleProvider for PodnapisiProvider {
                 )));
             }
 
-            let mut file = archive.by_name(&sub_files[0]).map_err(|e| {
-                FetchError::Parse(format!("cannot read zip entry: {e}"))
-            })?;
+            let mut file = archive
+                .by_name(&sub_files[0])
+                .map_err(|e| FetchError::Parse(format!("cannot read zip entry: {e}")))?;
             let mut data = Vec::new();
             file.read_to_end(&mut data).map_err(FetchError::Io)?;
             std::fs::write(output_path, &data).map_err(FetchError::Io)?;
@@ -335,10 +327,7 @@ impl super::SubtitleProvider for PodnapisiProvider {
             std::fs::write(output_path, &content[..]).map_err(FetchError::Io)?;
         }
 
-        tracing::info!(
-            "Downloaded subtitle: {} (podnapisi)",
-            output_path.display()
-        );
+        tracing::info!("Downloaded subtitle: {} (podnapisi)", output_path.display());
         Ok(())
     }
 }
@@ -464,7 +453,11 @@ mod tests {
             matches1.iter().map(|m| m.subtitle_id.as_str()).collect();
         let merged: Vec<_> = matches1
             .iter()
-            .chain(matches2.iter().filter(|m| !seen.contains(m.subtitle_id.as_str())))
+            .chain(
+                matches2
+                    .iter()
+                    .filter(|m| !seen.contains(m.subtitle_id.as_str())),
+            )
             .collect();
 
         // Assert all IDs in merged are unique

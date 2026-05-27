@@ -25,11 +25,7 @@ impl SubtitleFetcher {
     /// Search all providers in parallel, return ALL plausible matches sorted by score.
     ///
     /// Mirrors Python `SubtitleFetcher.search_all()`.
-    pub fn search_all(
-        &self,
-        identity: &MediaIdentity,
-        languages: &[&str],
-    ) -> Vec<SubtitleMatch> {
+    pub fn search_all(&self, identity: &MediaIdentity, languages: &[&str]) -> Vec<SubtitleMatch> {
         // Use threads to query providers in parallel (mirrors Python ThreadPoolExecutor)
         let results: Vec<_> = std::thread::scope(|scope| {
             let handles: Vec<_> = self
@@ -205,11 +201,7 @@ mod tests {
                 .collect())
         }
 
-        fn download(
-            &self,
-            match_: &SubtitleMatch,
-            output_path: &Path,
-        ) -> Result<(), FetchError> {
+        fn download(&self, match_: &SubtitleMatch, output_path: &Path) -> Result<(), FetchError> {
             std::fs::write(
                 output_path,
                 format!("subtitle content from {}", self.provider_name),
@@ -471,10 +463,7 @@ mod tests {
     #[test]
     fn download_candidate_delegates_to_correct_provider() {
         let dir = tempfile::tempdir().unwrap();
-        let provider = FakeProvider::new(
-            "myprovider",
-            vec![],
-        );
+        let provider = FakeProvider::new("myprovider", vec![]);
         let fetcher = SubtitleFetcher::new(vec![Box::new(provider)]);
         let match_ = SubtitleMatch {
             language: "eng".to_string(),
