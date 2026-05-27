@@ -56,16 +56,18 @@ pub struct SubtitleFile {
 }
 
 /// A normalized bounding box (values in [0, 1], top-left origin).
+///
+/// Fields use `f64` to match Python's `float` (IEEE 754 double precision).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BoundingBox {
     /// Normalized left edge (0–1).
-    pub x: f32,
+    pub x: f64,
     /// Normalized top edge (0–1, top-left origin).
-    pub y: f32,
+    pub y: f64,
     /// Normalized width (0–1).
-    pub width: f32,
+    pub width: f64,
     /// Normalized height (0–1).
-    pub height: f32,
+    pub height: f64,
 }
 
 /// OCR result for a single video frame.

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::identity::MediaIdentity;
 use crate::types::{DialogueLine, OCRResult, SubtitleFile};
 
 /// Pipeline configuration.
@@ -81,9 +82,6 @@ pub struct PendingOcr {
 }
 
 /// Full pipeline context, populated progressively as each stage runs.
-///
-/// `identity` is typed as `serde_json::Value` until `mt-discovery` defines a
-/// proper `MediaIdentity` type that can be depended on from here.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PipelineContext {
     // ── Inputs (set before the pipeline runs) ─────────────────────────────
@@ -93,7 +91,7 @@ pub struct PipelineContext {
 
     // ── Stage outputs (set progressively) ─────────────────────────────────
     /// Identified media metadata. `None` until the identification stage runs.
-    pub identity: Option<serde_json::Value>,
+    pub identity: Option<MediaIdentity>,
     pub reference_path: Option<PathBuf>,
     pub original_english_track: Option<OriginalTrack>,
     pub fetched_subtitles: Option<std::collections::HashMap<String, Vec<FetchedSubtitle>>>,
