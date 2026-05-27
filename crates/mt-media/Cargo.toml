@@ -6,3 +6,13 @@ license.workspace = true
 
 [dependencies]
 mt-core = { path = "../mt-core" }
+mt-subtitles = { path = "../mt-subtitles" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ttf-parser = "0.25"
+once_cell = "1"
+dirs = "5"
+tempfile = "3"
+
+[dev-dependencies]
