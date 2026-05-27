@@ -6,3 +6,7 @@ license.workspace = true
 
 [dependencies]
 mt-core = { path = "../mt-core" }
+
+[dev-dependencies]
+subparse = "0.7.0"
+serde_json = { workspace = true }
