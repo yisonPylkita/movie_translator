@@ -45,3 +45,34 @@
 //! - BOM (`\u{FEFF}`) must be handled.
 //! - `Text` field is the last comma-separated field and may contain commas: use `splitn(n, ',')`.
 //! - See `examples/spike_handroll.rs` for a working minimal implementation as evidence.
+
+pub mod ass;
+pub mod encoding;
+pub mod model;
+pub mod processor;
+pub mod srt;
+
+#[cfg(test)]
+mod tests;
+
+use std::path::Path;
+
+pub use encoding::normalize_encoding;
+pub use model::{AssTime, Event, EventKind, RawSection, Style, Subtitles};
+pub use processor::{find_dialogue_style, SubtitleProcessingError, SubtitleProcessor};
+
+/// Load a subtitle file by path, dispatching on extension (`.ass`/`.ssa` or `.srt`).
+pub fn load(path: &Path) -> Result<Subtitles, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("ass") | Some("ssa") => ass::load_ass(&content),
+        Some("srt") => srt::load_srt(&content),
+        other => Err(format!("unsupported extension: {other:?}")),
+    }
+}
