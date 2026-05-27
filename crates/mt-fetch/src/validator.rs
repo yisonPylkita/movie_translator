@@ -9,10 +9,10 @@
 
 use std::path::Path;
 
-use mt_core::types::NON_DIALOGUE_STYLES;
 use mt_subtitles::model::Event;
 use ndarray::Array1;
 
+use crate::retry::FetchError;
 use crate::style_classifier::classify_styles;
 use crate::types::SubtitleMatch;
 
@@ -315,12 +315,10 @@ pub fn extract_timestamps_from_events(events: &[Event]) -> (Vec<(i64, i64)>, i64
             continue;
         }
 
-        // Secondary: keyword filter (catches song lyrics that look like dialogue)
-        let style_lower = event.style.to_lowercase();
-        if NON_DIALOGUE_STYLES
-            .iter()
-            .any(|kw| style_lower.contains(kw))
-        {
+        // Secondary: keyword filter (catches song lyrics that look like dialogue).
+        // Use the shared whole-token matcher so styles like "Top"/"Named" are
+        // not misclassified by a bare substring match on "op"/"ed".
+        if mt_core::is_non_dialogue_style(&event.style) {
             continue;
         }
 
@@ -346,6 +344,14 @@ pub fn extract_timestamps(path: &Path) -> (Vec<(i64, i64)>, i64) {
         Err(_) => return (vec![], 0),
     };
     extract_timestamps_from_events(&subs.events)
+}
+
+/// Like [`extract_timestamps`] but surfaces parse/IO failures instead of
+/// silently returning an empty result.
+pub fn extract_timestamps_checked(path: &Path) -> Result<(Vec<(i64, i64)>, i64), FetchError> {
+    let subs = mt_subtitles::load(path)
+        .map_err(|e| FetchError::Parse(format!("{}: {e}", path.display())))?;
+    Ok(extract_timestamps_from_events(&subs.events))
 }
 
 // ---------------------------------------------------------------------------
@@ -378,12 +384,15 @@ impl SubtitleValidator {
 
     /// Score a single candidate subtitle file against the reference.
     ///
+    /// Returns an error if the candidate file cannot be read/parsed, so callers
+    /// can skip it via normal control flow.
+    ///
     /// Mirrors Python `SubtitleValidator.score_candidate`.
-    pub fn score_candidate(&self, candidate_path: &Path) -> f64 {
-        let (cand_timestamps, _) = extract_timestamps(candidate_path);
+    pub fn score_candidate(&self, candidate_path: &Path) -> Result<f64, FetchError> {
+        let cand_timestamps = extract_timestamps_checked(candidate_path)?.0;
 
         if cand_timestamps.is_empty() || self.ref_timestamps.is_empty() {
-            return 0.0;
+            return Ok(0.0);
         }
 
         let mut ref_starts: Vec<i64> = self.ref_timestamps.iter().map(|&(s, _)| s).collect();
@@ -391,7 +400,7 @@ impl SubtitleValidator {
         let mut cand_starts: Vec<i64> = cand_timestamps.iter().map(|&(s, _)| s).collect();
         cand_starts.sort_unstable();
 
-        compute_line_match_score(&ref_starts, &cand_starts, 2000)
+        Ok(compute_line_match_score(&ref_starts, &cand_starts, 2000))
     }
 
     /// Score all candidates, filter by threshold, sort by score descending.
@@ -405,10 +414,10 @@ impl SubtitleValidator {
         let mut results = Vec::new();
 
         for (match_, path) in candidates {
-            let score = match std::panic::catch_unwind(|| self.score_candidate(path)) {
+            let score = match self.score_candidate(path) {
                 Ok(s) => s,
-                Err(_) => {
-                    tracing::warn!("Failed to score candidate {}", match_.subtitle_id);
+                Err(e) => {
+                    tracing::warn!("Failed to score candidate {}: {e}", match_.subtitle_id);
                     continue;
                 }
             };
@@ -876,7 +885,7 @@ Dialogue: 0,0:00:15.00,0:00:17.00,Song-Lyrics,,0,0,0,,La la la
         let ref_path = write_file(&tmp, "reference.srt", &make_srt(&ref_lines()));
         let cand_path = write_file(&tmp, "candidate.srt", &make_srt(&matching_lines()));
         let validator = SubtitleValidator::new(&ref_path, 10000);
-        let score = validator.score_candidate(&cand_path);
+        let score = validator.score_candidate(&cand_path).unwrap();
         assert!(score >= 0.7, "expected >= 0.7, got {score}");
     }
 
@@ -886,7 +895,7 @@ Dialogue: 0,0:00:15.00,0:00:17.00,Song-Lyrics,,0,0,0,,La la la
         let ref_path = write_file(&tmp, "reference.srt", &make_srt(&ref_lines()));
         let cand_path = write_file(&tmp, "candidate.srt", &make_srt(&mismatched_lines()));
         let validator = SubtitleValidator::new(&ref_path, 10000);
-        let score = validator.score_candidate(&cand_path);
+        let score = validator.score_candidate(&cand_path).unwrap();
         assert!(score < 0.5, "expected < 0.5, got {score}");
     }
 
@@ -949,8 +958,36 @@ Dialogue: 0,0:00:15.00,0:00:17.00,Song-Lyrics,,0,0,0,,La la la
         let ref_path = write_file(&tmp, "reference.srt", &make_srt(&ref_lines()));
         let cand_path = write_file(&tmp, "candidate.srt", "");
         let validator = SubtitleValidator::new(&ref_path, 10000);
-        let score = validator.score_candidate(&cand_path);
+        let score = validator.score_candidate(&cand_path).unwrap();
         assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn score_candidate_missing_file_returns_err() {
+        let tmp = TempDir::new().unwrap();
+        let ref_path = write_file(&tmp, "reference.srt", &make_srt(&ref_lines()));
+        let validator = SubtitleValidator::new(&ref_path, 10000);
+        let missing = tmp.path().join("does_not_exist.srt");
+        let result = validator.score_candidate(&missing);
+        assert!(result.is_err(), "expected Err for unreadable candidate");
+    }
+
+    #[test]
+    fn validate_candidates_skips_unreadable_candidate() {
+        let tmp = TempDir::new().unwrap();
+        let ref_path = write_file(&tmp, "reference.srt", &make_srt(&ref_lines()));
+        let good_path = write_file(&tmp, "good.srt", &make_srt(&matching_lines()));
+        let missing = tmp.path().join("missing.srt");
+
+        let validator = SubtitleValidator::new(&ref_path, 10000);
+        let candidates = vec![
+            (make_match("missing"), missing),
+            (make_match("good"), good_path),
+        ];
+        // The unreadable candidate is skipped via normal control flow (no panic).
+        let results = validator.validate_candidates(&candidates, 0.5);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0.subtitle_id, "good");
     }
 
     // -----------------------------------------------------------------------
