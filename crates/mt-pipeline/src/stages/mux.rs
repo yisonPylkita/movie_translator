@@ -191,7 +191,7 @@ pub fn run_with_ops(
 
         if !ctx.config.dry_run {
             if ctx.config.in_place {
-                replace_in_place(&ctx.video_path, &temp_video)?;
+                replace_in_place(&ctx.video_path, &temp_video, ops)?;
                 if let Some(inpainted) = &ctx.inpainted_video {
                     if inpainted.exists() {
                         let _ = std::fs::remove_file(inpainted);
@@ -214,8 +214,22 @@ pub fn run_with_ops(
 
 /// Replace the original with a backup-and-move strategy.
 ///
-/// Port of `MuxStage._replace_original`.
+/// Port of `MuxStage._replace_original`, reordered for data integrity:
+///
+/// 1. **Verify the muxed temp file first** — so the original is never replaced
+///    by output that fails verification.
+/// 2. Back up the original, rename the verified temp over it, then re-verify
+///    in place as defence-in-depth.
+/// 3. If the in-place verification fails, **restore the original from the
+///    backup** before returning the error.
+///
+/// Net guarantees: (a) the original is never left replaced by unverified
+/// output; (b) the backup is always either restored or removed — never
+/// orphaned.
 fn replace_original(video_path: &Path, temp_video: &Path, ops: &dyn MuxOps) -> Result<()> {
+    // (1) Verify the muxed output *before* touching the original.
+    ops.verify_result(temp_video, None)?;
+
     let backup_path = {
         let mut s = video_path.as_os_str().to_os_string();
         s.push(".backup");
@@ -223,24 +237,43 @@ fn replace_original(video_path: &Path, temp_video: &Path, ops: &dyn MuxOps) -> R
     };
     std::fs::copy(video_path, &backup_path)?;
 
+    // (2) Swap in the verified output, then re-verify in place.
     let outcome = (|| -> Result<()> {
         std::fs::rename(temp_video, video_path)?;
         ops.verify_result(video_path, None)?;
-        std::fs::remove_file(&backup_path)?;
         Ok(())
     })();
 
-    if outcome.is_err() && backup_path.exists() && !video_path.exists() {
-        std::fs::rename(&backup_path, video_path)?;
+    match outcome {
+        Ok(()) => {
+            // Success: drop the backup (never orphan it).
+            std::fs::remove_file(&backup_path)?;
+            Ok(())
+        }
+        Err(e) => {
+            // (3) Restore the original from backup, then clean the backup up so
+            // it's never left orphaned. Restore is best-effort but reported.
+            if video_path.exists() {
+                let _ = std::fs::remove_file(video_path);
+            }
+            if backup_path.exists() {
+                std::fs::rename(&backup_path, video_path)?;
+            }
+            Err(e)
+        }
     }
-    outcome
 }
 
-/// Atomic in-place replace: no backup, peak <=2x original size.
+/// In-place replace: verify the muxed temp first, then atomically rename it
+/// over the original.
 ///
 /// Port of `MuxStage._replace_in_place`. `fs::rename` is atomic on the same
-/// filesystem (POSIX `os.replace`).
-fn replace_in_place(video_path: &Path, temp_video: &Path) -> Result<()> {
+/// filesystem (POSIX `os.replace`). There is no separate backup file (peak
+/// disk use stays <=2x original); safety comes from verifying the temp output
+/// *before* the rename, so a verification failure leaves the original intact
+/// and the temp untouched (the caller unlinks it).
+fn replace_in_place(video_path: &Path, temp_video: &Path, ops: &dyn MuxOps) -> Result<()> {
+    ops.verify_result(temp_video, None)?;
     std::fs::rename(temp_video, video_path)?;
     Ok(())
 }
@@ -286,7 +319,13 @@ mod tests {
 
     // ── Fake MuxOps recording calls and simulating output ─────────────────
     struct FakeOps {
+        /// If set, every `verify_result` call fails with this message.
         verify_err: Option<String>,
+        /// If set, `verify_result` succeeds for the first N calls and then fails
+        /// with this message on call N+1 — used to simulate "the muxed temp
+        /// verifies fine but the in-place re-verify fails after the rename".
+        verify_fail_after: Option<(usize, String)>,
+        verify_calls: RefCell<usize>,
         observed_outputs: RefCell<Vec<PathBuf>>,
         observed_sources: RefCell<Vec<PathBuf>>,
         observed_orig_index: RefCell<Option<usize>>,
@@ -297,6 +336,8 @@ mod tests {
         fn new() -> Self {
             Self {
                 verify_err: None,
+                verify_fail_after: None,
+                verify_calls: RefCell::new(0),
                 observed_outputs: RefCell::new(vec![]),
                 observed_sources: RefCell::new(vec![]),
                 observed_orig_index: RefCell::new(None),
@@ -328,10 +369,20 @@ mod tests {
             Ok(())
         }
         fn verify_result(&self, _o: &Path, _e: Option<&[SubtitleFile]>) -> Result<()> {
-            match &self.verify_err {
-                Some(msg) => Err(PipelineError::Stage(msg.clone())),
-                None => Ok(()),
+            let n = {
+                let mut c = self.verify_calls.borrow_mut();
+                *c += 1;
+                *c
+            };
+            if let Some(msg) = &self.verify_err {
+                return Err(PipelineError::Stage(msg.clone()));
             }
+            if let Some((after, msg)) = &self.verify_fail_after {
+                if n > *after {
+                    return Err(PipelineError::Stage(msg.clone()));
+                }
+            }
+            Ok(())
         }
     }
 
@@ -596,21 +647,57 @@ mod tests {
         assert!(!temp.exists());
     }
 
+    fn backup_of(video: &Path) -> PathBuf {
+        let mut s = video.as_os_str().to_os_string();
+        s.push(".backup");
+        PathBuf::from(s)
+    }
+
+    /// Temp verification fails *before* any replacement: the original is left
+    /// untouched and no backup is created (nothing to orphan).
     #[test]
-    fn replace_original_keeps_backup_on_verify_failure() {
+    fn replace_original_temp_verify_failure_leaves_original_intact() {
         let dir = tempfile::tempdir().unwrap();
         let video = dir.path().join("ep01.mkv");
         std::fs::write(&video, b"original content").unwrap();
         let temp = dir.path().join("ep01_temp.mkv");
         std::fs::write(&temp, b"muxed content").unwrap();
         let mut ops = FakeOps::new();
-        ops.verify_err = Some("verification failed".into());
+        ops.verify_err = Some("temp verification failed".into());
         let err = replace_original(&video, &temp, &ops).unwrap_err();
-        assert!(err.to_string().contains("verification failed"));
-        // rename succeeded before verify failed → video exists, backup retained.
-        let mut backup = video.into_os_string();
-        backup.push(".backup");
-        assert!(PathBuf::from(backup).exists());
+        assert!(err.to_string().contains("temp verification failed"));
+        // Original unchanged; no backup orphaned; temp still present (the
+        // run_with_ops caller unlinks it, not replace_original).
+        assert_eq!(std::fs::read_to_string(&video).unwrap(), "original content");
+        assert!(!backup_of(&video).exists(), "no backup should be orphaned");
+    }
+
+    /// Verification fails *after* the rename (temp verified OK, in-place verify
+    /// failed): the original must be restored from backup, the backup removed,
+    /// and the error returned. Guards against silently replacing the original
+    /// with unverified output.
+    #[test]
+    fn replace_original_restores_on_post_rename_verify_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let video = dir.path().join("ep01.mkv");
+        std::fs::write(&video, b"original content").unwrap();
+        let temp = dir.path().join("ep01_temp.mkv");
+        std::fs::write(&temp, b"muxed content").unwrap();
+        let mut ops = FakeOps::new();
+        // First verify (the temp) passes; second verify (in place) fails.
+        ops.verify_fail_after = Some((1, "in-place verification failed".into()));
+        let err = replace_original(&video, &temp, &ops).unwrap_err();
+        assert!(err.to_string().contains("in-place verification failed"));
+        // Original restored from backup; backup removed (not orphaned).
+        assert_eq!(
+            std::fs::read_to_string(&video).unwrap(),
+            "original content",
+            "original must be restored, never left as unverified output"
+        );
+        assert!(
+            !backup_of(&video).exists(),
+            "backup must be cleaned up after restore"
+        );
     }
 
     /// Integration test: real ffmpeg mux via `FfmpegMuxOps` + `DirectGpuExecutor`.
