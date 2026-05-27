@@ -16,6 +16,7 @@ use mt_ml::TranslateRequest;
 
 use crate::error::{PipelineError, Result};
 use crate::gpu::GpuExecutor;
+use crate::proper_nouns::extract_proper_nouns_from_subtitles;
 
 /// Stage role name (matches the Python `TranslateStage.name`).
 pub const NAME: &str = "translate";
@@ -72,10 +73,13 @@ pub fn check_fonts(ctx: &PipelineContext) -> FontInfo {
 /// Run the translate stage.
 ///
 /// Port of `TranslateStage.run`. Performs the font check inline and routes
-/// translation (primary + extras) through `executor`. `proper_nouns` carries
-/// the character-name protection list (the Python
-/// `extract_proper_nouns_from_subtitles` has no Rust port yet — the caller
-/// supplies it, or `None`).
+/// translation (primary + extras) through `executor`.
+///
+/// `proper_nouns` carries the character-name protection list. When `None`, the
+/// stage derives it from the dialogue itself via
+/// [`extract_proper_nouns_from_subtitles`] — mirroring
+/// `movie_translator/stages/translate.py` (lines 70-75). A caller-supplied
+/// override is used as-is when present.
 pub fn run(
     ctx: PipelineContext,
     executor: &dyn GpuExecutor,
@@ -94,6 +98,20 @@ pub fn run(
 
     let total = dialogue_lines.len();
     tracing::info!("Translating {total} lines...");
+
+    // Detect character names from dialogue for translation protection, unless
+    // the caller supplied an explicit override.
+    let proper_nouns: Option<Vec<String>> = proper_nouns.or_else(|| {
+        let texts: Vec<String> = dialogue_lines.iter().map(|l| l.text.clone()).collect();
+        let names = extract_proper_nouns_from_subtitles(&texts);
+        if names.is_empty() {
+            None
+        } else {
+            let mut v: Vec<String> = names.into_iter().collect();
+            v.sort();
+            Some(v)
+        }
+    });
 
     // Font check (inline; concurrent with translation in the async pipeline).
     ctx.font_info = Some(check_fonts(&ctx));
@@ -284,6 +302,52 @@ mod tests {
         let result = run(ctx(dir.path(), vec!["apple".into()]), &gpu, None).unwrap();
         assert!(result.extra_translations.is_empty());
         assert!(result.translated_lines.is_some());
+    }
+
+    #[test]
+    fn proper_nouns_derived_from_dialogue_when_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = ctx(dir.path(), vec![]);
+        // Repeated capitalized name in direct address → derived as a proper noun.
+        c.dialogue_lines = Some(vec![
+            DialogueLine { start_ms: 0, end_ms: 1, text: "Guts! Get up.".into() },
+            DialogueLine { start_ms: 1, end_ms: 2, text: "We follow Guts into battle.".into() },
+            DialogueLine { start_ms: 2, end_ms: 3, text: "I trust Guts with my life.".into() },
+        ]);
+        let gpu = FakeGpu {
+            primary: vec![DialogueLine { start_ms: 0, end_ms: 1, text: "x".into() }],
+            extra: std::collections::HashMap::new(),
+            seen_models: RefCell::new(vec![]),
+            seen_proper_nouns: RefCell::new(None),
+        };
+        // None → stage derives proper nouns itself.
+        run(c, &gpu, None).unwrap();
+        assert_eq!(
+            gpu.seen_proper_nouns.borrow().as_deref(),
+            Some(&["Guts".to_string()][..])
+        );
+    }
+
+    #[test]
+    fn caller_override_takes_precedence() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = ctx(dir.path(), vec![]);
+        c.dialogue_lines = Some(vec![DialogueLine {
+            start_ms: 0,
+            end_ms: 1,
+            text: "Guts! Guts! Guts!".into(),
+        }]);
+        let gpu = FakeGpu {
+            primary: vec![DialogueLine { start_ms: 0, end_ms: 1, text: "x".into() }],
+            extra: std::collections::HashMap::new(),
+            seen_models: RefCell::new(vec![]),
+            seen_proper_nouns: RefCell::new(None),
+        };
+        run(c, &gpu, Some(vec!["Override".into()])).unwrap();
+        assert_eq!(
+            gpu.seen_proper_nouns.borrow().as_deref(),
+            Some(&["Override".to_string()][..])
+        );
     }
 
     /// Integration test: translate via the real `DirectGpuExecutor`, which
