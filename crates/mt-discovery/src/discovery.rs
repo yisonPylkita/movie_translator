@@ -3,6 +3,7 @@
 //! Ported from `movie_translator/discovery.py`.
 
 use mt_core::Result;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Video file extensions considered valid inputs.
@@ -51,13 +52,26 @@ pub fn find_videos(input_path: &Path) -> Vec<PathBuf> {
     }
 
     let mut videos: Vec<PathBuf> = Vec::new();
-    collect_videos(input_path, input_path, &mut videos);
+    let mut visited: HashSet<PathBuf> = HashSet::new();
+    collect_videos(input_path, input_path, &mut videos, &mut visited);
     videos.sort();
     videos
 }
 
 /// Recursively walk a directory, collecting video files into `out`.
-fn collect_videos(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
+///
+/// Guards against infinite recursion on circular directory symlinks by
+/// tracking canonicalized directory paths in `visited` and by never
+/// descending into a symlinked directory.
+fn collect_videos(root: &Path, dir: &Path, out: &mut Vec<PathBuf>, visited: &mut HashSet<PathBuf>) {
+    // Record this directory's canonical path; if we've already visited it,
+    // a symlink cycle has brought us back — stop.
+    if let Ok(canon) = std::fs::canonicalize(dir) {
+        if !visited.insert(canon) {
+            return;
+        }
+    }
+
     let mut entries: Vec<PathBuf> = match std::fs::read_dir(dir) {
         Ok(rd) => rd.filter_map(|e| e.ok()).map(|e| e.path()).collect(),
         Err(_) => return,
@@ -71,8 +85,17 @@ fn collect_videos(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) {
             continue;
         }
 
+        // Never descend into a symlinked directory: it can point back up the
+        // tree (cycle) or escape the root entirely.
+        let is_symlink = std::fs::symlink_metadata(&entry)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false);
+        if is_symlink {
+            continue;
+        }
+
         if entry.is_dir() {
-            collect_videos(root, &entry, out);
+            collect_videos(root, &entry, out, visited);
         } else if entry.is_file() && has_video_extension(&entry) && !is_in_place_temp(&entry) {
             // Verify no hidden component in relative path
             if let Ok(rel) = entry.strip_prefix(root) {
@@ -211,6 +234,26 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert!(result.contains(&v1));
         assert!(result.contains(&v2));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn self_referential_symlink_does_not_loop() {
+        use std::os::unix::fs::symlink;
+
+        let dir = TempDir::new().unwrap();
+        let real = dir.path().join("ep01.mkv");
+        touch(&real);
+
+        // Create a directory containing a symlink that points back to its parent,
+        // forming a cycle. Without cycle detection this recurses forever.
+        let sub = dir.path().join("sub");
+        std::fs::create_dir_all(&sub).unwrap();
+        symlink(dir.path(), sub.join("loop")).unwrap();
+
+        let result = find_videos(dir.path());
+        // Must terminate and find the single real video exactly once.
+        assert_eq!(result, vec![real]);
     }
 
     // --- create_work_dir ---

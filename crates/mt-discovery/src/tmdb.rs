@@ -7,6 +7,7 @@
 //! TMDB enrichment is always optional.
 
 use mt_core::{MtError, Result};
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use serde::Deserialize;
 
 const TMDB_BASE: &str = "https://api.themoviedb.org/3";
@@ -92,22 +93,13 @@ pub(crate) fn build_search_url(
     format!("{TMDB_BASE}{endpoint}?{}", qs.join("&"))
 }
 
-/// Minimal percent-encoding for TMDB query params (spaces → `%20`, etc.).
+/// Percent-encode a TMDB query-string value.
+///
+/// Uses [`NON_ALPHANUMERIC`] so reserved characters (`& + = # ? /` and others)
+/// are escaped — otherwise titles like "Tom & Jerry" would corrupt the query
+/// string. Unicode is encoded as its UTF-8 bytes.
 fn url_encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => out.push(c),
-            ' ' => out.push_str("%20"),
-            c => {
-                let encoded = c.to_string();
-                for b in encoded.as_bytes() {
-                    out.push_str(&format!("%{:02X}", b));
-                }
-            }
-        }
-    }
-    out
+    utf8_percent_encode(s, NON_ALPHANUMERIC).to_string()
 }
 
 /// Look up a title on TMDB and return enrichment data.
@@ -118,18 +110,33 @@ fn url_encode(s: &str) -> String {
 /// - Any HTTP or parsing error occurs.
 pub fn lookup_tmdb(title: &str, year: Option<i32>, media_type: &str) -> Option<TmdbResult> {
     let api_key = std::env::var("TMDB_API_KEY").unwrap_or_default();
+    lookup_tmdb_with_key(&api_key, title, year, media_type)
+}
+
+/// Like [`lookup_tmdb`] but with the API key injected explicitly.
+///
+/// Returns `None` if `api_key` is empty (no enrichment), if no results are
+/// found, or if any HTTP/parse error occurs. Taking the key as an argument
+/// (rather than reading the environment internally) makes the no-key path
+/// testable without mutating process-global state.
+pub fn lookup_tmdb_with_key(
+    api_key: &str,
+    title: &str,
+    year: Option<i32>,
+    media_type: &str,
+) -> Option<TmdbResult> {
     if api_key.is_empty() {
         return None;
     }
 
-    lookup_tmdb_with_client(api_key.as_str(), title, year, media_type)
+    lookup_tmdb_with_client(api_key, title, year, media_type)
         .ok()
         .flatten()
 }
 
 /// Inner function that performs the actual HTTP calls.
-/// Separated so it can return a `Result` internally while `lookup_tmdb`
-/// maps all errors to `None`.
+/// Separated so it can return a `Result` internally while the public wrappers
+/// map all errors to `None`.
 fn lookup_tmdb_with_client(
     api_key: &str,
     title: &str,
@@ -301,13 +308,46 @@ mod tests {
         assert!(url.contains("first_air_date_year=1999"));
     }
 
-    // ── lookup_tmdb returns None without API key ───────────────────────────────
+    // ── build_search_url encodes reserved/unicode characters (bug 6) ───────────
 
     #[test]
-    fn lookup_tmdb_no_key_returns_none() {
-        // Ensure env var is unset for this test
-        std::env::remove_var("TMDB_API_KEY");
-        let result = lookup_tmdb("Test Movie", None, "movie");
+    fn build_url_encodes_ampersand_title() {
+        // "Tom & Jerry" must not leak a raw '&' into the query string, which
+        // would split it into a spurious extra param.
+        let url = build_search_url("key123", "Tom & Jerry", None, "movie");
+        assert!(
+            url.contains("query=Tom%20%26%20Jerry"),
+            "ampersand/space not encoded: {url}"
+        );
+        assert!(
+            !url.contains("query=Tom & Jerry"),
+            "raw ampersand leaked: {url}"
+        );
+        // Exactly two params: api_key and query (no spurious split).
+        assert_eq!(url.matches('&').count(), 1, "unexpected param split: {url}");
+    }
+
+    #[test]
+    fn build_url_encodes_reserved_and_unicode() {
+        let url = build_search_url("key123", "A+B=C/D#E?F", None, "movie");
+        for raw in ["+", "=", "/", "#", "?"] {
+            assert!(
+                !url.contains(&format!("query=A{raw}")),
+                "reserved char {raw:?} not encoded in {url}"
+            );
+        }
+        // Unicode title (Japanese) → percent-encoded UTF-8 bytes.
+        let url2 = build_search_url("key123", "千と千尋", None, "movie");
+        assert!(url2.contains("query=%E5%8D%83"), "unicode not encoded: {url2}");
+    }
+
+    // ── injected-key no-key path is testable without env mutation (bug 8) ──────
+
+    #[test]
+    fn lookup_tmdb_empty_key_returns_none() {
+        // Injection avoids mutating the process-global TMDB_API_KEY env var,
+        // which is parallel-unsafe.
+        let result = lookup_tmdb_with_key("", "Test Movie", None, "movie");
         assert!(result.is_none());
     }
 }

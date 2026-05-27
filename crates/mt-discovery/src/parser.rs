@@ -35,23 +35,6 @@ struct ParseRequest<'a> {
     folder_name: Option<&'a str>,
 }
 
-/// Locate the repository root by walking up from the current directory
-/// until we find the `ml/` subdirectory (which contains `parse_filename.py`).
-/// Falls back to the current directory if not found.
-fn find_repo_root() -> std::path::PathBuf {
-    let mut dir = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    loop {
-        if dir.join("ml").join("parse_filename.py").exists() {
-            return dir;
-        }
-        match dir.parent() {
-            Some(p) => dir = p.to_path_buf(),
-            None => break,
-        }
-    }
-    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-}
-
 /// Invoke `ml/parse_filename.py` to parse a video filename.
 ///
 /// Spawns `uv run python ml/parse_filename.py` (from the repo root),
@@ -68,7 +51,9 @@ pub fn parse_filename(filename: &str, folder: Option<&str>) -> Result<ParsedName
     let input = serde_json::to_string(&request)
         .map_err(|e| MtError::Parse(format!("failed to serialize request: {e}")))?;
 
-    let repo_root = find_repo_root();
+    // Resolve the `ml/` scripts directory robustly (executable- or cwd-anchored)
+    // with no silent cwd fallback; the script is run from the repo root.
+    let repo_root = mt_core::paths::repo_root()?;
 
     // Try `uv run python` first; if uv isn't available fall back to `python3`.
     let output = try_run_script(
