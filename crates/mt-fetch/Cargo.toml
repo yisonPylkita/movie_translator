@@ -7,3 +7,19 @@ license.workspace = true
 [dependencies]
 mt-core = { path = "../mt-core" }
 mt-subtitles = { path = "../mt-subtitles" }
+mt-discovery = { path = "../mt-discovery" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { version = "2" }
+reqwest = { version = "0.12", features = ["blocking", "cookies", "rustls-tls", "json"], default-features = false }
+scraper = "0.20"
+quick-xml = { version = "0.36" }
+md-5 = "0.10"
+zip = "2"
+regex = "1"
+tracing = "0.1"
+urlencoding = "2"
+encoding_rs = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
