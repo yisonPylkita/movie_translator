@@ -18,6 +18,9 @@ pub enum MtError {
 
     #[error("network error: {0}")]
     Network(String),
+
+    #[error("path resolution failed: {0}")]
+    PathResolution(String),
 }
 
 /// Convenience `Result` alias for this crate.

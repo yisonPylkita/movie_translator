@@ -6,8 +6,35 @@ use serde::{Deserialize, Serialize};
 /// Covers common fansub naming: OP/ED/IN (insert song) layers with
 /// romaji (OPRO/INRO) and English (OPEN/INEN) suffixes.
 pub const NON_DIALOGUE_STYLES: &[&str] = &[
-    "sign", "song", "title", "op", "ed", "insert", "inro", "inen",
+    "sign", "signs", "song", "songs", "title", "titles", "op", "ed", "insert", "inro", "inen",
 ];
+
+/// Returns `true` if `name` is a non-dialogue style (sign, song, OP/ED, etc.).
+///
+/// Uses WHOLE-WORD/token matching rather than substring matching: the style
+/// name is split into tokens on `-`, `_`, whitespace, and digit boundaries,
+/// and a token must *equal* one of [`NON_DIALOGUE_STYLES`] (case-insensitive)
+/// to count. This prevents abbreviations like `op`/`ed` from matching inside
+/// unrelated words such as "Top", "Opening", "Named", or "Graded".
+///
+/// # Examples
+/// ```
+/// use mt_core::types::is_non_dialogue_style;
+/// assert!(is_non_dialogue_style("OP-Romaji"));
+/// assert!(is_non_dialogue_style("Sign"));
+/// assert!(is_non_dialogue_style("Insert Song"));
+/// assert!(!is_non_dialogue_style("Dialogue Top")); // "Top" is not "op"
+/// assert!(!is_non_dialogue_style("Named"));        // "Named" is not "ed"
+/// assert!(!is_non_dialogue_style("Graded"));
+/// ```
+pub fn is_non_dialogue_style(name: &str) -> bool {
+    name.split(|c: char| c == '-' || c == '_' || c.is_whitespace() || c.is_ascii_digit())
+        .filter(|tok| !tok.is_empty())
+        .any(|tok| {
+            let tok_lower = tok.to_ascii_lowercase();
+            NON_DIALOGUE_STYLES.iter().any(|kw| *kw == tok_lower)
+        })
+}
 
 /// Polish diacritical characters.
 pub const POLISH_CHARS: &str = "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ";
@@ -123,5 +150,36 @@ mod tests {
         assert!(NON_DIALOGUE_STYLES.contains(&"sign"));
         assert!(NON_DIALOGUE_STYLES.contains(&"inen"));
         assert!(!NON_DIALOGUE_STYLES.contains(&"dialogue"));
+    }
+
+    #[test]
+    fn is_non_dialogue_style_matches_whole_tokens() {
+        assert!(is_non_dialogue_style("Sign"));
+        assert!(is_non_dialogue_style("sign"));
+        assert!(is_non_dialogue_style("Signs"));
+        assert!(is_non_dialogue_style("Songs"));
+        assert!(is_non_dialogue_style("OP"));
+        assert!(is_non_dialogue_style("ED"));
+        assert!(is_non_dialogue_style("OP-Romaji"));
+        assert!(is_non_dialogue_style("ED_EN"));
+        assert!(is_non_dialogue_style("Insert Song"));
+        assert!(is_non_dialogue_style("Title Card"));
+        // Digit boundaries split tokens (OP1 → "OP" + "1").
+        assert!(is_non_dialogue_style("OP1"));
+        assert!(is_non_dialogue_style("Sign2"));
+    }
+
+    #[test]
+    fn is_non_dialogue_style_rejects_substrings() {
+        // The whole point of the fix: abbreviations must not match as substrings.
+        assert!(!is_non_dialogue_style("Top")); // contains "op" but is not a token "op"
+        assert!(!is_non_dialogue_style("Dialogue Top"));
+        assert!(!is_non_dialogue_style("Opening")); // contains "op"
+        assert!(!is_non_dialogue_style("Named")); // contains "ed"
+        assert!(!is_non_dialogue_style("Graded")); // contains "ed"
+        assert!(!is_non_dialogue_style("Default"));
+        assert!(!is_non_dialogue_style("Dialogue"));
+        assert!(!is_non_dialogue_style("Main"));
+        assert!(!is_non_dialogue_style(""));
     }
 }
