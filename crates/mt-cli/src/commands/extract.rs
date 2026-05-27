@@ -219,15 +219,18 @@ fn identity_to_json(identity: &MediaIdentity) -> serde_json::Value {
     })
 }
 
-/// Run the extract flow. Returns the process exit code. Port of `extract_cmd.run`
-/// + `run_extract`.
-pub async fn run(args: ExtractArgs) -> i32 {
+/// Run the extract flow. Returns the deliberate exit code as `Ok(code)`, or an
+/// `Err` with a `.context()` chain (printed by `main`) for a genuine IO failure.
+/// Port of `extract_cmd.run` + `run_extract`.
+pub async fn run(args: ExtractArgs) -> anyhow::Result<i32> {
+    use anyhow::Context;
+
     crate::init_tracing(args.verbose);
 
     let input_path = PathBuf::from(&args.input);
     if !input_path.exists() {
         eprintln!("Not found: {}", input_path.display());
-        return 1;
+        return Ok(1);
     }
 
     let output_dir = match &args.output {
@@ -248,13 +251,11 @@ pub async fn run(args: ExtractArgs) -> i32 {
     let video_files = find_videos(&input_path);
     if video_files.is_empty() {
         eprintln!("No video files found in {}", input_path.display());
-        return 1;
+        return Ok(1);
     }
 
-    if std::fs::create_dir_all(&output_dir).is_err() {
-        eprintln!("Could not create output dir {}", output_dir.display());
-        return 1;
-    }
+    std::fs::create_dir_all(&output_dir)
+        .with_context(|| format!("creating output dir {}", output_dir.display()))?;
 
     let extractor = SubtitleExtractor::new();
     let worker = GpuWorker::spawn();
@@ -324,17 +325,12 @@ pub async fn run(args: ExtractArgs) -> i32 {
         "entries": entries,
     });
     let manifest_path = output_dir.join("manifest.json");
-    match serde_json::to_string_pretty(&manifest) {
-        Ok(s) => {
-            if std::fs::write(&manifest_path, s).is_err() {
-                eprintln!("Failed to write manifest");
-                return 1;
-            }
-        }
-        Err(_) => return 1,
-    }
+    let manifest_json =
+        serde_json::to_string_pretty(&manifest).context("serializing extract manifest")?;
+    std::fs::write(&manifest_path, manifest_json)
+        .with_context(|| format!("writing manifest {}", manifest_path.display()))?;
     eprintln!("\nManifest written to {}", manifest_path.display());
-    0
+    Ok(0)
 }
 
 #[cfg(test)]

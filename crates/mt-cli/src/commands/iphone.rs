@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use mt_discovery::find_videos;
 use mt_media::{get_ffmpeg, get_video_info};
@@ -63,8 +64,9 @@ struct Probe {
     has_pol_subs: bool,
 }
 
-fn probe(mkv_path: &Path) -> Result<Probe, String> {
-    let info = get_video_info(mkv_path).map_err(|e| e.to_string())?;
+fn probe(mkv_path: &Path) -> Result<Probe> {
+    let info = get_video_info(mkv_path)
+        .with_context(|| format!("probing {}", mkv_path.display()))?;
     let mut video_codec = String::new();
     let mut has_jpn = false;
     let mut has_pol = false;
@@ -117,8 +119,8 @@ fn build_ffmpeg_cmd(
     mkv_path: &Path,
     temp_path: &Path,
     include_subs: bool,
-) -> Result<Vec<String>, String> {
-    let ffmpeg = get_ffmpeg().map_err(|e| e.to_string())?;
+) -> Result<Vec<String>> {
+    let ffmpeg = get_ffmpeg().context("locating ffmpeg")?;
     let mut cmd: Vec<String> = vec![
         ffmpeg.to_string_lossy().to_string(),
         "-y".into(),
@@ -182,31 +184,31 @@ fn video_duration(info: &mt_media::VideoInfo) -> f64 {
         .unwrap_or(0.0)
 }
 
-fn verify_output(src: &Path, dst: &Path) -> Result<(), String> {
+fn verify_output(src: &Path, dst: &Path) -> Result<()> {
     let tolerance = 1.0_f64;
-    let src_info = get_video_info(src).map_err(|e| e.to_string())?;
-    let dst_info = get_video_info(dst).map_err(|e| e.to_string())?;
+    let src_info = get_video_info(src)
+        .with_context(|| format!("probing source {}", src.display()))?;
+    let dst_info = get_video_info(dst)
+        .with_context(|| format!("probing output {}", dst.display()))?;
 
     let src_dur = video_duration(&src_info);
     let dst_dur = video_duration(&dst_info);
     if src_dur > 0.0 && (src_dur - dst_dur).abs() > tolerance {
-        return Err(format!(
-            "duration mismatch: src={src_dur:.2}s dst={dst_dur:.2}s"
-        ));
+        bail!("duration mismatch: src={src_dur:.2}s dst={dst_dur:.2}s");
     }
     if !dst_info
         .streams
         .iter()
         .any(|s| s.codec_type.as_deref() == Some("video"))
     {
-        return Err("output has no video stream".into());
+        bail!("output has no video stream");
     }
     if !dst_info
         .streams
         .iter()
         .any(|s| s.codec_type.as_deref() == Some("audio"))
     {
-        return Err("output has no audio stream".into());
+        bail!("output has no audio stream");
     }
     Ok(())
 }
@@ -216,7 +218,7 @@ fn verify_output(src: &Path, dst: &Path) -> Result<(), String> {
 fn convert_file(mkv_path: &Path, dry_run: bool) -> (String, String) {
     let p = match probe(mkv_path) {
         Ok(p) => p,
-        Err(e) => return ("failed".into(), e),
+        Err(e) => return ("failed".into(), format!("{e:#}")),
     };
     if let Some(detail) = should_skip(mkv_path, &p) {
         return ("skipped".into(), detail);
@@ -233,14 +235,14 @@ fn convert_file(mkv_path: &Path, dry_run: bool) -> (String, String) {
 
     let cmd = match build_ffmpeg_cmd(mkv_path, &temp, p.has_pol_subs) {
         Ok(c) => c,
-        Err(e) => return ("failed".into(), e),
+        Err(e) => return ("failed".into(), format!("{e:#}")),
     };
 
-    let result = (|| -> Result<(), String> {
+    let result = (|| -> Result<()> {
         let out = Command::new(&cmd[0])
             .args(&cmd[1..])
             .output()
-            .map_err(|e| e.to_string())?;
+            .context("spawning ffmpeg")?;
         if !out.status.success() {
             let stderr = String::from_utf8_lossy(&out.stderr);
             let tail: Vec<&str> = stderr
@@ -252,11 +254,13 @@ fn convert_file(mkv_path: &Path, dry_run: bool) -> (String, String) {
                 .into_iter()
                 .rev()
                 .collect();
-            return Err(format!("ffmpeg failed: {}", tail.join(" | ")));
+            bail!("ffmpeg failed: {}", tail.join(" | "));
         }
-        verify_output(mkv_path, &temp)?;
-        std::fs::rename(&temp, &target).map_err(|e| e.to_string())?;
-        std::fs::remove_file(mkv_path).map_err(|e| e.to_string())?;
+        verify_output(mkv_path, &temp).context("verifying remuxed output")?;
+        std::fs::rename(&temp, &target)
+            .with_context(|| format!("renaming {} -> {}", temp.display(), target.display()))?;
+        std::fs::remove_file(mkv_path)
+            .with_context(|| format!("removing source {}", mkv_path.display()))?;
         Ok(())
     })();
 
@@ -266,7 +270,7 @@ fn convert_file(mkv_path: &Path, dry_run: bool) -> (String, String) {
             if temp.exists() {
                 let _ = std::fs::remove_file(&temp);
             }
-            ("failed".into(), e)
+            ("failed".into(), format!("{e:#}"))
         }
     }
 }
@@ -378,20 +382,22 @@ fn print_summary(results: &[(PathBuf, String, String)]) -> (usize, usize, usize)
     (succ, skip, fail)
 }
 
-/// Run the iphone flow. Returns the process exit code. Port of `iphone_cmd.run`.
-pub async fn run(args: IphoneArgs) -> i32 {
+/// Run the iphone flow. Returns the deliberate process exit code as `Ok(code)`,
+/// or an `Err` carrying a `.context()` chain for a genuine failure (printed by
+/// `main`). Port of `iphone_cmd.run`.
+pub async fn run(args: IphoneArgs) -> Result<i32> {
     crate::init_tracing(args.verbose);
 
     let input_path = PathBuf::from(&args.input);
     if !input_path.exists() {
         eprintln!("Not found: {}", input_path.display());
-        return 1;
+        return Ok(1);
     }
 
     let mkv_files = find_mkvs(&input_path);
     if mkv_files.is_empty() && !args.do_zip {
         eprintln!("No .mkv files found in {}", input_path.display());
-        return if input_path.is_dir() { 0 } else { 1 };
+        return Ok(if input_path.is_dir() { 0 } else { 1 });
     }
 
     if !mkv_files.is_empty() {
@@ -421,36 +427,28 @@ pub async fn run(args: IphoneArgs) -> i32 {
     if args.do_zip {
         if args.dry_run {
             eprintln!("--dry-run: skipping zip packing");
-            return 0;
+            return Ok(0);
         }
         if !input_path.is_dir() {
             eprintln!("--zip requires a directory as input");
-            return 1;
+            return Ok(1);
         }
         let mut mp4_files: Vec<PathBuf> = walk_mp4s(&input_path);
         mp4_files.sort();
         if mp4_files.is_empty() {
             eprintln!("No .mp4 files to pack");
-            return 0;
+            return Ok(0);
         }
         eprintln!(
             "Packing {} file(s) into a store-only zip...",
             mp4_files.len()
         );
-        match crate::commands::zip_store::pack_and_clean(&input_path, &mp4_files) {
-            Ok(zip_path) => eprintln!("✓ Zip created: {}", zip_path.display()),
-            Err(e) => {
-                tracing::error!("Zip packing failed: {e:#}");
-                return 1;
-            }
-        }
+        let zip_path = crate::commands::zip_store::pack_and_clean(&input_path, &mp4_files)
+            .context("packing converted MP4s into a store-only zip")?;
+        eprintln!("✓ Zip created: {}", zip_path.display());
     }
 
-    if fail > 0 {
-        1
-    } else {
-        0
-    }
+    Ok(if fail > 0 { 1 } else { 0 })
 }
 
 /// Recursively collect `.mp4` files under `dir`, skipping any path component

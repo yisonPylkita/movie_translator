@@ -7,6 +7,7 @@
 //! Uses a multi-threaded tokio runtime: `run_all` overlaps file IO/CPU work
 //! across worker threads while serialising GPU work on a single worker.
 
+use anyhow::Result;
 use clap::Parser;
 
 use mt_cli::commands::{extract, iphone, translate};
@@ -16,7 +17,12 @@ async fn main() {
     let argv: Vec<String> = std::env::args().collect();
 
     // Subcommand routing mirrors main.py: dispatch on the first positional.
-    let code = match argv.get(1).map(String::as_str) {
+    // Each `run` returns `anyhow::Result<i32>`: `Ok(code)` is a deliberate exit
+    // code (preserving the existing not-found=1 / guard=2 / empty-input
+    // semantics), while `Err` is a propagated failure whose full `.context()`
+    // chain — including the structured thiserror causes bubbled up from the
+    // library crates — is printed to stderr before exiting 1.
+    let result: Result<i32> = match argv.get(1).map(String::as_str) {
         Some("extract") => {
             // clap parses argv[0] (prog) + the args after `extract`.
             let args = parse_or_exit::<extract::ExtractArgs>(&argv, 2, "extract");
@@ -30,6 +36,15 @@ async fn main() {
             // Default = translate. Parse the full argv (no subcommand to skip).
             let args = parse_or_exit::<translate::TranslateArgs>(&argv, 1, "movie-translator");
             translate::run(args).await
+        }
+    };
+
+    let code = match result {
+        Ok(code) => code,
+        Err(e) => {
+            // `{:#}` prints the whole anyhow context chain on one line.
+            eprintln!("Error: {e:#}");
+            1
         }
     };
 

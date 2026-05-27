@@ -184,11 +184,16 @@ pub fn cleanup_in_place_orphans(video_files: &[PathBuf]) -> usize {
     removed
 }
 
-/// Run the translate flow. Returns the process exit code.
+/// Run the translate flow. Returns the deliberate process exit code as
+/// `Ok(code)`, or an `Err` carrying a `.context()` chain (printed by `main`)
+/// for a genuine pipeline failure — the structured `PipelineError` cause from
+/// `run_all` propagates through anyhow.
 ///
 /// Port of `translate_cmd.run`. Async because it drives `run_all` on the
 /// multi-threaded runtime.
-pub async fn run(args: TranslateArgs) -> i32 {
+pub async fn run(args: TranslateArgs) -> anyhow::Result<i32> {
+    use anyhow::Context;
+
     crate::init_tracing(args.verbose);
 
     warn_unimplemented_metrics(args.metrics);
@@ -199,23 +204,23 @@ pub async fn run(args: TranslateArgs) -> i32 {
         eprintln!(
             "--in-place is incompatible with --inpaint (inpainting requires an extra full-size temp copy)."
         );
-        return 2;
+        return Ok(2);
     }
 
     let input_path = PathBuf::from(&args.input);
     if !input_path.exists() {
         eprintln!("Not found: {}", input_path.display());
-        return 1;
+        return Ok(1);
     }
 
     if !check_dependencies() {
-        return 1;
+        return Ok(1);
     }
 
     let video_files = find_videos(&input_path);
     if video_files.is_empty() {
         eprintln!("No video files found in {}", input_path.display());
-        return 1;
+        return Ok(1);
     }
 
     let root_dir: PathBuf = if input_path.is_dir() {
@@ -247,8 +252,9 @@ pub async fn run(args: TranslateArgs) -> i32 {
         Ok(r) => r,
         Err(e) => {
             progress.finish();
-            eprintln!("Pipeline error: {e}");
-            return 1;
+            // Propagate with context so `main` prints the full chain, including
+            // the structured PipelineError cause from the libraries.
+            return Err(e).context("running the translation pipeline");
         }
     };
 
@@ -268,11 +274,7 @@ pub async fn run(args: TranslateArgs) -> i32 {
     }
 
     let any_failed = results.iter().any(|(_, s)| *s == FileStatus::Failed);
-    if any_failed {
-        1
-    } else {
-        0
-    }
+    Ok(if any_failed { 1 } else { 0 })
 }
 
 fn display_name(video_path: &Path, root_dir: &Path) -> String {
