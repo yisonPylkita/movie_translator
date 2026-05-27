@@ -105,8 +105,9 @@ The Python test suite and benchmarks are the behavioral specification.
 ## Top Fidelity Risks
 
 1. **ASS parsing.** pysubs2 is mature (styles, override tags, embedded fonts).
-   Hand-roll a parser or use `subparse`; verify round-trip against existing test
-   `.ass` files. Round-trip fidelity is the acceptance bar.
+   **Spike both** a hand-rolled parser and the `subparse` crate against the
+   existing test `.ass` files; keep whichever wins on round-trip fidelity.
+   Round-trip fidelity is the acceptance bar.
 2. **guessit / aniparse.** Large rule sets for filename parsing — highest
    porting-fidelity risk. Mitigate with a parity test-corpus harvested from
    Python output across many real filenames.
