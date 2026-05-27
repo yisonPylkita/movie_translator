@@ -74,15 +74,11 @@ fn probe(mkv_path: &Path) -> Result<Probe, String> {
             Some("video") if video_codec.is_empty() => {
                 video_codec = s.codec_name.clone().unwrap_or_default();
             }
-            Some("audio") => {
-                if s.tags.get("language").map(String::as_str) == Some("jpn") {
-                    has_jpn = true;
-                }
+            Some("audio") if s.tags.get("language").map(String::as_str) == Some("jpn") => {
+                has_jpn = true;
             }
-            Some("subtitle") => {
-                if s.tags.get("language").map(String::as_str) == Some("pol") {
-                    has_pol = true;
-                }
+            Some("subtitle") if s.tags.get("language").map(String::as_str) == Some("pol") => {
+                has_pol = true;
             }
             _ => {}
         }
