@@ -2,8 +2,8 @@
 //!
 //! Ported from `movie_translator/identifier/metadata.py`.
 //!
-//! TODO: mt-media will centralise ffmpeg/ffprobe binary discovery;
-//! for now we locate ffprobe via PATH.
+//! The ffprobe binary is resolved via `mt_core::exec::get_ffprobe()` so
+//! discovery and mt-media share one binary-discovery path.
 
 use mt_core::{MtError, Result};
 use serde::Deserialize;
@@ -60,7 +60,8 @@ pub(crate) fn parse_ffprobe_output(json: &str) -> ContainerMetadata {
 
 /// Extract title and episode metadata from a video container's tags.
 ///
-/// Shells out to `ffprobe` (located via PATH). On any error returns a
+/// Shells out to `ffprobe` (resolved via `mt_core::exec::get_ffprobe()`).
+/// On any error returns a
 /// default [`ContainerMetadata`] with all fields `None`, matching the
 /// Python behaviour (`logger.debug` + return empty dict).
 pub fn extract_container_metadata(video_path: &Path) -> ContainerMetadata {
