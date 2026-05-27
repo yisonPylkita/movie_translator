@@ -13,5 +13,5 @@ pub mod translate;
 
 pub use inpaint::inpaint;
 pub use ocr::{ocr_burned_in, ocr_pgs};
-pub use runner::run_script_json;
+pub use runner::{run_script_json, run_script_json_with_timeout, DEFAULT_SCRIPT_TIMEOUT};
 pub use translate::{translate, TranslateRequest, TranslateResponse};
