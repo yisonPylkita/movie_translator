@@ -1,0 +1,9 @@
+[package]
+name = "mt-fetch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mt-core = { path = "../mt-core" }
+mt-subtitles = { path = "../mt-subtitles" }

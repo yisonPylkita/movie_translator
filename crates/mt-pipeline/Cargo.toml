@@ -1,0 +1,13 @@
+[package]
+name = "mt-pipeline"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mt-core = { path = "../mt-core" }
+mt-subtitles = { path = "../mt-subtitles" }
+mt-discovery = { path = "../mt-discovery" }
+mt-media = { path = "../mt-media" }
+mt-ml = { path = "../mt-ml" }
+mt-fetch = { path = "../mt-fetch" }

@@ -1,0 +1,8 @@
+[package]
+name = "mt-discovery"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mt-core = { path = "../mt-core" }
