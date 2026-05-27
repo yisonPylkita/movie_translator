@@ -4,6 +4,28 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "movie-translator"
+path = "src/main.rs"
+
+[lib]
+name = "mt_cli"
+path = "src/lib.rs"
+
 [dependencies]
 mt-core = { path = "../mt-core" }
 mt-pipeline = { path = "../mt-pipeline" }
+mt-discovery = { path = "../mt-discovery" }
+mt-media = { path = "../mt-media" }
+mt-ml = { path = "../mt-ml" }
+mt-subtitles = { path = "../mt-subtitles" }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+indicatif = "0.17"
+
+[dev-dependencies]
+tempfile = "3"

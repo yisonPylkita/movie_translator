@@ -125,6 +125,8 @@ struct FfprobeOutput {
 struct FfprobeFormat {
     #[serde(default)]
     bit_rate: Option<String>,
+    #[serde(default)]
+    duration: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -139,6 +141,8 @@ pub struct FfprobeStream {
     pub profile: Option<String>,
     pub bit_rate: Option<String>,
     #[serde(default)]
+    pub duration: Option<String>,
+    #[serde(default)]
     pub tags: std::collections::HashMap<String, String>,
     #[serde(default)]
     pub disposition: std::collections::HashMap<String, i64>,
@@ -149,6 +153,8 @@ pub struct FfprobeStream {
 pub struct VideoInfo {
     pub streams: Vec<FfprobeStream>,
     pub format_bit_rate: Option<String>,
+    /// `format.duration` from ffprobe, in seconds (string form).
+    pub format_duration: Option<String>,
 }
 
 /// Video encoding parameters extracted by `probe_video_encoding`.
@@ -194,9 +200,11 @@ pub fn get_video_info(video_path: &Path) -> Result<VideoInfo, VideoMuxError> {
 /// Factored out for unit testing against captured fixtures.
 pub fn parse_video_info(json: &str) -> Result<VideoInfo, VideoMuxError> {
     let raw: FfprobeOutput = serde_json::from_str(json)?;
+    let format = raw.format;
     Ok(VideoInfo {
         streams: raw.streams,
-        format_bit_rate: raw.format.and_then(|f| f.bit_rate),
+        format_bit_rate: format.as_ref().and_then(|f| f.bit_rate.clone()),
+        format_duration: format.and_then(|f| f.duration),
     })
 }
 
