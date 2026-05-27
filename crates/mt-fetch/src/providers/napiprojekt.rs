@@ -266,13 +266,11 @@ mod tests {
 
     #[test]
     fn compute_token_known_value() {
-        // Verify against Python: hashlib.md5(("iBlm8NTigvXkI6" + "abc123").encode()).hexdigest()
-        // = MD5("iBlm8NTigvXkIabc123") — just verify it's 32-char hex and deterministic
-        let t1 = compute_token("abc123");
-        let t2 = compute_token("abc123");
-        assert_eq!(t1, t2);
-        assert_eq!(t1.len(), 32);
-        assert!(t1.chars().all(|c| c.is_ascii_hexdigit()));
+        // Pinned against Python authoritative value:
+        //   hashlib.md5(("iBlm8NTigvXkI6" + "abc123").encode()).hexdigest()
+        //   == "64e63a04430ac06108ad1be9b3f4883d"
+        // Verifies the full MD5 composition (MAGIC_PREFIX + hash), not just length.
+        assert_eq!(compute_token("abc123"), "64e63a04430ac06108ad1be9b3f4883d");
     }
 
     #[test]

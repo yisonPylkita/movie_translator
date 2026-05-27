@@ -646,7 +646,64 @@ mod tests {
 
     // ── Provider-level unit tests (mirrors TestAnimeSubProvider) ─────────────
 
-    #[allow(dead_code)]
+    use crate::providers::SubtitleProvider as _;
+
+    /// Mirrors Python test_name.
+    #[test]
+    fn provider_name_is_animesub() {
+        assert_eq!(AnimeSubProvider::new().name(), "animesub");
+    }
+
+    /// Mirrors Python test_skips_non_polish_languages.
+    /// Non-Polish languages return early before any HTTP request.
+    #[test]
+    fn search_skips_non_polish_languages() {
+        let provider = AnimeSubProvider::new();
+        let result = provider.search(&make_identity(), &["eng"]).unwrap();
+        assert_eq!(result, vec![]);
+    }
+
+    /// Mirrors Python test_rejects_wrong_season: when searching for S1, the S2
+    /// ("Naruto 2 ep01") and S3 ("Naruto 3 ep01") entries are rejected while the
+    /// suffix-less S1 entry ("Naruto ep01") is accepted. Uses the pure
+    /// entry_matches() to avoid needing a mocked HTTP client.
+    #[test]
+    fn rejects_wrong_season_via_entry_matches() {
+        let base = "Naruto";
+        let candidates = [
+            ("Naruto 2 ep01", false),
+            ("Naruto 3 ep01", false),
+            ("Naruto ep01", true),
+        ];
+        let accepted: Vec<&str> = candidates
+            .iter()
+            .filter(|(t, _)| entry_matches(t, base, Some(1), 1))
+            .map(|(t, _)| *t)
+            .collect();
+        for (title, expected) in candidates {
+            assert_eq!(
+                entry_matches(title, base, Some(1), 1),
+                expected,
+                "entry {title:?} for season 1"
+            );
+        }
+        assert_eq!(accepted, vec!["Naruto ep01"]);
+    }
+
+    /// Mirrors Python test_accepts_correct_season: when searching for S2, only
+    /// the S2 entry ("Naruto 2 ep01") is accepted, not the suffix-less S1 entry.
+    #[test]
+    fn accepts_correct_season_via_entry_matches() {
+        let base = "Naruto";
+        let candidates = ["Naruto 2 ep01", "Naruto ep01"];
+        let accepted: Vec<&str> = candidates
+            .iter()
+            .copied()
+            .filter(|t| entry_matches(t, base, Some(2), 1))
+            .collect();
+        assert_eq!(accepted, vec!["Naruto 2 ep01"]);
+    }
+
     fn make_identity() -> MediaIdentity {
         MediaIdentity {
             title: "Naruto".to_string(),
