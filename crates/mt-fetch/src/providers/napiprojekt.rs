@@ -70,10 +70,10 @@ impl Default for NapiProjektProvider {
 
 impl NapiProjektProvider {
     pub fn new() -> Self {
-        let client = reqwest::blocking::Client::builder()
-            .user_agent(USER_AGENT)
-            .build()
-            .expect("failed to build reqwest client");
+        // Use the shared fallible builder so a TLS-init failure degrades to a
+        // default client instead of panicking at startup (matches the other
+        // providers).
+        let client = super::build_blocking_client(USER_AGENT);
         Self {
             video_path: None,
             client,
