@@ -118,14 +118,23 @@ fn try_run(argv: &[&str], stdin: Option<&str>, cwd: &Path, timeout: Duration) ->
 
     let mut child = command.spawn().map_err(MtError::Io)?;
 
-    if let Some(payload) = stdin {
-        child
-            .stdin
-            .take()
-            .expect("stdin piped")
-            .write_all(payload.as_bytes())
-            .map_err(MtError::Io)?;
-    }
+    // Write the stdin request on its OWN thread, concurrently with the
+    // stdout/stderr drain below. A blocking `write_all` on the main thread
+    // would deadlock if the child emits to stdout/stderr (filling its ~64KB
+    // pipe buffer) BEFORE consuming all of stdin — which torch-importing
+    // scripts do (deprecation warnings to stderr) — while we block filling its
+    // stdin pipe with a >64KB request. Dropping the stdin handle at the end
+    // signals EOF so the child's `sys.stdin.read()` returns.
+    let stdin_handle = stdin.map(|s| {
+        let payload = s.as_bytes().to_vec();
+        let mut child_stdin = child.stdin.take().expect("stdin piped");
+        std::thread::spawn(move || {
+            // A child that died early closes its stdin → BrokenPipe. That's not
+            // a runner bug (the real error surfaces via exit code/stderr), so
+            // swallow it rather than panic. The handle drops here → EOF.
+            let _ = child_stdin.write_all(&payload);
+        })
+    });
 
     // Drain stdout/stderr on their own threads to avoid pipe-buffer deadlock:
     // a child that fills its pipe while we block on it (or on the deadline)
@@ -144,6 +153,14 @@ fn try_run(argv: &[&str], stdin: Option<&str>, cwd: &Path, timeout: Duration) ->
         buf
     });
 
+    // Join the stdin-writer; never propagate its error (covered above) but
+    // always reap the thread so it can't leak.
+    let join_stdin = |handle: Option<std::thread::JoinHandle<()>>| {
+        if let Some(h) = handle {
+            let _ = h.join();
+        }
+    };
+
     // Poll for exit with a non-blocking `try_wait`, enforcing the deadline.
     // Polling (rather than a blocking waiter thread holding the child) keeps
     // `kill()` reachable the instant the deadline passes.
@@ -161,6 +178,7 @@ fn try_run(argv: &[&str], stdin: Option<&str>, cwd: &Path, timeout: Duration) ->
                 // Couldn't query the child; kill it and surface the error.
                 let _ = child.kill();
                 let _ = child.wait();
+                join_stdin(stdin_handle);
                 let _ = stdout_handle.join();
                 let _ = stderr_handle.join();
                 return Err(MtError::Io(e));
@@ -172,9 +190,11 @@ fn try_run(argv: &[&str], stdin: Option<&str>, cwd: &Path, timeout: Duration) ->
         Some(status) => status,
         None => {
             // Deadline hit: kill the hung child and report a timeout. `kill`
-            // closes its pipes, releasing the drain threads.
+            // closes its pipes, releasing the drain threads (and the stdin
+            // writer, which gets BrokenPipe).
             let _ = child.kill();
             let _ = child.wait();
+            join_stdin(stdin_handle);
             let _ = stdout_handle.join();
             let _ = stderr_handle.join();
             return Err(MtError::Subprocess {
@@ -185,6 +205,7 @@ fn try_run(argv: &[&str], stdin: Option<&str>, cwd: &Path, timeout: Duration) ->
         }
     };
 
+    join_stdin(stdin_handle);
     let stdout = stdout_handle.join().unwrap_or_default();
     let stderr_bytes = stderr_handle.join().unwrap_or_default();
 
@@ -251,6 +272,48 @@ mod tests {
             let s = String::from_utf8_lossy(&bytes);
             assert!(s.contains("ok"), "unexpected stdout: {s}");
         }
+    }
+
+    /// Regression: a child that writes a large volume to stdout AND stderr
+    /// WHILE the parent pushes a large (>128KB) stdin payload must not deadlock.
+    /// The previous main-thread `write_all(stdin)` blocked filling the child's
+    /// stdin pipe while the child blocked filling its stdout/stderr pipes →
+    /// classic pipe deadlock that the watchdog couldn't even break. Concurrent
+    /// stdin-write + stdout/stderr-drain must let this complete.
+    #[test]
+    fn large_bidirectional_io_does_not_deadlock() {
+        let repo_root = std::env::current_dir().unwrap();
+        // Child: read ALL of stdin (only after dumping output), and emit
+        // ~256KB to each of stdout/stderr — well past the ~64KB pipe buffer.
+        // It echoes a fixed JSON to stdout LAST so the parse path is exercised.
+        let script = "\
+import sys
+sys.stderr.write('E' * 262144)
+sys.stderr.flush()
+sys.stdout.write('O' * 262144)
+sys.stdout.flush()
+data = sys.stdin.read()
+sys.stdout.write('{\"len\": %d}' % len(data))
+";
+        // >128KB stdin payload.
+        let payload = "x".repeat(200_000);
+        let argv = ["python3", "-c", script];
+        let start = Instant::now();
+        let out = try_run(&argv, Some(&payload), &repo_root, Duration::from_secs(30));
+        // python3 may be absent in some CI images; only assert when present.
+        if let Ok(bytes) = out {
+            let s = String::from_utf8_lossy(&bytes);
+            assert!(
+                s.contains("\"len\": 200000"),
+                "unexpected stdout tail: {}",
+                &s[s.len().saturating_sub(40)..]
+            );
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(20),
+            "bidirectional IO deadlocked or was too slow: {:?}",
+            start.elapsed()
+        );
     }
 
     /// A non-zero exit is reported as a Subprocess error carrying stderr.
