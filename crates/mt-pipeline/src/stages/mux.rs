@@ -257,7 +257,20 @@ fn replace_original(video_path: &Path, temp_video: &Path, ops: &dyn MuxOps) -> R
                 let _ = std::fs::remove_file(video_path);
             }
             if backup_path.exists() {
-                std::fs::rename(&backup_path, video_path)?;
+                if let Err(rename_err) = std::fs::rename(&backup_path, video_path) {
+                    // The muxed file was already removed but we couldn't move the
+                    // backup back into place. No data is lost — the original is
+                    // preserved at the `.backup` path — but it isn't where the
+                    // user expects it. Tell them so manual recovery is possible.
+                    tracing::error!(
+                        "failed to restore original from backup ({rename_err}); \
+                         your original is preserved at {} — rename it back to {} \
+                         to recover",
+                        backup_path.display(),
+                        video_path.display(),
+                    );
+                    return Err(PipelineError::Io(rename_err));
+                }
             }
             Err(e)
         }
