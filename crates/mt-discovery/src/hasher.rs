@@ -146,28 +146,17 @@ mod tests {
         assert_eq!(hash, "0101010101010500");
     }
 
-    /// 200 KB of pseudo-random bytes (seed 42). Expected verified against Python.
-    /// Tests the case where file > 128 KB (distinct first and last chunks).
+    /// 200 KB of the 0..=255 cycling byte pattern. Tests the case where the
+    /// file > 128 KB (distinct first and last 64 KB chunks).
+    ///
+    /// Expected value `a0601fdf9f622000` verified against the Python
+    /// implementation run over the identical 200 KB byte sequence.
     #[test]
     fn oshash_random_200kb() {
-        // Replicate Python's random.seed(42) / randint(0,255) sequence
-        // using a simple deterministic byte pattern to get the same data.
-        // Since we can't replicate Python's random exactly in Rust without
-        // the same PRNG, we use a fixed byte vector known to produce the
-        // Python result.
-        //
-        // Alternative: generate the file and verify the hash matches
-        // the Python output for the same content.  We use a fixed
-        // repeating pattern that we also verified in Python.
         let data: Vec<u8> = (0u8..=255u8).cycle().take(200 * 1024).collect();
         let f = write_temp(&data);
         let hash = compute_oshash(f.path()).unwrap();
-        // Verify: result is 16 hex chars and is a valid u64
-        assert_eq!(hash.len(), 16);
-        u64::from_str_radix(&hash, 16).expect("valid hex");
-        // Verify determinism
-        let hash2 = compute_oshash(f.path()).unwrap();
-        assert_eq!(hash, hash2);
+        assert_eq!(hash, "a0601fdf9f622000");
     }
 
     #[test]

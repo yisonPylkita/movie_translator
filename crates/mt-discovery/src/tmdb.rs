@@ -43,7 +43,13 @@ struct DetailResponse {
 /// Factored out from HTTP so it can be unit-tested against captured JSON.
 pub(crate) fn parse_search_response(json: &str) -> Option<i32> {
     let resp: SearchResponse = serde_json::from_str(json).ok()?;
-    resp.results.into_iter().next().and_then(|h| h.id)
+    // Python does `if not tmdb_id: return None`, treating a missing id and
+    // id == 0 alike as "no result".
+    resp.results
+        .into_iter()
+        .next()
+        .and_then(|h| h.id)
+        .filter(|&id| id != 0)
 }
 
 /// Parse a TMDB detail / external_ids response JSON and extract `imdb_id`.
@@ -71,8 +77,11 @@ pub(crate) fn build_search_url(
         ("api_key", api_key.to_string()),
         ("query", title.to_string()),
     ];
+    // Python uses `if year:` (truthy), which skips both None and year == 0.
     if let Some(y) = year {
-        params.push((year_key, y.to_string()));
+        if y != 0 {
+            params.push((year_key, y.to_string()));
+        }
     }
 
     let qs: Vec<String> = params

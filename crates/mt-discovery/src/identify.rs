@@ -50,7 +50,11 @@ pub(crate) fn assemble_identity(
     let season = parsed.season;
     let mut episode = parsed.episode;
     let year = parsed.year;
-    let mut media_type = parsed.media_type.clone();
+    // Python does NOT re-derive media_type after merging a container-sourced
+    // episode: whatever the parser decided (e.g. "movie") is preserved even
+    // when a container episode is found. Match that — media_type is never
+    // changed here.
+    let media_type = parsed.media_type.clone();
     let is_anime = parsed.is_anime;
     let release_group = parsed.release_group.clone();
 
@@ -61,11 +65,6 @@ pub(crate) fn assemble_identity(
                 episode = Some(ep);
             }
         }
-    }
-
-    // Re-derive media_type if episode or season was found
-    if season.is_some() || episode.is_some() {
-        media_type = "episode".to_string();
     }
 
     let (imdb_id, tmdb_id) = match tmdb {
@@ -267,8 +266,10 @@ mod tests {
             None,
         );
         assert_eq!(id.episode, Some(5));
-        // media_type should be upgraded to episode
-        assert_eq!(id.media_type, "episode");
+        // media_type stays "movie" (the parsed value): Python does NOT
+        // re-derive media_type when a container-sourced episode is merged in.
+        // This matches Python intentionally.
+        assert_eq!(id.media_type, "movie");
     }
 
     #[test]
