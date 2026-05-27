@@ -2,6 +2,7 @@
 
 pub mod context;
 pub mod error;
+pub mod exec;
 pub mod identity;
 pub mod paths;
 pub mod types;

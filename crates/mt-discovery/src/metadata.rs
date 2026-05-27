@@ -71,7 +71,10 @@ pub fn extract_container_metadata(video_path: &Path) -> ContainerMetadata {
 }
 
 fn run_ffprobe(video_path: &Path) -> Result<String> {
-    let output = Command::new("ffprobe")
+    // Resolve ffprobe through the shared resolver so discovery and mt-media
+    // agree on the same binary (instead of shelling a bare `ffprobe` from PATH).
+    let ffprobe = mt_core::exec::get_ffprobe()?;
+    let output = Command::new(&ffprobe)
         .args([
             "-v",
             "quiet",
