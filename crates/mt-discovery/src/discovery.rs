@@ -85,16 +85,21 @@ fn collect_videos(root: &Path, dir: &Path, out: &mut Vec<PathBuf>, visited: &mut
             continue;
         }
 
-        // Never descend into a symlinked directory: it can point back up the
-        // tree (cycle) or escape the root entirely.
+        // Determine whether this entry is itself a symlink. We FOLLOW symlinks
+        // that resolve to regular files (Python's `find_videos` did), but never
+        // descend into a symlinked DIRECTORY: that can point back up the tree
+        // (cycle) or escape the root entirely. (`is_dir`/`is_file` below follow
+        // symlinks, so they report on the link's target.)
         let is_symlink = std::fs::symlink_metadata(&entry)
             .map(|m| m.file_type().is_symlink())
             .unwrap_or(false);
-        if is_symlink {
-            continue;
-        }
 
         if entry.is_dir() {
+            // Skip symlinked directories for cycle safety; the `visited` set
+            // guards real-path recursion below.
+            if is_symlink {
+                continue;
+            }
             collect_videos(root, &entry, out, visited);
         } else if entry.is_file() && has_video_extension(&entry) && !is_in_place_temp(&entry) {
             // Verify no hidden component in relative path
@@ -254,6 +259,26 @@ mod tests {
         let result = find_videos(dir.path());
         // Must terminate and find the single real video exactly once.
         assert_eq!(result, vec![real]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_to_real_file_is_included() {
+        use std::os::unix::fs::symlink;
+
+        // The real .mkv lives outside the scanned tree; only a symlink to it
+        // sits inside. Python's find_videos followed file symlinks, so it must
+        // be discovered.
+        let target_dir = TempDir::new().unwrap();
+        let real = target_dir.path().join("real.mkv");
+        touch(&real);
+
+        let scan_dir = TempDir::new().unwrap();
+        let link = scan_dir.path().join("linked.mkv");
+        symlink(&real, &link).unwrap();
+
+        let result = find_videos(scan_dir.path());
+        assert_eq!(result, vec![link]);
     }
 
     // --- create_work_dir ---
