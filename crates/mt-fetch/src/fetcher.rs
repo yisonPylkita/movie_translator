@@ -59,8 +59,9 @@ impl SubtitleFetcher {
                 Ok((name, Err(e))) => {
                     tracing::warn!("{name} search failed: {e}");
                 }
-                Err(_) => {
-                    tracing::warn!("provider thread panicked");
+                Err(payload) => {
+                    let msg = panic_payload_message(&*payload);
+                    tracing::warn!("provider thread panicked: {msg}");
                 }
             }
         }
@@ -159,6 +160,21 @@ impl SubtitleFetcher {
     }
 }
 
+/// Extract a human-readable message from a thread panic payload.
+///
+/// Panic payloads are `Box<dyn Any>`; the common cases produced by `panic!`
+/// are `&'static str` and `String`. Downcasting recovers the message instead
+/// of discarding it.
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -228,6 +244,54 @@ mod tests {
             is_anime: false,
             release_group: None,
         }
+    }
+
+    struct PanickingProvider;
+    impl SubtitleProvider for PanickingProvider {
+        fn name(&self) -> &str {
+            "panicker"
+        }
+        fn search(
+            &self,
+            _identity: &MediaIdentity,
+            _languages: &[&str],
+        ) -> Result<Vec<SubtitleMatch>, FetchError> {
+            panic!("boom from provider");
+        }
+        fn download(&self, _m: &SubtitleMatch, _p: &Path) -> Result<(), FetchError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn panic_payload_message_recovers_str_and_string() {
+        let s: Box<dyn std::any::Any + Send> = Box::new("static panic");
+        assert_eq!(panic_payload_message(&*s), "static panic");
+        let s: Box<dyn std::any::Any + Send> = Box::new(String::from("owned panic"));
+        assert_eq!(panic_payload_message(&*s), "owned panic");
+        let s: Box<dyn std::any::Any + Send> = Box::new(42u32);
+        assert_eq!(panic_payload_message(&*s), "unknown panic payload");
+    }
+
+    #[test]
+    fn search_all_survives_panicking_provider() {
+        let good = FakeProvider::new(
+            "fake",
+            vec![SubtitleMatch {
+                language: "eng".to_string(),
+                source: "fake".to_string(),
+                subtitle_id: "1".to_string(),
+                release_name: "rel".to_string(),
+                format: "srt".to_string(),
+                score: 0.9,
+                hash_match: false,
+            }],
+        );
+        let fetcher = SubtitleFetcher::new(vec![Box::new(good), Box::new(PanickingProvider)]);
+        // The panicking provider must not abort search_all; good matches survive.
+        let matches = fetcher.search_all(&make_identity(), &["eng"]);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].source, "fake");
     }
 
     // ── PORT: test_returns_best_match_per_language ────────────────────────────
