@@ -200,6 +200,17 @@ fn round_trip_stability() {
 }
 
 #[test]
+fn ssa_v4_marked_field_maps_to_layer() {
+    // Legacy SSA v4 uses `Marked` (value `Marked=N`) instead of `Layer`.
+    // pysubs2 treats it as the layer; we must not fail with "missing field Layer".
+    let input = "[Script Info]\nScriptType: v4.00\n\n[Events]\nFormat: Marked, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: Marked=0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Hello world\n";
+    let subs = load_ass(input).unwrap_or_else(|e| panic!("SSA v4 parse failed: {e}"));
+    assert_eq!(subs.events.len(), 1);
+    assert_eq!(subs.events[0].layer, 0);
+    assert_eq!(subs.events[0].text, "Hello world");
+}
+
+#[test]
 fn bom_preserved() {
     let with_bom = "\u{FEFF}[Script Info]\nTitle: Test\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Hello\n";
     let subs = load_ass(with_bom).unwrap();

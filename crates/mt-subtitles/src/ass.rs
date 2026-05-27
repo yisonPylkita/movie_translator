@@ -194,10 +194,20 @@ fn parse_event(line: &str, field_order: &[String]) -> Result<Event, String> {
             .ok_or_else(|| format!("missing field {name}"))
     };
 
-    let layer: i32 = get("Layer")?
+    // ASS v4+ uses `Layer`; legacy SSA v4 uses `Marked` (value `Marked=N`).
+    // pysubs2 treats SSA `Marked` as the layer source, so do the same.
+    let layer_field = match field_map.get("Layer") {
+        Some(v) => *v,
+        None => field_map
+            .get("Marked")
+            .copied()
+            .ok_or("missing field Layer")?,
+    };
+    let layer_value = layer_field
         .trim()
-        .parse()
-        .map_err(|e| format!("Layer: {e}"))?;
+        .strip_prefix("Marked=")
+        .unwrap_or_else(|| layer_field.trim());
+    let layer: i32 = layer_value.parse().map_err(|e| format!("Layer: {e}"))?;
     let start_ms = AssTime::parse(get("Start")?)?.0;
     let end_ms = AssTime::parse(get("End")?)?.0;
 
