@@ -6,7 +6,8 @@ license.workspace = true
 
 [dependencies]
 mt-core = { path = "../mt-core" }
+encoding_rs = "0.8"
 
 [dev-dependencies]
-subparse = "0.7.0"
 serde_json = { workspace = true }
+encoding_rs = "0.8"
