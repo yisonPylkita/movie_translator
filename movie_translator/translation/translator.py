@@ -6,7 +6,6 @@ import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from ..logging import logger
-from ..metrics.collector import MetricsCollector, NullCollector
 from ..types import DialogueLine, ProgressCallback
 from .enhancements import (
     PLACEHOLDER_ONLY_RE,
@@ -289,12 +288,9 @@ def translate_dialogue_lines(
     batch_size: int,
     model: str,
     progress_callback: ProgressCallback | None = None,
-    metrics: MetricsCollector | NullCollector | None = None,
     model_cache: ModelCache | None = None,
     proper_nouns: set[str] | None = None,
 ) -> list[DialogueLine]:
-    if metrics is None:
-        metrics = NullCollector()
     if model_cache is None:
         model_cache = ModelCache()
 
@@ -307,9 +303,7 @@ def translate_dialogue_lines(
         texts = [line.text for line in dialogue_lines]
         translated_texts = backend.translate_texts(texts, progress_callback)
     else:
-        with metrics.span('load_model') as s:
-            translator, cached = model_cache.get_translator(device, batch_size, model)
-            s.detail('cached', cached)
+        translator, _cached = model_cache.get_translator(device, batch_size, model)
         if translator is None:
             return []
         if proper_nouns:
