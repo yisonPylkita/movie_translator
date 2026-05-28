@@ -103,7 +103,7 @@ fn model_cache(py: Python<'_>) -> Result<Py<PyAny>> {
 
 /// Resolve a likely repo root by walking up from a starting path looking for
 /// a `movie_translator/__init__.py`.
-fn find_repo_root_from(start: &Path) -> Option<PathBuf> {
+fn locate_package_root_from(start: &Path) -> Option<PathBuf> {
     let mut dir = Some(start);
     while let Some(d) = dir {
         if d.join("movie_translator").join("__init__.py").is_file() {
@@ -125,12 +125,12 @@ fn locate_repo_root() -> Option<PathBuf> {
     }
     if let Ok(exe) = std::env::current_exe() {
         let start = exe.parent().unwrap_or(&exe);
-        if let Some(r) = find_repo_root_from(start) {
+        if let Some(r) = locate_package_root_from(start) {
             return Some(r);
         }
     }
     if let Ok(cwd) = std::env::current_dir() {
-        if let Some(r) = find_repo_root_from(&cwd) {
+        if let Some(r) = locate_package_root_from(&cwd) {
             return Some(r);
         }
     }
