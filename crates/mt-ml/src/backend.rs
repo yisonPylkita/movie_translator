@@ -46,17 +46,33 @@ struct Modules {
     parser: Py<PyAny>,
 }
 
-/// Shared, lazily-loaded module handles.
-fn modules(py: Python<'_>) -> Result<&'static Mutex<Option<Modules>>> {
+/// Shared, lazily-loaded module handles, accessed via [`with_modules`].
+fn modules_cell() -> &'static Mutex<Option<Modules>> {
     static MODULES: OnceLock<Mutex<Option<Modules>>> = OnceLock::new();
-    let cell = MODULES.get_or_init(|| Mutex::new(None));
+    MODULES.get_or_init(|| Mutex::new(None))
+}
+
+/// Run `f` with cloned handles to every cached Python module. Locks the
+/// modules mutex only for the duration of the clone, so callers can freely
+/// re-enter the backend (e.g. `translate` calling `model_cache` which calls
+/// back into `modules_cell`) without deadlocking.
+fn with_modules<F, R>(py: Python<'_>, f: F) -> Result<R>
+where
+    F: FnOnce(Python<'_>, Modules) -> Result<R>,
+{
+    let cell = modules_cell();
+    // Fast path: take cloned handles under the lock and release immediately.
     {
         let guard = cell.lock().expect("modules mutex poisoned");
-        if guard.is_some() {
-            return Ok(cell);
+        if let Some(m) = guard.as_ref() {
+            let cloned = m.clone_handles(py);
+            drop(guard);
+            return f(py, cloned);
         }
     }
 
+    // Slow path: first-time init. Must not hold the lock while importing,
+    // because the Python imports can in principle re-enter the backend.
     bootstrap_sys_path(py)?;
 
     let types = py_import(py, "movie_translator.types")?;
@@ -65,40 +81,58 @@ fn modules(py: Python<'_>) -> Result<&'static Mutex<Option<Modules>>> {
     let ocr = py_import(py, "movie_translator.ocr")?;
     let inpainting = py_import(py, "movie_translator.inpainting")?;
     let parser = py_import(py, "movie_translator.identifier.parser")?;
-
-    let mut guard = cell.lock().expect("modules mutex poisoned");
-    *guard = Some(Modules {
+    let m = Modules {
         types,
         translation,
         pgs_extractor,
         ocr,
         inpainting,
         parser,
-    });
-    Ok(cell)
+    };
+
+    let mut guard = cell.lock().expect("modules mutex poisoned");
+    // Race: another thread may have initialised while we imported. Either
+    // way the result is equivalent — keep whichever is there.
+    if guard.is_none() {
+        *guard = Some(m.clone_handles(py));
+    }
+    let cloned = guard.as_ref().unwrap().clone_handles(py);
+    drop(guard);
+    f(py, cloned)
+}
+
+impl Modules {
+    fn clone_handles(&self, py: Python<'_>) -> Self {
+        Modules {
+            types: self.types.clone_ref(py),
+            translation: self.translation.clone_ref(py),
+            pgs_extractor: self.pgs_extractor.clone_ref(py),
+            ocr: self.ocr.clone_ref(py),
+            inpainting: self.inpainting.clone_ref(py),
+            parser: self.parser.clone_ref(py),
+        }
+    }
 }
 
 /// Cached `ModelCache` Python instance, kept alive for the whole binary run
 /// so models load only once across every file processed by `run_all`.
-fn model_cache(py: Python<'_>) -> Result<Py<PyAny>> {
+fn model_cache(py: Python<'_>, translation: &Py<PyAny>) -> Result<Py<PyAny>> {
     static CACHE: OnceLock<Mutex<Option<Py<PyAny>>>> = OnceLock::new();
     let cell = CACHE.get_or_init(|| Mutex::new(None));
-    let mut guard = cell.lock().expect("model cache mutex poisoned");
-    if let Some(c) = guard.as_ref() {
-        return Ok(c.clone_ref(py));
+    {
+        let guard = cell.lock().expect("model cache mutex poisoned");
+        if let Some(c) = guard.as_ref() {
+            return Ok(c.clone_ref(py));
+        }
     }
-    let translation = modules(py)?
-        .lock()
-        .expect("modules mutex poisoned")
-        .as_ref()
-        .expect("modules initialised")
-        .translation
-        .clone_ref(py);
     let model_cache_cls = translation.bind(py).getattr("ModelCache").map_err(py_err)?;
     let instance = model_cache_cls.call0().map_err(py_err)?;
     let py_obj: Py<PyAny> = instance.into();
-    *guard = Some(py_obj.clone_ref(py));
-    Ok(py_obj)
+    let mut guard = cell.lock().expect("model cache mutex poisoned");
+    if guard.is_none() {
+        *guard = Some(py_obj.clone_ref(py));
+    }
+    Ok(guard.as_ref().unwrap().clone_ref(py))
 }
 
 /// Resolve a likely repo root by walking up from a starting path looking for
@@ -353,98 +387,96 @@ pub fn translate(
     proper_nouns: Option<&[String]>,
 ) -> Result<Vec<DialogueLine>> {
     Python::attach(|py| {
-        let mods_cell = modules(py)?;
-        let guard = mods_cell.lock().expect("modules mutex poisoned");
-        let m = guard.as_ref().expect("modules initialised");
-        let types_bound = m.types.bind(py);
-        let translation_bound = m.translation.bind(py);
+        with_modules(py, |py, m| {
+            let types_bound = m.types.bind(py);
+            let translation_bound = m.translation.bind(py);
 
-        let py_lines = PyList::empty(py);
-        for line in lines {
-            py_lines
-                .append(dialogue_to_py(types_bound, line)?)
-                .map_err(py_err)?;
-        }
-
-        let proper = match proper_nouns {
-            Some(nouns) if !nouns.is_empty() => {
-                let set_cls = py
-                    .import("builtins")
-                    .map_err(py_err)?
-                    .getattr("set")
+            let py_lines = PyList::empty(py);
+            for line in lines {
+                py_lines
+                    .append(dialogue_to_py(types_bound, line)?)
                     .map_err(py_err)?;
-                let lst = PyList::empty(py);
-                for n in nouns {
-                    lst.append(n).map_err(py_err)?;
-                }
-                set_cls.call1((lst,)).map_err(py_err)?.into_any()
             }
-            _ => py.None().bind(py).clone(),
-        };
 
-        let func = translation_bound
-            .getattr("translate_dialogue_lines")
-            .map_err(py_err)?;
+            let proper = match proper_nouns {
+                Some(nouns) if !nouns.is_empty() => {
+                    let set_cls = py
+                        .import("builtins")
+                        .map_err(py_err)?
+                        .getattr("set")
+                        .map_err(py_err)?;
+                    let lst = PyList::empty(py);
+                    for n in nouns {
+                        lst.append(n).map_err(py_err)?;
+                    }
+                    set_cls.call1((lst,)).map_err(py_err)?.into_any()
+                }
+                _ => py.None().bind(py).clone(),
+            };
 
-        let cache = model_cache(py)?;
-        let kwargs = pyo3::types::PyDict::new(py);
-        kwargs
-            .set_item("dialogue_lines", &py_lines)
-            .map_err(py_err)?;
-        kwargs.set_item("device", device).map_err(py_err)?;
-        kwargs.set_item("batch_size", batch_size).map_err(py_err)?;
-        kwargs.set_item("model", model).map_err(py_err)?;
-        kwargs.set_item("proper_nouns", &proper).map_err(py_err)?;
-        kwargs
-            .set_item("model_cache", cache.bind(py))
-            .map_err(py_err)?;
+            let func = translation_bound
+                .getattr("translate_dialogue_lines")
+                .map_err(py_err)?;
 
-        let result = func
-            .call(PyTuple::empty(py), Some(&kwargs))
-            .map_err(py_err)?;
+            let cache = model_cache(py, &m.translation)?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs
+                .set_item("dialogue_lines", &py_lines)
+                .map_err(py_err)?;
+            kwargs.set_item("device", device).map_err(py_err)?;
+            kwargs.set_item("batch_size", batch_size).map_err(py_err)?;
+            kwargs.set_item("model", model).map_err(py_err)?;
+            kwargs.set_item("proper_nouns", &proper).map_err(py_err)?;
+            kwargs
+                .set_item("model_cache", cache.bind(py))
+                .map_err(py_err)?;
 
-        let mut out = Vec::with_capacity(lines.len());
-        for item in result.try_iter().map_err(py_err)? {
-            let item = item.map_err(py_err)?;
-            out.push(dialogue_from_py(&item)?);
-        }
-        Ok(out)
+            let result = func
+                .call(PyTuple::empty(py), Some(&kwargs))
+                .map_err(py_err)?;
+
+            let mut out = Vec::with_capacity(lines.len());
+            for item in result.try_iter().map_err(py_err)? {
+                let item = item.map_err(py_err)?;
+                out.push(dialogue_from_py(&item)?);
+            }
+            Ok(out)
+        })
     })
 }
 
 /// Extract a PGS subtitle track to SRT via embedded Python.
 pub fn ocr_pgs(video: &Path, track_index: u32, work_dir: &Path) -> Result<Option<PathBuf>> {
     Python::attach(|py| {
-        let mods_cell = modules(py)?;
-        let guard = mods_cell.lock().expect("modules mutex poisoned");
-        let m = guard.as_ref().expect("modules initialised");
-        let pgs_bound = m.pgs_extractor.bind(py);
+        with_modules(py, |py, m| {
+            let pgs_bound = m.pgs_extractor.bind(py);
 
-        let pathlib = py.import("pathlib").map_err(py_err)?;
-        let path_cls = pathlib.getattr("Path").map_err(py_err)?;
-        let video_p = path_cls
-            .call1((video.to_string_lossy().as_ref(),))
-            .map_err(py_err)?;
-        let work_p = path_cls
-            .call1((work_dir.to_string_lossy().as_ref(),))
-            .map_err(py_err)?;
+            let pathlib = py.import("pathlib").map_err(py_err)?;
+            let path_cls = pathlib.getattr("Path").map_err(py_err)?;
+            let video_p = path_cls
+                .call1((video.to_string_lossy().as_ref(),))
+                .map_err(py_err)?;
+            let work_p = path_cls
+                .call1((work_dir.to_string_lossy().as_ref(),))
+                .map_err(py_err)?;
 
-        let func = pgs_bound.getattr("extract_pgs_track").map_err(py_err)?;
-        let kwargs = pyo3::types::PyDict::new(py);
-        kwargs.set_item("video_path", &video_p).map_err(py_err)?;
-        kwargs
-            .set_item("track_index", track_index)
-            .map_err(py_err)?;
-        kwargs.set_item("work_dir", &work_p).map_err(py_err)?;
+            let func = pgs_bound.getattr("extract_pgs_track").map_err(py_err)?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs.set_item("video_path", &video_p).map_err(py_err)?;
+            kwargs
+                .set_item("track_index", track_index)
+                .map_err(py_err)?;
+            kwargs.set_item("work_dir", &work_p).map_err(py_err)?;
 
-        let result = func
-            .call(PyTuple::empty(py), Some(&kwargs))
-            .map_err(py_err)?;
-        if result.is_none() {
-            return Ok(None);
-        }
-        let s: String = result.str().map_err(py_err)?.extract().map_err(py_err)?;
-        Ok(Some(PathBuf::from(s)))
+            let result = func
+                .call(PyTuple::empty(py), Some(&kwargs))
+                .map_err(py_err)?;
+            if result.is_none() {
+                return Ok(None);
+            }
+            let s: String = result.str().map_err(py_err)?.extract().map_err(py_err)?;
+            Ok(Some(PathBuf::from(s)))
+        })
     })
 }
 
@@ -456,58 +488,57 @@ pub fn ocr_burned_in(
     fps: u32,
 ) -> Result<BurnedInResult> {
     Python::attach(|py| {
-        let mods_cell = modules(py)?;
-        let guard = mods_cell.lock().expect("modules mutex poisoned");
-        let m = guard.as_ref().expect("modules initialised");
-        let ocr_bound = m.ocr.bind(py);
+        with_modules(py, |py, m| {
+            let ocr_bound = m.ocr.bind(py);
 
-        let pathlib = py.import("pathlib").map_err(py_err)?;
-        let path_cls = pathlib.getattr("Path").map_err(py_err)?;
-        let video_p = path_cls
-            .call1((video.to_string_lossy().as_ref(),))
-            .map_err(py_err)?;
-        let out_p = path_cls
-            .call1((output_dir.to_string_lossy().as_ref(),))
-            .map_err(py_err)?;
+            let pathlib = py.import("pathlib").map_err(py_err)?;
+            let path_cls = pathlib.getattr("Path").map_err(py_err)?;
+            let video_p = path_cls
+                .call1((video.to_string_lossy().as_ref(),))
+                .map_err(py_err)?;
+            let out_p = path_cls
+                .call1((output_dir.to_string_lossy().as_ref(),))
+                .map_err(py_err)?;
 
-        let func = ocr_bound
-            .getattr("extract_burned_in_subtitles")
-            .map_err(py_err)?;
-        let kwargs = pyo3::types::PyDict::new(py);
-        kwargs.set_item("video_path", &video_p).map_err(py_err)?;
-        kwargs.set_item("output_dir", &out_p).map_err(py_err)?;
-        kwargs.set_item("crop_ratio", crop_ratio).map_err(py_err)?;
-        kwargs.set_item("fps", fps).map_err(py_err)?;
+            let func = ocr_bound
+                .getattr("extract_burned_in_subtitles")
+                .map_err(py_err)?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs.set_item("video_path", &video_p).map_err(py_err)?;
+            kwargs.set_item("output_dir", &out_p).map_err(py_err)?;
+            kwargs.set_item("crop_ratio", crop_ratio).map_err(py_err)?;
+            kwargs.set_item("fps", fps).map_err(py_err)?;
 
-        let result = func
-            .call(PyTuple::empty(py), Some(&kwargs))
-            .map_err(py_err)?;
-        if result.is_none() {
-            return Err(MtError::Parse(
-                "extract_burned_in_subtitles returned None".into(),
-            ));
-        }
+            let result = func
+                .call(PyTuple::empty(py), Some(&kwargs))
+                .map_err(py_err)?;
+            if result.is_none() {
+                return Err(MtError::Parse(
+                    "extract_burned_in_subtitles returned None".into(),
+                ));
+            }
 
-        let srt_path: String = result
-            .getattr("srt_path")
-            .map_err(py_err)?
-            .str()
-            .map_err(py_err)?
-            .extract()
-            .map_err(py_err)?;
-        let mut results = Vec::new();
-        for item in result
-            .getattr("ocr_results")
-            .map_err(py_err)?
-            .try_iter()
-            .map_err(py_err)?
-        {
-            let item = item.map_err(py_err)?;
-            results.push(ocr_from_py(&item)?);
-        }
-        Ok(BurnedInResult {
-            srt_path: PathBuf::from(srt_path),
-            ocr_results: results,
+            let srt_path: String = result
+                .getattr("srt_path")
+                .map_err(py_err)?
+                .str()
+                .map_err(py_err)?
+                .extract()
+                .map_err(py_err)?;
+            let mut results = Vec::new();
+            for item in result
+                .getattr("ocr_results")
+                .map_err(py_err)?
+                .try_iter()
+                .map_err(py_err)?
+            {
+                let item = item.map_err(py_err)?;
+                results.push(ocr_from_py(&item)?);
+            }
+            Ok(BurnedInResult {
+                srt_path: PathBuf::from(srt_path),
+                ocr_results: results,
+            })
         })
     })
 }
@@ -521,43 +552,42 @@ pub fn inpaint(
     ocr_results: &[OCRResult],
 ) -> Result<PathBuf> {
     Python::attach(|py| {
-        let mods_cell = modules(py)?;
-        let guard = mods_cell.lock().expect("modules mutex poisoned");
-        let m = guard.as_ref().expect("modules initialised");
-        let types_bound = m.types.bind(py);
-        let inpainting_bound = m.inpainting.bind(py);
+        with_modules(py, |py, m| {
+            let types_bound = m.types.bind(py);
+            let inpainting_bound = m.inpainting.bind(py);
 
-        let pathlib = py.import("pathlib").map_err(py_err)?;
-        let path_cls = pathlib.getattr("Path").map_err(py_err)?;
-        let video_p = path_cls
-            .call1((video.to_string_lossy().as_ref(),))
-            .map_err(py_err)?;
-        let out_p = path_cls
-            .call1((output.to_string_lossy().as_ref(),))
-            .map_err(py_err)?;
-
-        let py_results = PyList::empty(py);
-        for r in ocr_results {
-            py_results
-                .append(ocr_to_py(py, types_bound, r)?)
+            let pathlib = py.import("pathlib").map_err(py_err)?;
+            let path_cls = pathlib.getattr("Path").map_err(py_err)?;
+            let video_p = path_cls
+                .call1((video.to_string_lossy().as_ref(),))
                 .map_err(py_err)?;
-        }
+            let out_p = path_cls
+                .call1((output.to_string_lossy().as_ref(),))
+                .map_err(py_err)?;
 
-        let func = inpainting_bound
-            .getattr("remove_burned_in_subtitles")
-            .map_err(py_err)?;
-        let kwargs = pyo3::types::PyDict::new(py);
-        kwargs.set_item("video_path", &video_p).map_err(py_err)?;
-        kwargs.set_item("output_path", &out_p).map_err(py_err)?;
-        kwargs
-            .set_item("ocr_results", &py_results)
-            .map_err(py_err)?;
-        kwargs.set_item("device", device).map_err(py_err)?;
-        kwargs.set_item("backend", backend).map_err(py_err)?;
+            let py_results = PyList::empty(py);
+            for r in ocr_results {
+                py_results
+                    .append(ocr_to_py(py, types_bound, r)?)
+                    .map_err(py_err)?;
+            }
 
-        func.call(PyTuple::empty(py), Some(&kwargs))
-            .map_err(py_err)?;
-        Ok(output.to_path_buf())
+            let func = inpainting_bound
+                .getattr("remove_burned_in_subtitles")
+                .map_err(py_err)?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs.set_item("video_path", &video_p).map_err(py_err)?;
+            kwargs.set_item("output_path", &out_p).map_err(py_err)?;
+            kwargs
+                .set_item("ocr_results", &py_results)
+                .map_err(py_err)?;
+            kwargs.set_item("device", device).map_err(py_err)?;
+            kwargs.set_item("backend", backend).map_err(py_err)?;
+
+            func.call(PyTuple::empty(py), Some(&kwargs))
+                .map_err(py_err)?;
+            Ok(output.to_path_buf())
+        })
     })
 }
 
@@ -576,46 +606,45 @@ pub struct ParsedFilename {
 /// Parse a video filename through `movie_translator.identifier.parser`.
 pub fn parse_filename(filename: &str, folder_name: Option<&str>) -> Result<ParsedFilename> {
     Python::attach(|py| {
-        let mods_cell = modules(py)?;
-        let guard = mods_cell.lock().expect("modules mutex poisoned");
-        let m = guard.as_ref().expect("modules initialised");
-        let parser_bound = m.parser.bind(py);
+        with_modules(py, |py, m| {
+            let parser_bound = m.parser.bind(py);
 
-        let func = parser_bound.getattr("parse_filename").map_err(py_err)?;
-        let kwargs = pyo3::types::PyDict::new(py);
-        kwargs.set_item("filename", filename).map_err(py_err)?;
-        match folder_name {
-            Some(f) => kwargs.set_item("folder_name", f).map_err(py_err)?,
-            None => kwargs.set_item("folder_name", py.None()).map_err(py_err)?,
-        }
-        let dict = func
-            .call(PyTuple::empty(py), Some(&kwargs))
-            .map_err(py_err)?;
+            let func = parser_bound.getattr("parse_filename").map_err(py_err)?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs.set_item("filename", filename).map_err(py_err)?;
+            match folder_name {
+                Some(f) => kwargs.set_item("folder_name", f).map_err(py_err)?,
+                None => kwargs.set_item("folder_name", py.None()).map_err(py_err)?,
+            }
+            let dict = func
+                .call(PyTuple::empty(py), Some(&kwargs))
+                .map_err(py_err)?;
 
-        let title: Option<String> = extract_opt(&dict, "title")?;
-        let year: Option<i32> = extract_opt_int(&dict, "year")?;
-        let season: Option<i32> = extract_opt_int(&dict, "season")?;
-        let episode: Option<i32> = extract_opt_int(&dict, "episode")?;
-        let media_type: String = dict
-            .get_item("media_type")
-            .map_err(py_err)?
-            .extract()
-            .map_err(py_err)?;
-        let is_anime: bool = dict
-            .get_item("is_anime")
-            .map_err(py_err)?
-            .extract()
-            .map_err(py_err)?;
-        let release_group: Option<String> = extract_opt(&dict, "release_group")?;
+            let title: Option<String> = extract_opt(&dict, "title")?;
+            let year: Option<i32> = extract_opt_int(&dict, "year")?;
+            let season: Option<i32> = extract_opt_int(&dict, "season")?;
+            let episode: Option<i32> = extract_opt_int(&dict, "episode")?;
+            let media_type: String = dict
+                .get_item("media_type")
+                .map_err(py_err)?
+                .extract()
+                .map_err(py_err)?;
+            let is_anime: bool = dict
+                .get_item("is_anime")
+                .map_err(py_err)?
+                .extract()
+                .map_err(py_err)?;
+            let release_group: Option<String> = extract_opt(&dict, "release_group")?;
 
-        Ok(ParsedFilename {
-            title,
-            year,
-            season,
-            episode,
-            media_type,
-            is_anime,
-            release_group,
+            Ok(ParsedFilename {
+                title,
+                year,
+                season,
+                episode,
+                media_type,
+                is_anime,
+                release_group,
+            })
         })
     })
 }
