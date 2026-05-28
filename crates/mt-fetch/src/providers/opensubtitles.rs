@@ -422,27 +422,6 @@ mod tests {
     use super::*;
     use crate::providers::SubtitleProvider;
 
-    #[allow(dead_code)]
-    fn make_identity() -> MediaIdentity {
-        MediaIdentity {
-            title: "Breaking Bad".to_string(),
-            parsed_title: "Breaking Bad".to_string(),
-            year: Some(2008),
-            season: Some(1),
-            episode: Some(3),
-            media_type: "episode".to_string(),
-            oshash: "abc123def456abc0".to_string(),
-            file_size: 1_000_000,
-            raw_filename: "Breaking.Bad.S01E03.mkv".to_string(),
-            imdb_id: None,
-            tmdb_id: None,
-            is_anime: false,
-            release_group: None,
-        }
-    }
-
-    // ── PORT: test_name_is_opensubtitles ──────────────────────────────────────
-
     #[test]
     fn provider_name_is_opensubtitles() {
         let p = OpenSubtitlesProvider::new(Some("key".to_string()), None, None);

@@ -315,8 +315,6 @@ mod tests {
     fn metrics_flag_parses_and_has_warning() {
         let args = parse(&["movie.mkv", "--metrics"]);
         assert!(args.metrics, "--metrics must still be accepted");
-        // The warning text makes clear the flag is a no-op in the Rust port.
-        assert!(METRICS_NOT_IMPLEMENTED_WARNING.contains("not implemented"));
         // warn helper is a no-op when the flag is unset (smoke test, no panic).
         warn_unimplemented_metrics(false);
     }

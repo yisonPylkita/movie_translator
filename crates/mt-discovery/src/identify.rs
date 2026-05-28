@@ -1,12 +1,7 @@
 //! Media identification orchestration.
 //!
-//! Ported from `movie_translator/identifier/identify.py`.
-//!
 //! Combines filename parsing, container metadata, file hash, and optional
 //! TMDB enrichment into a [`mt_core::MediaIdentity`].
-//!
-//! TODO: metrics spans (Python `MetricsCollector`) have no Rust equivalent
-//! yet — the span calls are omitted and left as a future concern.
 
 use crate::hasher::compute_oshash;
 use crate::metadata::{extract_container_metadata, ContainerMetadata};
@@ -103,21 +98,17 @@ pub fn identify_media(video_path: &Path) -> Result<MediaIdentity> {
         .and_then(|n| n.to_str());
 
     // Signal 1: Parse filename (and folder as fallback context)
-    // TODO: metrics span 'parse_filename'
     let parsed = parse_filename(filename, folder_name)?;
 
     // Signal 2: Container metadata (overrides filename when present)
-    // TODO: metrics span 'extract_container_metadata'
     let container = extract_container_metadata(video_path);
 
     // Signal 3: File hash
-    // TODO: metrics span 'compute_oshash'
     let oshash = compute_oshash(video_path).unwrap_or_default();
 
     let file_size = video_path.metadata()?.len() as i64;
 
     // Signal 4: TMDB enrichment (optional, requires TMDB_API_KEY)
-    // TODO: metrics span 'lookup_tmdb'
     let parsed_title = parsed.title.clone().unwrap_or_else(|| filename.to_string());
     let tmdb_result = lookup_tmdb(&parsed_title, parsed.year, &parsed.media_type);
 

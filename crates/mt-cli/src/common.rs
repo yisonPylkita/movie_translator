@@ -1,17 +1,11 @@
 //! Shared CLI utilities: dependency checks and model resolution.
-//!
-//! Port of `movie_translator/commands/common.py`
-//! (`check_dependencies`, `resolve_model`, `resolve_models`).
 
 use std::path::{Path, PathBuf};
 
 /// Verify required external tools are present.
 ///
-/// Port of `check_dependencies`. The Python version checks the Python version
-/// and `pysubs2`/`torch`/`transformers` import availability — those are runtime
-/// concerns of the ML helper scripts, not the Rust binary. Here we verify the
-/// media toolchain the pipeline shells out to: `ffmpeg`/`ffprobe` must be
-/// discoverable (via `mt_media`). Returns `true` if all satisfied.
+/// Checks the media toolchain the pipeline shells out to: `ffmpeg`/`ffprobe`
+/// must be discoverable (via `mt_media`). Returns `true` if all satisfied.
 pub fn check_dependencies() -> bool {
     if mt_media::get_ffmpeg_version().is_err() {
         eprintln!("FFmpeg not available. Run ./setup.sh first.");
@@ -24,19 +18,11 @@ pub fn check_dependencies() -> bool {
     true
 }
 
-/// Back-compat: returns just the primary model.
-///
-/// Port of `resolve_model`.
-#[allow(dead_code)]
-pub fn resolve_model(explicit_choice: Option<&str>) -> String {
-    resolve_models(explicit_choice).0
-}
-
 /// Pick the primary translation backend + any extra backends to also run.
 ///
-/// Port of `resolve_models`. Returns `(primary_model, extra_models)`. On macOS
-/// where Apple Translation is available we default to running Allegro AND Apple
-/// (two PL tracks). An explicit `--model X` is honoured with no extras.
+/// Returns `(primary_model, extra_models)`. On macOS where Apple Translation is
+/// available we default to running Allegro AND Apple (two PL tracks). An
+/// explicit `--model X` is honoured with no extras.
 pub fn resolve_models(explicit_choice: Option<&str>) -> (String, Vec<String>) {
     resolve_models_with(explicit_choice, apple_translation_available)
 }
@@ -265,11 +251,5 @@ mod tests {
         let (primary, extra) = resolve_models_with(None, || false);
         assert_eq!(primary, "allegro");
         assert!(extra.is_empty());
-    }
-
-    #[test]
-    fn resolve_model_back_compat_returns_primary() {
-        // explicit path doesn't touch the platform probe.
-        assert_eq!(resolve_model(Some("apple")), "apple");
     }
 }

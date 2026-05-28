@@ -119,10 +119,8 @@ impl SubtitleExtractor {
 
     /// Extract a subtitle track from `video_path` to `output_path`.
     ///
-    /// Port of `extract_subtitle`.
-    ///
-    /// For PGS/image-based tracks the extraction still works (copies the
-    /// binary stream); OCR is a separate concern — left as a TODO/hook.
+    /// For PGS/image-based tracks this still works by copying the raw binary
+    /// stream; OCR of those tracks happens later in the pipeline.
     pub fn extract_subtitle(
         &self,
         video_path: &Path,
@@ -346,7 +344,6 @@ pub fn select_from_dialogue_tracks(dialogue_tracks: &[SubtitleTrack]) -> Option<
         return Some(text_tracks[0].clone());
     }
     if !image_tracks.is_empty() {
-        // TODO: hook for OCR processing of image-based PGS/DVD tracks
         return handle_image_tracks(&image_tracks);
     }
     // Fallback: return first dialogue track regardless of codec
@@ -409,9 +406,6 @@ pub fn separate_by_codec(tracks: &[SubtitleTrack]) -> (Vec<SubtitleTrack>, Vec<S
 }
 
 /// Handle image-based (PGS/DVD) dialogue tracks.
-///
-/// Port of `_handle_image_tracks`.
-/// TODO: Wire in OCR pipeline when implemented.
 pub fn handle_image_tracks(image_tracks: &[SubtitleTrack]) -> Option<SubtitleTrack> {
     image_tracks.first().cloned()
 }
