@@ -1,15 +1,14 @@
-//! Filename parsing via the Python `ml/parse_filename.py` helper script.
+//! Filename parsing via the embedded Python `movie_translator.identifier.parser`.
 //!
-//! The underlying logic relies on `guessit` and `aniparse` Python libraries,
-//! which have no Rust equivalent, so this module shells out to the script.
-//! The script reads JSON from stdin and writes JSON to stdout.
+//! The underlying logic relies on `guessit` and `aniparse` Python libraries
+//! (no Rust equivalent), so we call them in-process through PyO3 via the
+//! `mt_ml` crate. The first call initialises the embedded interpreter; every
+//! call after that is a direct function call (no subprocess).
 
-use mt_core::{MtError, Result};
+use mt_core::Result;
 use serde::{Deserialize, Serialize};
-use std::io::Write;
-use std::process::{Command, Stdio};
 
-/// Parsed filename metadata returned by `ml/parse_filename.py`.
+/// Parsed filename metadata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedName {
     /// Best-guess title from filename/aniparse/guessit.
@@ -28,81 +27,30 @@ pub struct ParsedName {
     pub release_group: Option<String>,
 }
 
-/// JSON request sent to the Python script via stdin.
-#[derive(Serialize)]
-struct ParseRequest<'a> {
-    filename: &'a str,
-    folder_name: Option<&'a str>,
-}
-
-/// Invoke `ml/parse_filename.py` to parse a video filename.
-///
-/// Spawns `uv run python ml/parse_filename.py` (from the repo root),
-/// passes JSON to stdin, and deserialises the JSON response from stdout.
+/// Parse a video filename through the embedded Python interpreter.
 ///
 /// # Errors
-/// Returns [`MtError::Subprocess`] on non-zero exit or if stderr contains
-/// an error message.
+/// Returns [`mt_core::MtError::Parse`] (with traceback) when the Python call
+/// raises, or [`mt_core::MtError::PathResolution`] if the `movie_translator/`
+/// package can't be located on `sys.path`.
 pub fn parse_filename(filename: &str, folder: Option<&str>) -> Result<ParsedName> {
-    let request = ParseRequest {
-        filename,
-        folder_name: folder,
-    };
-    let input = serde_json::to_string(&request)
-        .map_err(|e| MtError::Parse(format!("failed to serialize request: {e}")))?;
-
-    // Resolve the `ml/` scripts directory robustly (executable- or cwd-anchored)
-    // with no silent cwd fallback; the script is run from the repo root.
-    let repo_root = mt_core::paths::repo_root()?;
-
-    // Try `uv run python` first; if uv isn't available fall back to `python3`.
-    let output = try_run_script(
-        &input,
-        &["uv", "run", "python", "ml/parse_filename.py"],
-        &repo_root,
-    )
-    .or_else(|_| try_run_script(&input, &["python3", "ml/parse_filename.py"], &repo_root))?;
-
-    serde_json::from_slice(&output)
-        .map_err(|e| MtError::Parse(format!("failed to parse script output: {e}")))
-}
-
-fn try_run_script(input: &str, argv: &[&str], cwd: &std::path::Path) -> Result<Vec<u8>> {
-    let mut child = Command::new(argv[0])
-        .args(&argv[1..])
-        .current_dir(cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(MtError::Io)?;
-
-    child
-        .stdin
-        .take()
-        .expect("stdin piped")
-        .write_all(input.as_bytes())
-        .map_err(MtError::Io)?;
-
-    let out = child.wait_with_output().map_err(MtError::Io)?;
-
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-        return Err(MtError::Subprocess {
-            cmd: argv.join(" "),
-            code: out.status.code(),
-            stderr,
-        });
-    }
-
-    Ok(out.stdout)
+    let parsed = mt_ml::backend::parse_filename(filename, folder)?;
+    Ok(ParsedName {
+        title: parsed.title,
+        year: parsed.year,
+        season: parsed.season,
+        episode: parsed.episode,
+        media_type: parsed.media_type,
+        is_anime: parsed.is_anime,
+        release_group: parsed.release_group,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Unit test: ParsedName JSON round-trip (no subprocess required).
+    /// Unit test: ParsedName JSON round-trip (no interpreter required).
     #[test]
     fn parsed_name_deserialize_sample() {
         let json = r#"{
@@ -144,10 +92,11 @@ mod tests {
         assert_eq!(parsed.media_type, "movie");
     }
 
-    /// Integration test: actually runs `uv run python ml/parse_filename.py`.
+    /// Integration test: actually calls the embedded Python `parse_filename`.
     ///
-    /// Marked `#[ignore]` because it requires the Python environment.
-    /// Run with `cargo test -p mt-discovery -- --ignored` to execute.
+    /// Marked `#[ignore]` because it requires the Python venv to be in place
+    /// (and `PYO3_PYTHON` set at compile time). Run with
+    /// `cargo test -p mt-discovery -- --ignored` after `just deps`.
     #[test]
     #[ignore]
     fn integration_parse_anime_filename() {

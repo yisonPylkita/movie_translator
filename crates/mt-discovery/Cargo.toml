@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 mt-core = { path = "../mt-core" }
+mt-ml = { path = "../mt-ml" }
 md-5 = "0.11"
 serde = { workspace = true }
 serde_json = { workspace = true }
