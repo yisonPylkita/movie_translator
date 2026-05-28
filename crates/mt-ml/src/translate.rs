@@ -1,6 +1,4 @@
 //! Translation via the Python `ml/translate.py` helper script.
-//!
-//! Mirrors the `TranslateTask` GPU task in `movie_translator/gpu_queue.py`.
 
 use crate::runner::run_script_json;
 use mt_core::{DialogueLine, Result};

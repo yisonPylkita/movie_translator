@@ -1,6 +1,4 @@
 //! Recursive video file discovery and working directory creation.
-//!
-//! Ported from `movie_translator/discovery.py`.
 
 use mt_core::Result;
 use std::collections::HashSet;
@@ -16,7 +14,7 @@ const IN_PLACE_TEMP_INFIX: &str = ".translating";
 /// Returns `true` if `path` looks like an in-place mux temp file.
 ///
 /// Checks whether the stem (everything except the final extension) ends with
-/// `.translating`, matching the Python behaviour of `path.stem.endswith(...)`.
+/// `.translating`.
 fn is_in_place_temp(path: &Path) -> bool {
     path.file_stem()
         .and_then(|s| s.to_str())
@@ -86,8 +84,8 @@ fn collect_videos(root: &Path, dir: &Path, out: &mut Vec<PathBuf>, visited: &mut
         }
 
         // Determine whether this entry is itself a symlink. We FOLLOW symlinks
-        // that resolve to regular files (Python's `find_videos` did), but never
-        // descend into a symlinked DIRECTORY: that can point back up the tree
+        // that resolve to regular files, but never descend into a symlinked
+        // DIRECTORY: that can point back up the tree
         // (cycle) or escape the root entirely. (`is_dir`/`is_file` below follow
         // symlinks, so they report on the link's target.)
         let is_symlink = std::fs::symlink_metadata(&entry)
@@ -267,8 +265,7 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         // The real .mkv lives outside the scanned tree; only a symlink to it
-        // sits inside. Python's find_videos followed file symlinks, so it must
-        // be discovered.
+        // sits inside. File symlinks are followed, so it must be discovered.
         let target_dir = TempDir::new().unwrap();
         let real = target_dir.path().join("real.mkv");
         touch(&real);

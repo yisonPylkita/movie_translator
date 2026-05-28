@@ -1,6 +1,4 @@
 //! Subtitle fetcher — orchestrates search across multiple providers.
-//!
-//! Ported from `movie_translator/subtitle_fetch/fetcher.py`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -11,8 +9,6 @@ use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
 
 /// Orchestrates subtitle search across multiple providers.
-///
-/// Mirrors Python `SubtitleFetcher` class.
 pub struct SubtitleFetcher {
     providers: Vec<Box<dyn SubtitleProvider>>,
 }
@@ -23,10 +19,8 @@ impl SubtitleFetcher {
     }
 
     /// Search all providers in parallel, return ALL plausible matches sorted by score.
-    ///
-    /// Mirrors Python `SubtitleFetcher.search_all()`.
     pub fn search_all(&self, identity: &MediaIdentity, languages: &[&str]) -> Vec<SubtitleMatch> {
-        // Use threads to query providers in parallel (mirrors Python ThreadPoolExecutor)
+        // Use threads to query providers in parallel.
         let results: Vec<_> = std::thread::scope(|scope| {
             let handles: Vec<_> = self
                 .providers
@@ -66,7 +60,7 @@ impl SubtitleFetcher {
             }
         }
 
-        // Sort by (score, hash_match) descending — mirrors Python sort
+        // Sort by (score, hash_match) descending.
         all_matches.sort_by(|a, b| {
             let score_ord = b
                 .score
@@ -83,8 +77,6 @@ impl SubtitleFetcher {
     }
 
     /// Download a single candidate subtitle file. Returns path written to.
-    ///
-    /// Mirrors Python `SubtitleFetcher.download_candidate()`.
     pub fn download_candidate(
         &self,
         match_: &SubtitleMatch,
@@ -105,8 +97,6 @@ impl SubtitleFetcher {
     /// Search all providers and download best subtitle per language.
     ///
     /// Returns `{language_code: subtitle_file_path}` for successfully downloaded subtitles.
-    ///
-    /// Mirrors Python `SubtitleFetcher.fetch_subtitles()`.
     pub fn fetch_subtitles(
         &self,
         identity: &MediaIdentity,
@@ -294,8 +284,6 @@ mod tests {
         assert_eq!(matches[0].source, "fake");
     }
 
-    // ── PORT: test_returns_best_match_per_language ────────────────────────────
-
     #[test]
     fn fetch_subtitles_downloads_best_per_language() {
         let dir = tempfile::tempdir().unwrap();
@@ -339,8 +327,6 @@ mod tests {
         assert!(result.contains_key("pol"));
     }
 
-    // ── PORT: test_returns_empty_when_no_matches ──────────────────────────────
-
     #[test]
     fn fetch_subtitles_returns_empty_when_no_matches() {
         let dir = tempfile::tempdir().unwrap();
@@ -349,8 +335,6 @@ mod tests {
         let result = fetcher.fetch_subtitles(&make_identity(), &["eng"], dir.path());
         assert!(result.is_empty());
     }
-
-    // ── PORT: test_tries_multiple_providers ───────────────────────────────────
 
     #[test]
     fn fetch_subtitles_tries_multiple_providers() {
@@ -372,8 +356,6 @@ mod tests {
         let result = fetcher.fetch_subtitles(&make_identity(), &["eng"], dir.path());
         assert!(result.contains_key("eng"));
     }
-
-    // ── PORT: test_prefers_hash_match_over_query_match ────────────────────────
 
     #[test]
     fn search_all_sorted_by_score_descending() {
@@ -416,8 +398,6 @@ mod tests {
         sorted.sort_by(|a, b| b.partial_cmp(a).unwrap());
         assert_eq!(scores, sorted);
     }
-
-    // ── PORT: TestSearchAll::test_search_all_returns_all_matches ─────────────
 
     #[test]
     fn search_all_returns_all_matches_from_all_providers() {
@@ -467,8 +447,6 @@ mod tests {
         assert!(ids.contains("c"));
     }
 
-    // ── PORT: TestSearchAll::test_search_all_returns_empty_when_no_matches ────
-
     #[test]
     fn search_all_returns_empty_when_no_matches() {
         let provider = FakeProvider::new("fake", vec![]);
@@ -476,8 +454,6 @@ mod tests {
         let results = fetcher.search_all(&make_identity(), &["eng"]);
         assert!(results.is_empty());
     }
-
-    // ── PORT: TestSearchAll::test_search_all_tolerates_provider_failure ───────
 
     #[test]
     fn search_all_tolerates_provider_failure() {
@@ -522,8 +498,6 @@ mod tests {
         assert_eq!(results[0].subtitle_id, "1");
     }
 
-    // ── PORT: TestDownloadCandidate::test_download_candidate_delegates_to_provider
-
     #[test]
     fn download_candidate_delegates_to_correct_provider() {
         let dir = tempfile::tempdir().unwrap();
@@ -544,8 +518,6 @@ mod tests {
         assert_eq!(result.unwrap(), output_path);
     }
 
-    // ── PORT: TestDownloadCandidate::test_download_candidate_raises_when_provider_not_found
-
     #[test]
     fn download_candidate_raises_when_provider_not_found() {
         let dir = tempfile::tempdir().unwrap();
@@ -565,8 +537,6 @@ mod tests {
         let err_str = result.unwrap_err().to_string();
         assert!(err_str.contains("missing_provider"));
     }
-
-    // ── PORT: TestDownloadCandidate::test_download_candidate_picks_correct_provider_by_name
 
     #[test]
     fn download_candidate_picks_correct_provider_by_name() {

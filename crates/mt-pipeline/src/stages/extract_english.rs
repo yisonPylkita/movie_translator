@@ -1,6 +1,4 @@
 //! Determine the English subtitle source and extract dialogue lines.
-//!
-//! Port of `movie_translator/stages/extract_english.py`.
 
 use std::path::PathBuf;
 
@@ -11,7 +9,7 @@ use mt_subtitles::SubtitleProcessor;
 use crate::error::{PipelineError, Result};
 use crate::vision::{default_vision_ocr_probe, VisionOcrProbe};
 
-/// Stage role name (matches the Python `ExtractEnglishStage.name`).
+/// Stage role name.
 pub const NAME: &str = "extract";
 
 const IMAGE_CODECS: &[&str] = &["hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle"];
@@ -25,7 +23,7 @@ fn is_image_codec(track: &SubtitleTrack) -> bool {
 
 /// Select the best English subtitle source and extract dialogue lines.
 ///
-/// Port of `ExtractEnglishStage.run`. Priority: fetched English > reference >
+/// Priority: fetched English > reference >
 /// embedded text track > defer burned-in OCR.
 pub fn run(ctx: PipelineContext) -> Result<PipelineContext> {
     run_with_probe(ctx, default_vision_ocr_probe)
@@ -92,7 +90,7 @@ pub fn run_with_probe(
 
 /// Find and extract a text-based (non-image) English track.
 ///
-/// Port of `ExtractEnglishStage._extract_text_only`. Returns the output path
+/// Returns the output path
 /// or `None` if no text track is found.
 fn extract_text_only(ctx: &PipelineContext) -> Result<Option<PathBuf>> {
     let extractor = SubtitleExtractor::new();

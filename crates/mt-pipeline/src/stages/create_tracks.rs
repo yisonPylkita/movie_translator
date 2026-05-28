@@ -1,6 +1,4 @@
 //! Create subtitle track files and build the track list.
-//!
-//! Port of `movie_translator/stages/create_tracks.py`.
 
 use std::path::{Path, PathBuf};
 
@@ -9,12 +7,10 @@ use mt_subtitles::SubtitleProcessor;
 
 use crate::error::Result;
 
-/// Stage role name (matches the Python `CreateTracksStage.name`).
+/// Stage role name.
 pub const NAME: &str = "create_tracks";
 
 /// Human-readable label for a translation backend (used as a track title).
-///
-/// Port of `_model_label`.
 pub fn model_label(model_name: &str) -> String {
     match model_name {
         "allegro" => "Allegro".to_string(),
@@ -34,7 +30,7 @@ fn lang_to_track(lang: &str) -> String {
 
 /// Run the create-tracks stage.
 ///
-/// Port of `CreateTracksStage.run`. Builds one Polish `.ass` per translation
+/// Builds one Polish `.ass` per translation
 /// model (primary first, then extras), applies the font fallback rename, and
 /// assembles the ordered track list (fetched Polish, AI Polish, external).
 pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
@@ -112,8 +108,8 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
             polish_files.push((extra_model.clone(), extra_ass));
         }
     }
-    // Any extra translations not listed in extra_models (defensive — matches
-    // Python iterating ctx.extra_translations directly).
+    // Any extra translations not listed in extra_models (defensive — iterate
+    // ctx.extra_translations directly).
     for (extra_model, extra_lines) in &ctx.extra_translations {
         if ctx.config.extra_models.contains(extra_model) {
             continue;
@@ -216,7 +212,7 @@ struct ManifestSub {
 
 /// Load matching external subtitles from a manifest directory.
 ///
-/// Port of `_load_external_subs`. Matches by parsed title + season + episode,
+/// Matches by parsed title + season + episode,
 /// falling back to episode-number matching.
 pub fn load_external_subs(external_dir: &Path, identity: &MediaIdentity) -> Vec<SubtitleFile> {
     let manifest_path = external_dir.join("manifest.json");

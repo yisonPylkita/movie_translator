@@ -1,6 +1,4 @@
 //! High-level video operations (mux, verify).
-//!
-//! Port of `movie_translator/video/operations.py`.
 
 use std::path::{Path, PathBuf};
 
@@ -45,8 +43,6 @@ pub struct SubtitleTrackInfo {
 // ---------------------------------------------------------------------------
 
 /// High-level video operations — mux and verify.
-///
-/// Port of `VideoOperations` class.
 pub struct VideoOperations;
 
 impl VideoOperations {
@@ -55,8 +51,6 @@ impl VideoOperations {
     }
 
     /// Create a clean video by muxing `original_video` with `subtitle_files`.
-    ///
-    /// Port of `create_clean_video`.
     pub fn create_clean_video(
         &self,
         original_video: &Path,
@@ -78,8 +72,6 @@ impl VideoOperations {
     }
 
     /// Verify that `output_video` exists and optionally validate subtitle tracks.
-    ///
-    /// Port of `verify_result`.
     pub fn verify_result(
         &self,
         output_video: &Path,
@@ -113,8 +105,6 @@ impl Default for VideoOperations {
 // ---------------------------------------------------------------------------
 
 /// Extract subtitle track descriptors from parsed video info.
-///
-/// Port of `_get_subtitle_tracks`.
 pub fn get_subtitle_tracks_from_info(info: &crate::ffmpeg::VideoInfo) -> Vec<SubtitleTrackInfo> {
     info.streams
         .iter()
@@ -137,7 +127,6 @@ pub fn get_subtitle_tracks_from_info(info: &crate::ffmpeg::VideoInfo) -> Vec<Sub
 
 /// Validate that `actual` tracks match `expected` subtitle files.
 ///
-/// Port of `_validate_tracks`.
 /// Returns `Ok(())` on success or a `VideoOperationError` describing the first mismatch.
 pub fn validate_tracks(
     actual: &[SubtitleTrackInfo],
@@ -277,7 +266,7 @@ mod tests {
 
     #[test]
     fn validate_tracks_language_only_checked_not_title() {
-        // title can differ — only language is validated (matches Python)
+        // title can differ — only language is validated
         let actual = vec![make_track_info("pol", "Different Title")];
         let expected = vec![make_sub("pol", "Polish", true)];
         assert!(validate_tracks(&actual, &expected).is_ok());

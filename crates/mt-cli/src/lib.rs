@@ -1,8 +1,6 @@
 //! CLI entry point: argument parsing, command dispatch, progress UI.
 //!
-//! Port of `movie_translator/main.py` (subcommand routing) and the
-//! `movie_translator/commands/` handlers. The binary is `movie-translator`
-//! (see `src/main.rs`).
+//! The binary is `movie-translator` (see `src/main.rs`).
 
 pub mod commands;
 pub mod common;
@@ -42,8 +40,8 @@ fn default_filter(verbose: bool) -> String {
 
 /// Initialise the tracing subscriber once. `verbose` raises our crates to DEBUG.
 ///
-/// Mirrors `set_verbose(args.verbose)` in the Python handlers. Logs go to
-/// stderr so stdout stays clean for the summary line. Uses an `EnvFilter` so
+/// Logs go to stderr so stdout stays clean for the summary line. Uses an
+/// `EnvFilter` so
 /// third-party crates stay capped at `warn` (no html5ever/hyper/rustls DEBUG
 /// flood under `-v`); honours a `RUST_LOG` override.
 pub fn init_tracing(verbose: bool) {

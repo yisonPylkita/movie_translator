@@ -1,9 +1,8 @@
 //! `extract` subcommand: extract subtitles (embedded text + burned-in OCR).
 //!
-//! Port of `movie_translator/commands/extract_cmd.py` + the orchestration of
-//! `movie_translator/extract.py::run_extract`. Embedded text-track extraction
-//! and identification are fully ported; burned-in OCR routes through the
-//! pipeline GPU worker (`mt_ml::ocr_burned_in` via the serialised worker).
+//! Embedded text-track extraction and identification run inline; burned-in OCR
+//! routes through the pipeline GPU worker (`mt_ml::ocr_burned_in` via the
+//! serialised worker).
 
 use std::path::{Path, PathBuf};
 
@@ -14,13 +13,13 @@ use mt_media::SubtitleExtractor;
 use mt_pipeline::GpuWorker;
 use serde_json::json;
 
-/// Image-based subtitle codecs that need OCR (mirrors `SubtitleExtractor.IMAGE_CODECS`).
+/// Image-based subtitle codecs that need OCR.
 const IMAGE_CODECS: &[&str] = &["hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle"];
-/// Burned-in OCR defaults from `movie_translator/ocr/burned_in_extractor.py`.
+/// Burned-in OCR defaults: crop the bottom 25% of the frame, sample 3 fps.
 const OCR_CROP_RATIO: f64 = 0.25;
 const OCR_EXTRACT_FPS: u32 = 3;
 
-/// Extract command arguments, mirroring `extract_cmd.parse_args`.
+/// Extract command arguments.
 #[derive(Debug, Parser)]
 #[command(
     name = "movie-translator extract",
@@ -42,7 +41,7 @@ pub struct ExtractArgs {
     pub verbose: bool,
 }
 
-/// Build a normalized filename stem from media identity. Port of `_build_output_stem`.
+/// Build a normalized filename stem from media identity.
 fn build_output_stem(identity: &MediaIdentity) -> String {
     let raw = if !identity.parsed_title.is_empty() {
         identity.parsed_title.as_str()
@@ -69,7 +68,7 @@ fn build_output_stem(identity: &MediaIdentity) -> String {
     }
 }
 
-/// Count dialogue lines in a subtitle file. Port of `_count_subtitle_lines`.
+/// Count dialogue lines in a subtitle file.
 fn count_subtitle_lines(path: &Path) -> usize {
     match mt_subtitles::load(path) {
         Ok(subs) => subs
@@ -83,7 +82,7 @@ fn count_subtitle_lines(path: &Path) -> usize {
     }
 }
 
-/// Extract embedded English/Polish text tracks. Port of `_extract_text_tracks`.
+/// Extract embedded English/Polish text tracks.
 fn extract_text_tracks(
     video_path: &Path,
     output_dir: &Path,
@@ -150,7 +149,7 @@ fn extract_text_tracks(
     results
 }
 
-/// Extract burned-in subtitles via OCR through the GPU worker. Port of `_extract_ocr`.
+/// Extract burned-in subtitles via OCR through the GPU worker.
 async fn extract_ocr(
     worker: &GpuWorker,
     video_path: &Path,
@@ -221,7 +220,6 @@ fn identity_to_json(identity: &MediaIdentity) -> serde_json::Value {
 
 /// Run the extract flow. Returns the deliberate exit code as `Ok(code)`, or an
 /// `Err` with a `.context()` chain (printed by `main`) for a genuine IO failure.
-/// Port of `extract_cmd.run` + `run_extract`.
 pub async fn run(args: ExtractArgs) -> anyhow::Result<i32> {
     use anyhow::Context;
 

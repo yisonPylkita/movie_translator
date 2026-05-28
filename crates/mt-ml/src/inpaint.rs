@@ -1,6 +1,4 @@
 //! Burned-in subtitle removal via the Python `ml/inpaint.py` helper script.
-//!
-//! Mirrors the `InpaintTask` GPU task in `movie_translator/gpu_queue.py`.
 
 use crate::runner::run_script_json;
 use mt_core::{MtError, OCRResult, Result};

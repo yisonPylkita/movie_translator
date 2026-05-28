@@ -1,7 +1,5 @@
 //! AI translation and font-checking stage.
 //!
-//! Port of `movie_translator/stages/translate.py`.
-//!
 //! The Python stage runs font checking and translation concurrently. Here the
 //! GPU-bound translation is routed through a [`GpuExecutor`] (the synchronous
 //! pipeline uses `DirectGpuExecutor`; the async pipeline will serialise through
@@ -18,12 +16,12 @@ use crate::error::{PipelineError, Result};
 use crate::gpu::GpuExecutor;
 use crate::proper_nouns::extract_proper_nouns_from_subtitles;
 
-/// Stage role name (matches the Python `TranslateStage.name`).
+/// Stage role name.
 pub const NAME: &str = "translate";
 
 /// Check font support for Polish characters.
 ///
-/// Port of `TranslateStage.check_fonts`. IO-bound; safe to run inline.
+/// IO-bound; safe to run inline.
 pub fn check_fonts(ctx: &PipelineContext) -> FontInfo {
     let english_source = ctx
         .english_source
@@ -72,14 +70,13 @@ pub fn check_fonts(ctx: &PipelineContext) -> FontInfo {
 
 /// Run the translate stage.
 ///
-/// Port of `TranslateStage.run`. Performs the font check inline and routes
+/// Performs the font check inline and routes
 /// translation (primary + extras) through `executor`.
 ///
 /// `proper_nouns` carries the character-name protection list. When `None`, the
 /// stage derives it from the dialogue itself via
-/// [`extract_proper_nouns_from_subtitles`] — mirroring
-/// `movie_translator/stages/translate.py` (lines 70-75). A caller-supplied
-/// override is used as-is when present.
+/// [`extract_proper_nouns_from_subtitles`]. A caller-supplied override is used
+/// as-is when present.
 pub fn run(
     ctx: PipelineContext,
     executor: &dyn GpuExecutor,

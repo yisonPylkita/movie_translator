@@ -89,6 +89,6 @@ fn count_polish_chars() {
     use crate::encoding::count_polish;
     assert_eq!(count_polish("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ"), 18);
     assert_eq!(count_polish("Hello world"), 0);
-    assert_eq!(count_polish("Cześć"), 2); // ś + ć (matches Python _count_polish)
+    assert_eq!(count_polish("Cześć"), 2); // ś + ć
     assert_eq!(count_polish(""), 0);
 }

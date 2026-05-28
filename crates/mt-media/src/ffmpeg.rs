@@ -1,6 +1,4 @@
 //! FFmpeg/ffprobe/mkvmerge binary resolution and media operations.
-//!
-//! Port of `movie_translator/ffmpeg.py`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -161,7 +159,7 @@ pub struct VideoEncoding {
 
 /// Run ffprobe on `video_path` and return parsed `VideoInfo`.
 ///
-/// Note: Python caches per path; callers may cache at a higher level.
+/// Note: this does not cache; callers may cache at a higher level.
 pub fn get_video_info(video_path: &Path) -> Result<VideoInfo, VideoMuxError> {
     let ffprobe = get_ffprobe()?;
     let output = Command::new(ffprobe)
@@ -280,8 +278,6 @@ pub fn parse_ffmpeg_version_string(first_line: &str) -> &str {
 // ---------------------------------------------------------------------------
 
 /// Map a font file extension to its MIME type.
-///
-/// Port of `_mimetype_for_font`.
 pub fn mimetype_for_font(font_path: &Path) -> &'static str {
     match font_path
         .extension()
@@ -301,7 +297,6 @@ pub fn mimetype_for_font(font_path: &Path) -> &'static str {
 /// Mux `video_path` with `subtitle_files` into `output_path`.
 ///
 /// Uses mkvmerge when available and output is MKV; falls back to ffmpeg.
-/// Port of `mux_video_with_subtitles`.
 pub fn mux_video_with_subtitles(
     video_path: &Path,
     subtitle_files: &[SubtitleFile],
@@ -364,8 +359,6 @@ pub fn mux_video_with_subtitles(
 // ---------------------------------------------------------------------------
 
 /// Resolve the absolute mkvmerge track ID for a subtitle-relative index.
-///
-/// Port of `_resolve_mkvmerge_sub_track_id`.
 pub fn resolve_mkvmerge_sub_track_id(
     mkvmerge: &Path,
     video_path: &Path,
@@ -413,7 +406,6 @@ pub fn parse_mkvmerge_sub_track_id(
 /// Build the mkvmerge command-line argument list (excluding the binary itself).
 ///
 /// Pure function — factored for unit testing.
-/// Port of `_mux_with_mkvmerge` argv construction.
 pub fn build_mkvmerge_args(
     mkvmerge: &Path,
     video_path: &Path,
@@ -490,7 +482,6 @@ fn run_mkvmerge(mkvmerge: &Path, args: &[String]) -> Result<(), VideoMuxError> {
 /// Build the ffmpeg mux command-line argument list (excluding the binary itself).
 ///
 /// Pure function — factored for unit testing.
-/// Port of `_mux_with_ffmpeg` argv construction.
 pub fn build_ffmpeg_mux_args(
     video_path: &Path,
     subtitle_files: &[SubtitleFile],

@@ -1,7 +1,5 @@
 //! NapiProjekt provider — Polish subtitles via hash-based lookup.
 //!
-//! Ported from `movie_translator/subtitle_fetch/providers/napiprojekt.py`.
-//!
 //! NapiProjekt is the largest Polish subtitle database. Subtitles are matched
 //! by computing MD5 of the first 10 MB of the video file.
 
@@ -20,8 +18,6 @@ pub const USER_AGENT: &str = "MovieTranslator/1.0";
 /// Compute the NapiProjekt token from a file hash.
 ///
 /// `token = MD5(MAGIC_PREFIX + file_hash)`
-///
-/// Mirrors Python logic inside `_fetch_subtitle`.
 pub fn compute_token(file_hash: &str) -> String {
     let input = format!("{MAGIC_PREFIX}{file_hash}");
     let mut hasher = Md5::new();
@@ -232,14 +228,10 @@ mod tests {
         }
     }
 
-    // ── PORT: test_name ───────────────────────────────────────────────────────
-
     #[test]
     fn provider_name_is_napiprojekt() {
         assert_eq!(NapiProjektProvider::new().name(), "napiprojekt");
     }
-
-    // ── PORT: test_search_only_supports_polish ────────────────────────────────
 
     #[test]
     fn search_returns_empty_for_non_polish() {
@@ -254,16 +246,12 @@ mod tests {
         assert_eq!(result.unwrap(), vec![]);
     }
 
-    // ── PORT: test_search_requires_video_path ─────────────────────────────────
-
     #[test]
     fn search_requires_video_path() {
         let provider = NapiProjektProvider::new(); // no path set
         let result = provider.search(&make_identity(), &["pol"]);
         assert_eq!(result.unwrap(), vec![]);
     }
-
-    // ── PORT: test_search_returns_empty_when_hash_fails ───────────────────────
 
     #[test]
     fn search_returns_empty_when_hash_fails() {
@@ -334,7 +322,6 @@ mod tests {
         assert_eq!(token_part.len(), 32);
     }
 
-    // ── PORT: test_search_returns_match_when_subtitle_exists ─────────────────
     // (Simulated via cache injection)
 
     #[test]
@@ -360,7 +347,6 @@ mod tests {
         assert!((match_.score - 0.95).abs() < 1e-9);
     }
 
-    // ── PORT: test_search_returns_empty_when_subtitle_not_found ──────────────
     // Simulated: is_not_found() returns true for NPc0 prefix
 
     #[test]

@@ -1,7 +1,5 @@
 //! Thread-safe rate limiter with HTTP header awareness.
 //!
-//! Ported from `movie_translator/subtitle_fetch/rate_limiter.py`.
-//!
 //! Designed for APIs that return `X-RateLimit-*` headers (e.g., OpenSubtitles).
 //! The clock is injected via the `Clock` trait so tests are deterministic.
 
@@ -45,9 +43,8 @@ struct RateLimiterState {
     blocked_until: f64,
 }
 
-/// Rate limiter that enforces minimum intervals and respects API rate limit headers.
-///
-/// Maps to Python `RateLimiter` class, with `Clock` injection for deterministic tests.
+/// Rate limiter that enforces minimum intervals and respects API rate limit
+/// headers. Uses `Clock` injection for deterministic tests.
 pub struct RateLimiter<C: Clock = RealClock> {
     min_interval: f64,
     state: Mutex<RateLimiterState>,
@@ -75,8 +72,6 @@ impl<C: Clock> RateLimiter<C> {
     }
 
     /// Block until it is safe to make the next request.
-    ///
-    /// Mirrors Python `RateLimiter.wait()`.
     pub fn wait(&self) {
         let mut state = self.state.lock().expect("rate limiter poisoned");
 
@@ -103,8 +98,6 @@ impl<C: Clock> RateLimiter<C> {
     }
 
     /// Parse `X-RateLimit-*` headers to adjust pacing.
-    ///
-    /// Mirrors Python `RateLimiter.update_from_headers()`.
     pub fn update_from_headers(&self, headers: &std::collections::HashMap<String, String>) {
         let remaining = match headers.get("X-RateLimit-Remaining") {
             Some(v) => v,
@@ -131,8 +124,6 @@ impl<C: Clock> RateLimiter<C> {
     }
 
     /// Record a 429 response. Back off for `retry_after` seconds (default: 5s).
-    ///
-    /// Mirrors Python `RateLimiter.record_429()`.
     pub fn record_429(&self, retry_after: Option<f64>) {
         let delay = retry_after.unwrap_or(5.0);
         let mut state = self.state.lock().expect("rate limiter poisoned");
@@ -192,16 +183,12 @@ mod tests {
         RateLimiter::with_clock(min_interval, FakeClock::new(start))
     }
 
-    // ── PORT: test_first_call_allowed_immediately ──────────────────────────────
-
     #[test]
     fn first_call_no_sleep() {
         let limiter = fake_limiter(0.5, 100.0);
         limiter.wait();
         assert_eq!(limiter.clock.total_slept(), 0.0);
     }
-
-    // ── PORT: test_second_call_delayed ──────────────────────────────────────────
 
     #[test]
     fn second_call_delayed_by_min_interval() {
@@ -211,8 +198,6 @@ mod tests {
         limiter.wait(); // second call — should sleep 0.3s
         assert!((limiter.clock.total_slept() - 0.3).abs() < 1e-9);
     }
-
-    // ── PORT: test_update_from_headers_respects_remaining ─────────────────────
 
     #[test]
     fn update_from_headers_remaining_zero_blocks() {
@@ -226,8 +211,6 @@ mod tests {
         assert!(limiter.clock.total_slept() >= 0.9);
     }
 
-    // ── PORT: test_backoff_on_429 ──────────────────────────────────────────────
-
     #[test]
     fn record_429_blocks_for_retry_after() {
         let limiter = fake_limiter(0.0, 100.0);
@@ -235,8 +218,6 @@ mod tests {
         limiter.wait();
         assert!(limiter.clock.total_slept() >= 0.29);
     }
-
-    // ── PORT: test_no_delay_when_remaining_is_high ────────────────────────────
 
     #[test]
     fn update_from_headers_high_remaining_no_block() {

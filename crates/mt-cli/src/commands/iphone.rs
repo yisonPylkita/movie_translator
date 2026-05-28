@@ -1,8 +1,4 @@
 //! `iphone` subcommand: remux MKV -> iPhone-compatible MP4 in place.
-//!
-//! Port of `movie_translator/commands/iphone_cmd.py` plus the
-//! `movie_translator/iphone/converter.py` module it depends on (ported inline
-//! here, behavior-preserving).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -16,7 +12,7 @@ use tokio::sync::Semaphore;
 const SUPPORTED_VIDEO_CODECS: &[&str] = &["h264", "hevc"];
 const CONVERTING_MARKER: &str = ".converting";
 
-/// iPhone command arguments, mirroring `iphone_cmd.parse_args`.
+/// iPhone command arguments.
 #[derive(Debug, Parser)]
 #[command(
     name = "movie-translator iphone",
@@ -38,7 +34,7 @@ pub struct IphoneArgs {
     pub verbose: bool,
 }
 
-// ── converter port ─────────────────────────────────────────────────────────
+// ── MKV -> MP4 conversion ───────────────────────────────────────────────────
 
 fn converting_temp_path(mkv_path: &Path) -> PathBuf {
     let stem = mkv_path
@@ -85,7 +81,7 @@ fn probe(mkv_path: &Path) -> Result<Probe> {
     })
 }
 
-/// Returns `Some(detail)` skip reason or `None` to proceed. Port of `should_skip`.
+/// Returns `Some(detail)` skip reason or `None` to proceed.
 fn should_skip(mkv_path: &Path, p: &Probe) -> Option<String> {
     let target = target_mp4_path(mkv_path);
     if target.exists() {
@@ -159,7 +155,7 @@ fn stream_duration(stream: &mt_media::FfprobeStream) -> Option<f64> {
     stream.tags.get("DURATION").and_then(|t| parse_hms(t))
 }
 
-/// Duration of the video content, in seconds. Port of `video_duration`.
+/// Duration of the video content, in seconds.
 fn video_duration(info: &mt_media::VideoInfo) -> f64 {
     for s in &info.streams {
         if s.codec_type.as_deref() == Some("video") {
@@ -203,7 +199,7 @@ fn verify_output(src: &Path, dst: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Convert one MKV -> MP4 in place. Port of `convert_file`.
+/// Convert one MKV -> MP4 in place.
 /// Returns `(status, detail)`.
 fn convert_file(mkv_path: &Path, dry_run: bool) -> (String, String) {
     let p = match probe(mkv_path) {
@@ -265,7 +261,7 @@ fn convert_file(mkv_path: &Path, dry_run: bool) -> (String, String) {
     }
 }
 
-/// All `.mkv` files under `input_path`. Port of `find_mkvs`.
+/// All `.mkv` files under `input_path`.
 fn find_mkvs(input_path: &Path) -> Vec<PathBuf> {
     find_videos(input_path)
         .into_iter()
@@ -277,7 +273,7 @@ fn find_mkvs(input_path: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Delete stale `<stem>.converting.mp4` files. Port of `cleanup_orphans`.
+/// Delete stale `<stem>.converting.mp4` files.
 fn cleanup_orphans(mkv_files: &[PathBuf]) -> usize {
     let mut removed = 0;
     for mkv in mkv_files {
@@ -342,7 +338,7 @@ async fn run_conversions(
     results
 }
 
-/// Print summary; return `(success, skipped, failed)`. Port of `_print_summary`.
+/// Print summary; return `(success, skipped, failed)`.
 fn print_summary(results: &[(PathBuf, String, String)]) -> (usize, usize, usize) {
     let count = |k: &str| results.iter().filter(|(_, s, _)| s == k).count();
     let succ = count("success");
@@ -374,7 +370,7 @@ fn print_summary(results: &[(PathBuf, String, String)]) -> (usize, usize, usize)
 
 /// Run the iphone flow. Returns the deliberate process exit code as `Ok(code)`,
 /// or an `Err` carrying a `.context()` chain for a genuine failure (printed by
-/// `main`). Port of `iphone_cmd.run`.
+/// `main`).
 pub async fn run(args: IphoneArgs) -> Result<i32> {
     crate::init_tracing(args.verbose);
 

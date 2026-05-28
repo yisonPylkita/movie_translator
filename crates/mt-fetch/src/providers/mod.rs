@@ -27,7 +27,7 @@ pub(crate) fn build_blocking_client(user_agent: &str) -> reqwest::blocking::Clie
         })
 }
 
-/// Trait for subtitle providers (mirrors Python `SubtitleProvider` Protocol).
+/// Trait for subtitle providers.
 pub trait SubtitleProvider: Send + Sync {
     fn name(&self) -> &str;
 

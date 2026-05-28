@@ -1,6 +1,4 @@
 //! Podnapisi.net provider — multilingual subtitle search via REST/XML API.
-//!
-//! Ported from `movie_translator/subtitle_fetch/providers/podnapisi.py`.
 
 use std::io::Read as _;
 use std::path::Path;
@@ -143,8 +141,6 @@ pub fn parse_xml_response(xml: &str) -> Result<Vec<PodnapisiSubtitle>, FetchErro
 }
 
 /// Parse XML results and convert to SubtitleMatch list.
-///
-/// Mirrors Python `PodnapisiProvider._parse_results()`.
 pub fn parse_results(
     xml: &str,
     languages: &[&str],
@@ -366,7 +362,6 @@ mod tests {
     use super::*;
     use crate::providers::SubtitleProvider;
 
-    // The exact same SAMPLE_XML from test_podnapisi.py
     const SAMPLE_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <results>
   <pagination><results>2</results></pagination>
@@ -395,8 +390,6 @@ mod tests {
         assert_eq!(PodnapisiProvider::new().name(), "podnapisi");
     }
 
-    // ── PORT: test_search_parses_xml_response ─────────────────────────────────
-
     #[test]
     fn parse_xml_two_entries() {
         let matches = parse_results(SAMPLE_XML, &["eng", "pol"], false).unwrap();
@@ -408,8 +401,6 @@ mod tests {
         assert!(matches.iter().all(|m| m.source == "podnapisi"));
     }
 
-    // ── PORT: test_search_filters_by_language ────────────────────────────────
-
     #[test]
     fn parse_xml_filters_by_language() {
         let matches = parse_results(SAMPLE_XML, &["pol"], false).unwrap();
@@ -417,16 +408,12 @@ mod tests {
         assert_eq!(matches[0].language, "pol");
     }
 
-    // ── PORT: test_search_includes_season_episode_params_for_episodes ─────────
-
     #[test]
     fn build_search_url_includes_season_and_episode() {
         let url = build_search_url("Breaking Bad", &["2"], Some(2), Some(5), None, None);
         assert!(url.contains("sS=2"));
         assert!(url.contains("sE=5"));
     }
-
-    // ── PORT: test_hash_search_gets_higher_score ──────────────────────────────
 
     #[test]
     fn hash_match_has_higher_score_than_query() {
@@ -444,8 +431,6 @@ mod tests {
         assert!(hash_matches[0].hash_match);
         assert!(!query_matches[0].hash_match);
     }
-
-    // ── PORT: test_hash_and_query_results_deduplicated ───────────────────────
 
     #[test]
     fn deduplication_via_seen_ids() {
@@ -471,8 +456,6 @@ mod tests {
         let unique: std::collections::HashSet<_> = ids.iter().collect();
         assert_eq!(ids.len(), unique.len());
     }
-
-    // ── PORT: test_search_returns_empty_on_error ─────────────────────────────
 
     #[test]
     fn bad_xml_returns_parse_error() {

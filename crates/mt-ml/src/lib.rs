@@ -2,9 +2,7 @@
 //!
 //! ML inference itself stays in Python (PyTorch / Apple Vision / etc.). This
 //! crate spawns single-purpose Python helper scripts under `ml/` — one per
-//! stage-per-file, so each model loads once per call. The contracts mirror the
-//! `GpuTask` classes in `movie_translator/gpu_queue.py`
-//! (`TranslateTask` / `OcrTask` / `InpaintTask`).
+//! stage-per-file, so each model loads once per call.
 
 pub mod inpaint;
 pub mod ocr;

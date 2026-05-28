@@ -2,9 +2,8 @@ use serde::{Deserialize, Serialize};
 
 /// Identified media metadata, produced by the identification stage.
 ///
-/// Ported from `movie_translator/identifier/types.py` `MediaIdentity` NamedTuple.
-/// Fields with Python defaults carry `#[serde(default)]` so JSON that omits
-/// them still deserializes correctly.
+/// Optional fields carry `#[serde(default)]` so JSON that omits them still
+/// deserializes correctly.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MediaIdentity {
     /// Best-guess title (container metadata preferred).

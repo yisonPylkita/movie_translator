@@ -1,7 +1,7 @@
 //! Pipeline stages — one module per stage, run sequentially per file.
 //!
 //! Each stage exposes a `run(ctx, deps...) -> Result<PipelineContext>` function
-//! and a `NAME` constant matching the Python stage's role name. Stages never
+//! and a `NAME` constant giving the stage's role name. Stages never
 //! perform GPU work inline: translation goes through a [`crate::gpu::GpuExecutor`]
 //! and OCR is deferred via [`mt_core::PendingOcr`] (resolved by the orchestrator
 //! through [`crate::gpu::resolve_pending_ocr`]).

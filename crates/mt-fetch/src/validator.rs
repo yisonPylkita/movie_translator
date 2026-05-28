@@ -1,7 +1,5 @@
 //! Subtitle validation via line-level timing matching.
 //!
-//! Ported from `movie_translator/subtitle_fetch/validator.py`.
-//!
 //! Compares downloaded subtitle candidates against a reference track by
 //! matching individual dialogue line start times.  For each candidate line,
 //! finds the nearest reference line and checks if it falls within a tolerance
@@ -24,8 +22,6 @@ use crate::types::SubtitleMatch;
 ///
 /// Divides the timeline into fixed-width bins and marks each bin as 1
 /// if any dialogue event overlaps it, 0 otherwise.
-///
-/// Mirrors Python `build_activity_vector(timestamps, duration_ms, bin_size_ms)`.
 pub fn build_activity_vector(
     timestamps: &[(i64, i64)],
     duration_ms: i64,
@@ -68,8 +64,6 @@ pub fn build_activity_vector(
 ///
 /// Tries shifts from -max_shift_bins to +max_shift_bins and returns the
 /// peak correlation, normalised by the geometric mean of energies.
-///
-/// Mirrors Python `compute_similarity(reference, candidate, max_shift_bins)`.
 pub fn compute_similarity(
     reference: &Array1<f64>,
     candidate: &Array1<f64>,
@@ -137,8 +131,6 @@ pub fn compute_similarity(
 /// start time using binary search.  A candidate line is "matched" if the
 /// nearest reference line is within `tolerance_ms`.  The score is the
 /// fraction of candidate lines that matched.
-///
-/// Mirrors Python `compute_line_match_score(ref_starts, cand_starts, tolerance_ms)`.
 pub fn compute_line_match_score(ref_starts: &[i64], cand_starts: &[i64], tolerance_ms: i64) -> f64 {
     if ref_starts.is_empty() || cand_starts.is_empty() {
         return 0.0;
@@ -173,8 +165,6 @@ pub fn compute_line_match_score(ref_starts: &[i64], cand_starts: &[i64], toleran
 // ---------------------------------------------------------------------------
 
 /// Build a dialogue density vector — count of events starting in each window.
-///
-/// Mirrors Python `build_density_vector(timestamps, duration_ms, window_ms)`.
 pub fn build_density_vector(
     timestamps: &[(i64, i64)],
     duration_ms: i64,
@@ -205,8 +195,6 @@ pub fn build_density_vector(
 // ---------------------------------------------------------------------------
 
 /// Compute Pearson correlation between density vectors with shifting.
-///
-/// Mirrors Python `compute_density_correlation(ref_density, cand_density, max_shift)`.
 pub fn compute_density_correlation(
     ref_density: &Array1<f64>,
     cand_density: &Array1<f64>,
@@ -297,8 +285,8 @@ fn std_dev(arr: &Array1<f64>) -> f64 {
 /// Filters out non-dialogue events (signs, songs, etc.) using the style
 /// classifier and keyword filter, then returns timing pairs.
 ///
-/// Mirrors Python `extract_timestamps(subtitle_path)` but accepts pre-parsed events
-/// to decouple I/O.  The public [`extract_timestamps_from_path`] wraps this.
+/// Accepts pre-parsed events to decouple I/O. The public
+/// [`extract_timestamps_from_path`] wraps this.
 pub fn extract_timestamps_from_events(events: &[Event]) -> (Vec<(i64, i64)>, i64) {
     // Use structural classification as primary filter.
     let dialogue_styles = classify_styles(events);
@@ -336,8 +324,6 @@ pub fn extract_timestamps_from_events(events: &[Event]) -> (Vec<(i64, i64)>, i64
 }
 
 /// Extract dialogue timestamps from a subtitle file on disk.
-///
-/// Mirrors Python `extract_timestamps(subtitle_path)`.
 pub fn extract_timestamps(path: &Path) -> (Vec<(i64, i64)>, i64) {
     let subs = match mt_subtitles::load(path) {
         Ok(s) => s,
@@ -363,8 +349,6 @@ pub fn extract_timestamps_checked(path: &Path) -> Result<(Vec<(i64, i64)>, i64),
 /// Uses line-level timing matching: for each candidate dialogue line,
 /// finds the nearest reference line by start time and checks if it falls
 /// within a tolerance window.  The fraction of matched lines is the score.
-///
-/// Mirrors Python `SubtitleValidator`.
 pub struct SubtitleValidator {
     pub ref_timestamps: Vec<(i64, i64)>,
     pub ref_duration: i64,
@@ -386,8 +370,6 @@ impl SubtitleValidator {
     ///
     /// Returns an error if the candidate file cannot be read/parsed, so callers
     /// can skip it via normal control flow.
-    ///
-    /// Mirrors Python `SubtitleValidator.score_candidate`.
     pub fn score_candidate(&self, candidate_path: &Path) -> Result<f64, FetchError> {
         let cand_timestamps = extract_timestamps_checked(candidate_path)?.0;
 
@@ -404,8 +386,6 @@ impl SubtitleValidator {
     }
 
     /// Score all candidates, filter by threshold, sort by score descending.
-    ///
-    /// Mirrors Python `SubtitleValidator.validate_candidates`.
     pub fn validate_candidates(
         &self,
         candidates: &[(SubtitleMatch, std::path::PathBuf)],
@@ -450,7 +430,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // SRT helpers (mirrors test_validator.py's _make_srt)
+    // SRT helpers
     // -----------------------------------------------------------------------
 
     fn fmt_srt_time(ms: i64) -> String {
@@ -680,7 +660,7 @@ Second line.
 Third line.
 ";
 
-    // ASS content that mirrors the Python test fixture
+    // ASS content with dialogue, signs, and song styles.
     const ASS_CONTENT: &str = "\
 [Script Info]
 ScriptType: v4.00+

@@ -1,22 +1,20 @@
 //! Translation pipeline orchestration: stages, GPU abstraction, deferred-OCR
 //! resolution.
 //!
-//! This crate ports the 7 sequential pipeline stages from
-//! `movie_translator/stages/` plus the deferred-OCR resolution logic from the
-//! Python orchestrators (`pipeline.py` / `async_pipeline.py`).
+//! This crate runs the 7 sequential pipeline stages plus the deferred-OCR
+//! resolution logic.
 //!
 //! # Module boundary
 //!
 //! - [`stages`] — `identify`, `extract_ref`, `fetch`, `extract_english`,
 //!   `translate`, `create_tracks`, `mux`. Each is a free `run(...)` function.
 //! - [`gpu`] — the [`gpu::GpuExecutor`] trait (mirrors `mt_ml`), the inline
-//!   [`gpu::DirectGpuExecutor`], and [`gpu::resolve_pending_ocr`] (the
-//!   `_handle_pending_ocr` / `_resolve_pending_ocr` port).
+//!   [`gpu::DirectGpuExecutor`], and [`gpu::resolve_pending_ocr`].
 //! - [`worker`] — the tokio [`worker::GpuWorker`] serialising all GPU work
-//!   through a single task (port of `gpu_queue.py`).
-//! - [`orchestrator`] — [`orchestrator::process_file`] / [`orchestrator::run_all`]
-//!   (port of `async_pipeline.py`) and the synchronous
-//!   [`orchestrator::process_video_file`] (port of `pipeline.py`).
+//!   through a single task.
+//! - [`orchestrator`] — the async [`orchestrator::process_file`] /
+//!   [`orchestrator::run_all`] and the synchronous
+//!   [`orchestrator::process_video_file`].
 //! - [`error`] — [`error::PipelineError`] / [`error::Result`].
 //! - [`vision`] — Vision-OCR availability probe used by the extract stages.
 

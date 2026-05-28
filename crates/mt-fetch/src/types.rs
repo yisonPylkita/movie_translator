@@ -1,10 +1,6 @@
 //! Subtitle fetch types.
-//!
-//! Ported from `movie_translator/subtitle_fetch/types.py`.
 
 /// A candidate subtitle match returned by a provider's `search` method.
-///
-/// Maps directly to the Python `SubtitleMatch` NamedTuple.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SubtitleMatch {
     /// ISO 639-2B language code (e.g., `"eng"`, `"pol"`).

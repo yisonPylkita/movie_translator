@@ -1,27 +1,25 @@
 //! Vision OCR availability probe.
 //!
-//! Mirrors `movie_translator/ocr/vision_ocr.py::is_available`, which returns
-//! `True` only on macOS where the `Quartz`/`Vision` Python bindings import
-//! cleanly. The actual OCR runs in Python (via the `mt_ml` helper scripts), so
-//! here we only need the *availability* signal used by the extract stages to
-//! decide whether to defer a burned-in OCR pass.
+//! Reports `true` only on macOS where the `Quartz`/`Vision` Python bindings
+//! import cleanly. The actual OCR runs via the `mt_ml` helper scripts, so here
+//! we only need the *availability* signal used by the extract stages to decide
+//! whether to defer a burned-in OCR pass.
 //!
 //! The check is injected into the extract stages as a closure so tests can
-//! force it on/off without touching the host platform (matching how the Python
-//! tests `patch('...is_vision_ocr_available')`).
+//! force it on/off without touching the host platform.
 
 use std::sync::OnceLock;
 
 /// A predicate that reports whether Vision-based OCR is available.
 pub type VisionOcrProbe = fn() -> bool;
 
-/// Default probe: a precise, cached port of the Python check.
+/// Default probe: a precise, cached availability check.
 ///
-/// On non-macOS this is trivially `false`. On macOS we verify the `Vision`
-/// and `Quartz` Python bindings actually import (the same import the Python
-/// `is_available` performs), shelling out to `python3 -c "import Vision, Quartz"`
-/// exactly **once** and caching the boolean for the rest of the process. If the
-/// probe cannot be run at all we fall back to the conservative platform check.
+/// On non-macOS this is trivially `false`. On macOS we verify the `Vision` and
+/// `Quartz` Python bindings actually import, shelling out to
+/// `python3 -c "import Vision, Quartz"` exactly **once** and caching the boolean
+/// for the rest of the process. If the probe cannot be run at all we fall back
+/// to the conservative platform check.
 pub fn default_vision_ocr_probe() -> bool {
     if !cfg!(target_os = "macos") {
         return false;

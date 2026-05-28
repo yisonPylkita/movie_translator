@@ -1,6 +1,4 @@
 //! `translate` subcommand (the default command).
-//!
-//! Port of `movie_translator/commands/translate_cmd.py`.
 
 use std::path::{Path, PathBuf};
 
@@ -21,7 +19,7 @@ fn default_device() -> String {
     }
 }
 
-/// Translate command arguments, mirroring `translate_cmd.parse_args`.
+/// Translate command arguments.
 #[derive(Debug, Parser)]
 #[command(
     name = "movie-translator",
@@ -72,19 +70,18 @@ pub struct TranslateArgs {
     pub verbose: bool,
 
     /// Collect performance metrics. Accepted for CLI compatibility, but the
-    /// metrics subsystem was not ported to the Rust binary (see
-    /// [`warn_unimplemented_metrics`]).
+    /// metrics subsystem is not implemented (see [`warn_unimplemented_metrics`]).
     #[arg(long, default_value_t = false)]
     pub metrics: bool,
 }
 
 /// Message emitted to stderr when `--metrics` is passed.
 ///
-/// The Python metrics subsystem (which wrote `metrics.json`) was intentionally
-/// not ported. The flag stays accepted so existing invocations don't error, but
-/// we warn so users aren't misled into expecting an output file.
+/// The metrics subsystem is not implemented. The flag stays accepted so existing
+/// invocations don't error, but we warn so users aren't misled into expecting an
+/// output file.
 pub const METRICS_NOT_IMPLEMENTED_WARNING: &str =
-    "warning: --metrics is not implemented in the Rust port (metrics collection was not ported)";
+    "warning: --metrics is not implemented (no metrics are collected)";
 
 /// Emit the metrics-not-implemented warning to stderr if `metrics` is set.
 fn warn_unimplemented_metrics(metrics: bool) {
@@ -96,9 +93,8 @@ fn warn_unimplemented_metrics(metrics: bool) {
 impl TranslateArgs {
     /// Build a [`PipelineConfig`] from parsed args + resolved models.
     ///
-    /// Mirrors `_async_main`'s `PipelineConfig(...)` construction. `--no-fetch`
-    /// maps to `enable_fetch = false`; `workers` is left as parsed (0 = auto)
-    /// so the orchestrator applies the `min(files, 4)` fallback.
+    /// `--no-fetch` maps to `enable_fetch = false`; `workers` is left as parsed
+    /// (0 = auto) so the orchestrator applies the `min(files, 4)` fallback.
     pub fn to_config(&self, model: String, extra_models: Vec<String>) -> PipelineConfig {
         PipelineConfig {
             device: self.device.clone(),
@@ -118,8 +114,8 @@ impl TranslateArgs {
 
 /// Format the per-run summary line.
 ///
-/// Port of `_show_summary`. Returns the summary string (so it is testable) and
-/// whether the dry-run note should be appended.
+/// Returns the summary string (so it is testable); a dry-run note is appended
+/// when `dry_run` is set and there were successes.
 pub fn format_summary(results: &[(PathBuf, FileStatus)], dry_run: bool) -> String {
     let successful = results
         .iter()
@@ -156,8 +152,7 @@ pub fn format_summary(results: &[(PathBuf, FileStatus)], dry_run: bool) -> Strin
 
 /// Delete stale `*.translating.*` temp files from a prior crashed run.
 ///
-/// Port of `_cleanup_in_place_orphans`. Only files whose stem maps back to a
-/// discovered input video are removed.
+/// Only files whose stem maps back to a discovered input video are removed.
 pub fn cleanup_in_place_orphans(video_files: &[PathBuf]) -> usize {
     let mut removed = 0;
     for vp in video_files {
@@ -189,8 +184,7 @@ pub fn cleanup_in_place_orphans(video_files: &[PathBuf]) -> usize {
 /// for a genuine pipeline failure — the structured `PipelineError` cause from
 /// `run_all` propagates through anyhow.
 ///
-/// Port of `translate_cmd.run`. Async because it drives `run_all` on the
-/// multi-threaded runtime.
+/// Async because it drives `run_all` on the multi-threaded runtime.
 pub async fn run(args: TranslateArgs) -> anyhow::Result<i32> {
     use anyhow::Context;
 

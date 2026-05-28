@@ -1,6 +1,4 @@
 //! OpenSubtitles.com REST API v2 provider.
-//!
-//! Ported from `movie_translator/subtitle_fetch/providers/opensubtitles.py`.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -35,8 +33,6 @@ pub fn lang_from_os(code: &str) -> &str {
 }
 
 /// Parse OpenSubtitles API `/subtitles` response JSON into SubtitleMatch list.
-///
-/// Mirrors Python `OpenSubtitlesProvider._parse_results()`.
 pub fn parse_results(
     data: &serde_json::Value,
     languages: &[&str],
@@ -167,8 +163,6 @@ impl OpenSubtitlesProvider {
     }
 
     /// Make an API request with rate limiting.
-    ///
-    /// Mirrors Python `OpenSubtitlesProvider._api_request()`.
     fn api_request(
         &self,
         method: &str,
@@ -428,8 +422,6 @@ mod tests {
         assert_eq!(p.name(), "opensubtitles");
     }
 
-    // ── PORT: test_search_returns_empty_without_api_key ───────────────────────
-
     #[test]
     fn search_returns_empty_without_api_key() {
         // Ensure env var is not set
@@ -439,8 +431,6 @@ mod tests {
         // We can't hit the real API, but we can test the guard
         assert!(p.api_key.is_empty());
     }
-
-    // ── PORT: test_search_parses_api_response ─────────────────────────────────
 
     #[test]
     fn parse_results_hash_match_score_1() {
@@ -462,8 +452,6 @@ mod tests {
         assert!((matches[0].score - 1.0).abs() < 1e-9);
     }
 
-    // ── PORT: test_search_assigns_lower_score_for_query_match ─────────────────
-
     #[test]
     fn parse_results_query_match_lower_score() {
         let api_response = serde_json::json!({
@@ -480,8 +468,6 @@ mod tests {
         assert!(!matches[0].hash_match);
         assert!(matches[0].score >= 0.6 && matches[0].score < 1.0);
     }
-
-    // ── PORT: test_search_filters_by_requested_languages ─────────────────────
 
     #[test]
     fn parse_results_filters_by_language() {
@@ -509,8 +495,6 @@ mod tests {
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].language, "pol");
     }
-
-    // ── PORT: test_search_uses_imdb_id_when_available ────────────────────────
 
     #[test]
     fn build_url_strips_tt_prefix_from_imdb_id() {

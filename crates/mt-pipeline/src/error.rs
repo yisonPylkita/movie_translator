@@ -3,8 +3,8 @@
 //! Composes the structured error types from the lower `mt-*` crates so the
 //! underlying cause always propagates (and is visible in the `Error::source`
 //! chain), rather than being flattened into a string. A small number of
-//! genuine precondition/invariant failures — the analogues of the Python
-//! stages' `RuntimeError(...)` — are carried by [`PipelineError::Stage`].
+//! genuine precondition/invariant failures are carried by
+//! [`PipelineError::Stage`].
 
 use thiserror::Error;
 
@@ -50,8 +50,7 @@ pub enum PipelineError {
     Io(#[from] std::io::Error),
 
     /// A stage precondition was not met or produced no usable result (e.g. no
-    /// English subtitle source, no dialogue lines). Mirrors the
-    /// `RuntimeError(...)` raised by the Python stages. Reserved for genuine
+    /// English subtitle source, no dialogue lines). Reserved for genuine
     /// invariant failures — real underlying errors propagate with their cause
     /// via the variants above.
     #[error("{0}")]

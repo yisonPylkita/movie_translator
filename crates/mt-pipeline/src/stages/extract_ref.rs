@@ -1,6 +1,4 @@
 //! Extract reference subtitle and record the original English track info.
-//!
-//! Port of `movie_translator/stages/extract_ref.py`.
 
 use mt_core::{OriginalTrack, PendingOcr, PipelineContext};
 use mt_media::{SubtitleExtractor, SubtitleTrack};
@@ -8,7 +6,7 @@ use mt_media::{SubtitleExtractor, SubtitleTrack};
 use crate::error::Result;
 use crate::vision::{default_vision_ocr_probe, VisionOcrProbe};
 
-/// Stage role name (matches the Python `ExtractReferenceStage.name`).
+/// Stage role name.
 pub const NAME: &str = "extract_reference";
 
 /// PGS/DVD/DVB image-based codecs that need OCR extraction.
@@ -23,7 +21,7 @@ fn is_image_codec(track: &SubtitleTrack) -> bool {
 
 /// Extract the English reference subtitle track.
 ///
-/// Port of `ExtractReferenceStage.run`. Text-based tracks are extracted
+/// Text-based tracks are extracted
 /// directly; image-based (PGS/DVD) tracks set `ctx.pending_ocr` to defer OCR.
 /// If no track is found and Vision OCR is available, a burned-in OCR pass is
 /// deferred too. OCR is never run inline here.

@@ -1,6 +1,4 @@
 //! Fetch subtitles from online providers.
-//!
-//! Port of `movie_translator/stages/fetch.py`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -16,21 +14,21 @@ use mt_subtitles::normalize_encoding;
 
 use crate::error::Result;
 
-/// Stage role name (matches the Python `FetchSubtitlesStage.name`).
+/// Stage role name.
 pub const NAME: &str = "fetch";
 
 /// Keep all Polish subs scoring at or above this threshold.
 const QUALITY_THRESHOLD: f64 = 0.8;
-/// Validator window (Python `SubtitleValidator(reference_path)` default).
+/// Validator window: the default line-match tolerance for `SubtitleValidator`.
 const VALIDATOR_WINDOW_MS: i64 = 2000;
 /// Minimum validation score for a candidate to be considered.
 const MIN_VALIDATION_THRESHOLD: f64 = 0.5;
-/// ilass split penalty (Python `align_to_reference` default).
+/// ilass split penalty: the default passed to `align_to_reference`.
 const ILASS_SPLIT_PENALTY: f64 = 7.0;
 
 /// Run the fetch stage.
 ///
-/// Port of `FetchSubtitlesStage.run`. Searches all providers, downloads every
+/// Searches all providers, downloads every
 /// candidate, validates/selects per language against the reference, then
 /// realigns fetched Polish subs to the English reference.
 pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
@@ -89,7 +87,7 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
     Ok(ctx)
 }
 
-/// Build the provider stack. Port of `FetchSubtitlesStage._build_fetcher`.
+/// Build the provider stack.
 fn build_fetcher(video_path: &Path) -> SubtitleFetcher {
     let mut providers: Vec<Box<dyn SubtitleProvider>> = vec![
         Box::new(AnimeSubProvider::new()),
@@ -110,7 +108,7 @@ fn build_fetcher(video_path: &Path) -> SubtitleFetcher {
     SubtitleFetcher::new(providers)
 }
 
-/// Download every candidate, normalising encoding. Port of `_download_all`.
+/// Download every candidate, normalising encoding.
 fn download_all(
     fetcher: &SubtitleFetcher,
     matches: &[SubtitleMatch],
@@ -150,7 +148,7 @@ fn download_all(
 
 /// Align a subtitle file to a reference, trying ilass first.
 ///
-/// Port of `FetchSubtitlesStage._align_subtitle`. Returns `(method, offset_ms)`
+/// Returns `(method, offset_ms)`
 /// where `offset_ms` is `None` for the ilass path.
 pub fn align_subtitle(subtitle_path: &Path, reference_path: &Path) -> (&'static str, Option<i64>) {
     if mt_fetch::align_ilass::is_available() {
@@ -169,7 +167,7 @@ pub fn align_subtitle(subtitle_path: &Path, reference_path: &Path) -> (&'static 
 
 /// Validate downloaded candidates and select per language.
 ///
-/// Port of `FetchSubtitlesStage._validate_and_select`. Returns
+/// Returns
 /// `(result_map, best_score)` where `best_score` is `None` when validation was
 /// skipped or no candidate passed.
 pub fn validate_and_select(

@@ -1,7 +1,5 @@
 //! Subtitle alignment using ilass (improved alass).
 //!
-//! Ported from `movie_translator/subtitle_fetch/align_ilass.py`.
-//!
 //! Uses the ilass CLI tool for subtitle-to-subtitle alignment via dynamic
 //! programming with split penalties.  Handles OP removal, ad breaks, and
 //! other structural differences automatically without heuristic gap detection.
@@ -16,8 +14,6 @@ use std::path::{Path, PathBuf};
 // ---------------------------------------------------------------------------
 
 /// Return the path to the ilass binary (resolved relative to the project root).
-///
-/// Mirrors Python `_ILASS_BINARY`.
 pub fn ilass_binary_path() -> PathBuf {
     // Resolve from this source file: src/align_ilass.rs → crates/mt-fetch → project root
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -32,8 +28,6 @@ pub fn ilass_binary_path() -> PathBuf {
 }
 
 /// Check if the ilass binary is built and available.
-///
-/// Mirrors Python `is_available() -> bool`.
 pub fn is_available() -> bool {
     ilass_binary_path().is_file()
 }
@@ -45,8 +39,6 @@ pub fn is_available() -> bool {
 /// Build the argv vector for an ilass subprocess invocation.
 ///
 /// Factored out as a pure function so it can be tested without running the binary.
-///
-/// Mirrors the `subprocess.run([...])` call in Python's `align_to_reference`.
 pub fn build_ilass_argv(
     binary: &Path,
     reference_path: &Path,
@@ -79,8 +71,6 @@ pub fn build_ilass_argv(
 ///
 /// If ilass is not available or fails, falls back to the cross-correlation
 /// aligner in `align.rs`.
-///
-/// Mirrors Python `align_to_reference(subtitle_path, reference_path, split_penalty) -> bool`.
 pub fn align_to_reference(subtitle_path: &Path, reference_path: &Path, split_penalty: f64) -> bool {
     if !is_available() {
         tracing::warn!(

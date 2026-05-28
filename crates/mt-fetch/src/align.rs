@@ -1,7 +1,5 @@
 //! Piecewise subtitle realignment for fetched subtitles.
 //!
-//! Ported from `movie_translator/subtitle_fetch/align.py`.
-//!
 //! Compares a fetched subtitle file against a reference track (typically
 //! extracted from the video) and estimates timing offsets.  Handles the
 //! common case where the candidate was timed to a video source with the
@@ -66,8 +64,6 @@ pub const MIN_OFFSET_MS: i64 = 150;
 ///
 /// `bin_size_ms` must be `> 0`; a zero bin size has no meaning and would cause
 /// a divide-by-zero, so it returns `None`.
-///
-/// Mirrors Python `estimate_offset(ref_timestamps, cand_timestamps, bin_size_ms, max_shift_ms, min_quality)`.
 pub fn estimate_offset(
     ref_timestamps: &[(i64, i64)],
     cand_timestamps: &[(i64, i64)],
@@ -164,8 +160,6 @@ pub fn estimate_offset(
 /// Looks for the largest dialogue-free interval within the expected OP
 /// time window.  The gap boundaries are the end of the last pre-OP event
 /// and the start of the first post-OP event.
-///
-/// Mirrors Python `detect_op_gap(timestamps, min_gap_ms, search_start_ms, search_end_ms)`.
 pub fn detect_op_gap(
     timestamps: &[(i64, i64)],
     min_gap_ms: i64,
@@ -217,8 +211,6 @@ pub fn detect_op_gap_default(timestamps: &[(i64, i64)]) -> Option<(i64, i64)> {
 ///
 /// Timestamps are clamped to `>= 0` after offsetting so a large negative
 /// offset can never produce negative timings (standard subtitle-tool behavior).
-///
-/// Mirrors Python `apply_offset(subtitle_path, offset_ms)`.
 pub fn apply_offset(path: &Path, offset_ms: i64) -> Result<(), AlignError> {
     let mut subs = mt_subtitles::load(path).map_err(|source| AlignError::Load {
         path: path.display().to_string(),
@@ -235,8 +227,6 @@ pub fn apply_offset(path: &Path, offset_ms: i64) -> Result<(), AlignError> {
 ///
 /// Events with start time < boundary_ms are shifted by pre_offset_ms.
 /// Events with start time >= boundary_ms are shifted by post_offset_ms.
-///
-/// Mirrors Python `_apply_piecewise_offsets`.
 fn apply_piecewise_offsets(
     path: &Path,
     boundary_ms: i64,
@@ -289,8 +279,6 @@ fn save_subs(subs: &mt_subtitles::model::Subtitles, path: &Path) -> Result<(), A
 /// Returns the applied offset in milliseconds.  For piecewise alignment,
 /// returns the post-OP offset (the dominant one).  Returns 0 if no
 /// correction was needed.
-///
-/// Mirrors Python `align_to_reference(subtitle_path, reference_path, min_offset_ms)`.
 pub fn align_to_reference(subtitle_path: &Path, reference_path: &Path, min_offset_ms: i64) -> i64 {
     let (ref_timestamps, _) = extract_timestamps(reference_path);
     let (cand_timestamps, _) = extract_timestamps(subtitle_path);

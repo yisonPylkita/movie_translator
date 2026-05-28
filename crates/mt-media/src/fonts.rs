@@ -1,7 +1,5 @@
 //! Font detection, extraction, and Polish character support checking.
 //!
-//! Port of `movie_translator/fonts.py`.
-//!
 //! Uses `ttf-parser` instead of Python's `fonttools` for reading font data.
 
 use std::collections::HashSet;
@@ -36,8 +34,6 @@ pub struct EmbeddedFont {
 }
 
 /// List font attachments embedded in a video file via ffprobe.
-///
-/// Port of `get_embedded_fonts`.
 pub fn get_embedded_fonts(video_path: &Path) -> Result<Vec<EmbeddedFont>, VideoMuxError> {
     let ffprobe = get_ffprobe()?;
     let output = Command::new(ffprobe)
@@ -62,8 +58,6 @@ pub fn get_embedded_fonts(video_path: &Path) -> Result<Vec<EmbeddedFont>, VideoM
 }
 
 /// Pure function: parse ffprobe JSON to extract font attachment metadata.
-///
-/// Port of the filtering logic inside `get_embedded_fonts`.
 pub fn parse_embedded_fonts_json(json: &str) -> Result<Vec<EmbeddedFont>, VideoMuxError> {
     let data: serde_json::Value = serde_json::from_str(json)?;
     let streams = data["streams"].as_array().cloned().unwrap_or_default();
@@ -105,7 +99,6 @@ pub fn parse_embedded_fonts_json(json: &str) -> Result<Vec<EmbeddedFont>, VideoM
 /// Extract a font attachment from a video file using ffmpeg dump_attachment.
 ///
 /// Returns `true` if the output file was created, `false` otherwise.
-/// Port of `extract_font`.
 pub fn extract_font(
     video_path: &Path,
     stream_index: u32,
@@ -143,8 +136,6 @@ pub fn extract_font(
 // ---------------------------------------------------------------------------
 
 /// Check whether a font file covers all Polish diacritical characters.
-///
-/// Port of `font_supports_polish` (was using fonttools; now uses ttf-parser).
 ///
 /// Note on ttf-parser vs fonttools:
 /// - Python's `font.getBestCmap()` returns a mapping codepoint → glyph ID, preferring
@@ -190,8 +181,6 @@ pub fn font_data_supports_polish(data: &[u8]) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Parse an ASS file and collect all unique Fontname values from `[V4+ Styles]`.
-///
-/// Port of `get_ass_font_names` (was using pysubs2; now uses mt-subtitles parser).
 pub fn get_ass_font_names(ass_path: &Path) -> HashSet<String> {
     let subs = match mt_subtitles::load(ass_path) {
         Ok(s) => s,
@@ -219,8 +208,6 @@ pub fn get_ass_font_names(ass_path: &Path) -> HashSet<String> {
 
 /// Check whether the embedded fonts in `video_path` support all Polish characters
 /// required by the ASS subtitle at `ass_path`.
-///
-/// Port of `check_embedded_fonts_support_polish`.
 pub fn check_embedded_fonts_support_polish(
     video_path: &Path,
     ass_path: &Path,
@@ -261,7 +248,7 @@ pub fn check_embedded_fonts_support_polish(
 
 /// Return existing system font directories for the current platform.
 ///
-/// Port of `_get_system_font_dirs` (macOS + Linux).
+/// System font directories to search (macOS + Linux).
 pub fn get_system_font_dirs() -> Vec<PathBuf> {
     let dirs: Vec<PathBuf> = if cfg!(target_os = "macos") {
         vec![
@@ -286,8 +273,6 @@ pub fn get_system_font_dirs() -> Vec<PathBuf> {
 }
 
 /// Iterate all `.ttf`, `.otf`, `.ttc` files under system font directories.
-///
-/// Port of `_iter_system_fonts`.
 pub fn iter_system_fonts() -> Vec<PathBuf> {
     let mut fonts = Vec::new();
     for dir in get_system_font_dirs() {
@@ -323,8 +308,6 @@ fn walkdir_fonts(dir: &Path) -> Vec<PathBuf> {
 
 /// Read the font family name from the font's name table.
 ///
-/// Port of `get_font_family_name` (was using fonttools 'name' table nameID=1).
-///
 /// Prefers platform 3 (Windows) name record, then any record with nameID=1.
 pub fn get_font_family_name(font_path: &Path) -> Option<String> {
     let data = std::fs::read(font_path).ok()?;
@@ -333,7 +316,6 @@ pub fn get_font_family_name(font_path: &Path) -> Option<String> {
 
 /// Pure function: extract family name from raw font bytes.
 ///
-/// Port of `get_font_family_name` logic:
 /// - nameID 1 = Font Family Name
 /// - prefer platformID 3 (Windows) for broadest compat
 pub fn font_family_name_from_data(data: &[u8]) -> Option<String> {
@@ -360,8 +342,6 @@ pub fn font_family_name_from_data(data: &[u8]) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 /// Check if a font file's stem loosely matches a target font name.
-///
-/// Port of `_font_filename_matches`.
 pub fn font_filename_matches(font_path: &Path, target_name: &str) -> bool {
     let stem = font_path
         .file_stem()
@@ -377,8 +357,6 @@ pub fn font_filename_matches(font_path: &Path, target_name: &str) -> bool {
 ///
 /// Prefers fonts referenced in the ASS styles; falls back to well-known fonts.
 /// Returns `(font_path, family_name)` or `None`.
-///
-/// Port of `find_system_font_for_polish`.
 pub fn find_system_font_for_polish(ass_font_names: &HashSet<String>) -> Option<(PathBuf, String)> {
     let system_fonts = iter_system_fonts();
     if system_fonts.is_empty() {

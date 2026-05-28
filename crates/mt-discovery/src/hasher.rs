@@ -1,6 +1,4 @@
 //! File hashing utilities for media identification.
-//!
-//! Ported from `movie_translator/identifier/hasher.py` and `napihash.py`.
 
 use md5::{Digest, Md5};
 use mt_core::{MtError, Result};

@@ -1,4 +1,5 @@
-//! Port of Python's `SubtitleProcessor` class.
+//! Subtitle processing: dialogue extraction, file creation, font overrides,
+//! and validation.
 
 use std::path::Path;
 
@@ -37,7 +38,7 @@ type Result<T> = std::result::Result<T, SubtitleProcessingError>;
 
 /// Find the best dialogue style name in a `Subtitles`.
 ///
-/// Port of Python's `_find_dialogue_style`. Logic:
+/// Selection logic:
 /// 1. If no styles → `"Default"`
 /// 2. If `"Default"` exists → `"Default"`
 /// 3. Look for `"Dialogue"`, `"Dialog"`, `"Main"`, `"Dialogi"`, `"Normal"` (case-sensitive)
@@ -78,8 +79,6 @@ pub struct SubtitleProcessor;
 
 impl SubtitleProcessor {
     /// Extract dialogue lines from a subtitle file.
-    ///
-    /// Port of `SubtitleProcessor.extract_dialogue_lines`.
     pub fn extract_dialogue_lines(subtitle_file: &Path) -> Result<Vec<DialogueLine>> {
         if !subtitle_file.exists() {
             return Err(SubtitleProcessingError::NotFound(
@@ -97,7 +96,6 @@ impl SubtitleProcessor {
 
     /// Create a new subtitle file from dialogue lines.
     ///
-    /// Port of `SubtitleProcessor.create_subtitle_file`.
     /// Copies `[Script Info]` and `[V4+ Styles]` from `original_file`.
     pub fn create_subtitle_file(
         original_file: &Path,
@@ -146,8 +144,6 @@ impl SubtitleProcessor {
     }
 
     /// Create a clean English subtitle file (no transform).
-    ///
-    /// Port of `SubtitleProcessor.create_english_subtitles`.
     pub fn create_english_subtitles(
         original_file: &Path,
         dialogue_lines: &[DialogueLine],
@@ -157,8 +153,6 @@ impl SubtitleProcessor {
     }
 
     /// Create a Polish subtitle file with optional diacritic replacement.
-    ///
-    /// Port of `SubtitleProcessor.create_polish_subtitles`.
     pub fn create_polish_subtitles(
         original_file: &Path,
         translated_dialogue: &[DialogueLine],
@@ -175,7 +169,6 @@ impl SubtitleProcessor {
 
     /// Replace all font names in ASS styles with `new_font_name`.
     ///
-    /// Port of `SubtitleProcessor.override_font_name`.
     /// The style raw field has fontname at index 1 (0-indexed after name).
     pub fn override_font_name(ass_file: &Path, new_font_name: &str) -> Result<()> {
         if !ass_file.exists() {
@@ -201,7 +194,6 @@ impl SubtitleProcessor {
 
     /// Validate that cleaned subtitles maintain proper timing coverage.
     ///
-    /// Port of `SubtitleProcessor.validate_cleaned_subtitles`.
     /// Timing mismatches are logged as warnings but not fatal.
     pub fn validate_cleaned_subtitles(original_file: &Path, cleaned_file: &Path) -> Result<()> {
         let original_subs = load_file(original_file)?;
@@ -269,11 +261,9 @@ impl SubtitleProcessor {
 
     /// Remove duplicate consecutive events with the same plain text.
     ///
-    /// Port of `SubtitleProcessor._deduplicate_events`.
     /// Consecutive events with identical plain text are merged: the kept event's
     /// `end_ms` = max of group `end_ms`, and its text is normalized to the stripped
-    /// plain text (matching the Python consolidation). Events with plain text shorter
-    /// than 2 characters are dropped.
+    /// plain text. Events with plain text shorter than 2 characters are dropped.
     pub fn deduplicate_events(events: Vec<Event>) -> Vec<Event> {
         let mut unique: Vec<Event> = Vec::new();
         let mut last_text: Option<String> = None;
@@ -292,8 +282,7 @@ impl SubtitleProcessor {
                     last.end_ms = group_end;
                 }
             } else {
-                // Normalize the kept event's text to its stripped plain text,
-                // matching Python's consolidated SSAEvent(text=clean_text).
+                // Normalize the kept event's text to its stripped plain text.
                 event.text = clean_text.clone();
                 last_text = Some(clean_text);
                 group_end = event.end_ms;
@@ -306,7 +295,6 @@ impl SubtitleProcessor {
 
     /// Filter events to dialogue only, converting to `DialogueLine`.
     ///
-    /// Port of `SubtitleProcessor._filter_dialogue`.
     /// Skips events with:
     /// - empty text
     /// - style matching any `NON_DIALOGUE_STYLES` keyword (case-insensitive)

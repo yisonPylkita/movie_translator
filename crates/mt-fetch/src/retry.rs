@@ -1,13 +1,9 @@
 //! Retry helper for transient network failures.
 //!
-//! Ported from `movie_translator/subtitle_fetch/retry.py`.
-//!
 //! Inject a sleep function for deterministic testing.
 
-/// Error kinds that are worth retrying (transient network issues).
-///
-/// Maps to Python `_RETRYABLE = (URLError, TimeoutError, ConnectionError, OSError)`.
-/// In Rust we check for `io::Error` kinds that correspond to those.
+/// Error kinds that are worth retrying (transient network issues): network
+/// errors and the `io::Error` kinds corresponding to connection failures.
 fn is_retryable(e: &FetchError) -> bool {
     match e {
         FetchError::Network(_) => true,
@@ -48,8 +44,6 @@ pub enum FetchError {
 ///
 /// Returns the result on success, re-raises on final failure.
 /// `sleep_fn` is called between retries (inject a no-op in tests).
-///
-/// Mirrors Python `with_retry(fn, *, retries, delay, label)`.
 pub fn with_retry<T, F, S>(
     mut f: F,
     retries: usize,
@@ -93,15 +87,11 @@ mod tests {
 
     fn no_sleep(_: f64) {}
 
-    // ── PORT: test_returns_on_first_success ───────────────────────────────────
-
     #[test]
     fn returns_on_first_success() {
         let result = with_retry(|| Ok::<i32, FetchError>(42), 2, 0.0, "test", no_sleep);
         assert_eq!(result.unwrap(), 42);
     }
-
-    // ── PORT: test_retries_on_url_error (→ FetchError::Network) ──────────────
 
     #[test]
     fn retries_on_network_error() {
@@ -124,8 +114,6 @@ mod tests {
         assert_eq!(result.unwrap(), "ok");
         assert_eq!(calls.get(), 2);
     }
-
-    // ── PORT: test_retries_on_timeout (→ io::ErrorKind::TimedOut) ────────────
 
     #[test]
     fn retries_on_timed_out_io_error() {
@@ -151,8 +139,6 @@ mod tests {
         assert_eq!(result.unwrap(), "ok");
     }
 
-    // ── PORT: test_raises_after_exhausted_retries ─────────────────────────────
-
     #[test]
     fn raises_after_all_retries_exhausted() {
         let result = with_retry(
@@ -164,8 +150,6 @@ mod tests {
         );
         assert!(matches!(result, Err(FetchError::Network(_))));
     }
-
-    // ── PORT: test_non_retryable_error_not_retried ────────────────────────────
 
     #[test]
     fn non_retryable_error_not_retried() {

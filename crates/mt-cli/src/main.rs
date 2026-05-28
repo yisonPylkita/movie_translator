@@ -1,8 +1,7 @@
 //! `movie-translator` binary entry point.
 //!
-//! Port of `movie_translator/main.py`: routes the first argument to a
-//! subcommand — `extract` → extract, `iphone` → iphone, anything else → the
-//! default translate command.
+//! Routes the first argument to a subcommand — `extract` → extract,
+//! `iphone` → iphone, anything else → the default translate command.
 //!
 //! Uses a multi-threaded tokio runtime: `run_all` overlaps file IO/CPU work
 //! across worker threads while serialising GPU work on a single worker.
@@ -16,7 +15,7 @@ use mt_cli::commands::{extract, iphone, translate};
 async fn main() {
     let argv: Vec<String> = std::env::args().collect();
 
-    // Subcommand routing mirrors main.py: dispatch on the first positional.
+    // Subcommand routing: dispatch on the first positional.
     // Each `run` returns `anyhow::Result<i32>`: `Ok(code)` is a deliberate exit
     // code (preserving the existing not-found=1 / guard=2 / empty-input
     // semantics), while `Err` is a propagated failure whose full `.context()`
@@ -54,7 +53,7 @@ async fn main() {
 /// Parse a subcommand's args from `argv` starting after `skip` tokens.
 ///
 /// On parse error (including `--help`/`--version`) clap prints to the right
-/// stream and we exit with its suggested code — matching argparse's behaviour.
+/// stream and we exit with its suggested code.
 fn parse_or_exit<T: Parser>(argv: &[String], skip: usize, prog: &str) -> T {
     // Rebuild an argv where index 0 is the program name clap expects.
     let mut rebuilt: Vec<String> = Vec::with_capacity(argv.len());

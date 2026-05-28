@@ -1,32 +1,26 @@
 //! Encoding detection and normalization for subtitle files.
 //!
-//! Port of Python's `movie_translator/subtitle_fetch/encoding.py`.
-//!
 //! Polish subtitles frequently arrive in CP1250 or ISO-8859-2 encoding.
 //! This module detects the encoding and rewrites the file to UTF-8 if needed.
 
 use std::path::Path;
 
-/// Polish diacritical characters (same set as Python's `_POLISH_CHARS`).
+/// Polish diacritical characters.
 const POLISH_CHARS: &str = "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ";
 
 /// Count Polish diacritical characters in a string.
-///
-/// Port of Python's `_count_polish`.
 pub fn count_polish(text: &str) -> usize {
     text.chars().filter(|c| POLISH_CHARS.contains(*c)).count()
 }
 
 /// Detect encoding of a subtitle file and re-save as UTF-8 if needed.
 ///
-/// Port of Python's `normalize_encoding`.
-///
 /// Algorithm:
 /// 1. Read raw bytes.
 /// 2. UTF-8 BOM (`\xef\xbb\xbf`) → already fine, return.
 /// 3. Try decode as UTF-8 → if clean, return.
 /// 4. Try CP1250 and ISO-8859-2; score by Polish char count; pick best
-///    (ties favor CP1250, matching Python's strict `>` comparison and ordering).
+///    (ties favor CP1250: it is tried first and only a strictly higher score wins).
 /// 5. If best found → rewrite file as UTF-8.
 /// 6. Fallback: ISO-8859-1 (closest match: never errors).
 /// 7. If none work → leave unchanged.

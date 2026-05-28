@@ -1,14 +1,12 @@
 //! GPU work abstraction and deferred-OCR resolution.
 //!
-//! GPU-bound work (translation, OCR, inpainting) is performed by the Python
-//! ML helper scripts via the [`mt_ml`] crate. To keep stages testable and to
-//! mirror the Python deferral model, stages never call these functions
-//! directly: they either go through a [`GpuExecutor`] or record a
-//! [`mt_core::PendingOcr`] for the orchestrator to resolve later.
+//! GPU-bound work (translation, OCR, inpainting) is performed by the ML helper
+//! scripts via the [`mt_ml`] crate. To keep stages testable and to serialise
+//! GPU access, stages never call these functions directly: they either go
+//! through a [`GpuExecutor`] or record a [`mt_core::PendingOcr`] for the
+//! orchestrator to resolve later.
 //!
-//! The trait methods mirror the `mt_ml` free functions one-to-one, which in
-//! turn mirror the `TranslateTask` / `OcrTask` / `InpaintTask` contracts from
-//! `movie_translator/gpu_queue.py`.
+//! The trait methods map one-to-one onto the `mt_ml` free functions.
 
 use std::path::{Path, PathBuf};
 
@@ -91,14 +89,11 @@ impl GpuExecutor for DirectGpuExecutor {
     }
 }
 
-// Default values from `OcrTask` in `movie_translator/gpu_queue.py`.
+// Burned-in OCR defaults: crop the bottom 25% of the frame, sample 1 fps.
 const BURNED_IN_CROP_RATIO: f64 = 0.25;
 const BURNED_IN_FPS: u32 = 1;
 
 /// Stage label identifying which extraction stage deferred the OCR.
-///
-/// Matches the `stage_label` strings passed to `_resolve_pending_ocr` /
-/// `_handle_pending_ocr` in the Python orchestrators.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OcrStageLabel {
     /// Reference extraction stage (`extract_ref`).
@@ -109,11 +104,10 @@ pub enum OcrStageLabel {
 
 /// Resolve a pending OCR task and apply its results to the context.
 ///
-/// Port of `_handle_pending_ocr` (async) / `_resolve_pending_ocr` (sync). The
-/// OCR work runs through `executor` (so the synchronous pipeline calls
+/// The OCR work runs through `executor` (so the synchronous pipeline calls
 /// [`mt_ml`] inline and the async pipeline serialises through the GPU queue).
 ///
-/// Behaviour mirrors the Python branching:
+/// Branching:
 /// - `pgs`  → `ocr_pgs`; on `Some(path)` set `reference_path` /
 ///   `english_source` depending on `stage_label`.
 /// - `burned_in` → `ocr_burned_in`; on success set the source path AND
@@ -145,7 +139,7 @@ pub fn resolve_pending_ocr(
             }
         }
         "burned_in" => {
-            // Mirrors the sync resolver setting `burned_in_probed = True`.
+            // Mark that we have probed for burned-in subtitles.
             ctx.burned_in_probed = true;
             let result = executor.ocr_burned_in(
                 &ctx.video_path,
@@ -153,9 +147,8 @@ pub fn resolve_pending_ocr(
                 BURNED_IN_CROP_RATIO,
                 BURNED_IN_FPS,
             );
-            // The Python sync path probes first and only extracts if detected;
-            // an empty/failed burned-in pass is non-fatal there. We treat a
-            // failed OCR as "nothing detected" rather than aborting the file.
+            // An empty/failed burned-in pass is non-fatal: we treat a failed
+            // OCR as "nothing detected" rather than aborting the file.
             if let Ok(result) = result {
                 match stage_label {
                     OcrStageLabel::ExtractRef => {

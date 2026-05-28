@@ -1,13 +1,9 @@
 //! Subtitle match scoring utilities.
-//!
-//! Ported from `movie_translator/subtitle_fetch/scoring.py`.
 
 use regex::Regex;
 use std::collections::HashSet;
 
 /// Split a release name into lowercase tokens.
-///
-/// Mirrors Python `_tokenize()`.
 fn tokenize(name: &str) -> HashSet<String> {
     if name.is_empty() {
         return HashSet::new();
@@ -23,8 +19,6 @@ fn tokenize(name: &str) -> HashSet<String> {
 /// Score how well a subtitle release name matches a video filename.
 ///
 /// Returns `0.0` to `1.0` based on token overlap (Jaccard similarity).
-///
-/// Mirrors Python `compute_release_score(video_name, release_name)`.
 pub fn compute_release_score(video_name: &str, release_name: &str) -> f64 {
     let video_tokens = tokenize(video_name);
     let release_tokens = tokenize(release_name);

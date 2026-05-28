@@ -1,25 +1,18 @@
 //! Pipeline orchestration: `process_file` + `run_all` (async, concurrent files
 //! with serialised GPU work) and `process_video_file` (synchronous single file).
 //!
-//! Port of `movie_translator/async_pipeline.py` (`process_file` / `run_all` /
-//! `_handle_pending_ocr`) and `movie_translator/pipeline.py`
-//! (`TranslationPipeline.process_video_file`).
-//!
 //! # Concurrency model
 //!
 //! Files are processed concurrently (one tokio task each), bounded by
-//! `config.workers` via a [`tokio::sync::Semaphore`] — mirroring
-//! `asyncio.Semaphore(workers)` in `run_all`. IO/CPU-bound stage work overlaps
-//! freely, but **all GPU work funnels through one [`GpuWorker`]**, so OCR /
-//! translation / inpaint never run in parallel (the core property of the
-//! single-worker `GpuQueue`).
+//! `config.workers` via a [`tokio::sync::Semaphore`]. IO/CPU-bound stage work
+//! overlaps freely, but **all GPU work funnels through one [`GpuWorker`]**, so
+//! OCR / translation / inpaint never run in parallel.
 //!
-//! Each synchronous stage runs inside [`tokio::task::spawn_blocking`] (mirroring
-//! Python's `asyncio.to_thread`). The stages and `resolve_pending_ocr` consume
-//! a sync [`GpuExecutor`]; we pass them the [`GpuWorkerHandle`], whose sync impl
-//! blocks the blocking-pool thread on the worker's reply. The block is safe
-//! precisely because it happens on a `spawn_blocking` thread, never on a runtime
-//! worker thread.
+//! Each synchronous stage runs inside [`tokio::task::spawn_blocking`]. The
+//! stages and `resolve_pending_ocr` consume a sync [`GpuExecutor`]; we pass them
+//! the [`GpuWorkerHandle`], whose sync impl blocks the blocking-pool thread on
+//! the worker's reply. The block is safe precisely because it happens on a
+//! `spawn_blocking` thread, never on a runtime worker thread.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -35,7 +28,7 @@ use crate::stages;
 use crate::vision::{default_vision_ocr_probe, VisionOcrProbe};
 use crate::worker::{GpuWorker, GpuWorkerHandle};
 
-/// Per-file outcome, mirroring the Python `'success' | 'failed' | 'skipped'`.
+/// Per-file outcome: `success`, `failed`, or `skipped`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileStatus {
     Success,
@@ -44,7 +37,7 @@ pub enum FileStatus {
 }
 
 impl FileStatus {
-    /// The Python status string.
+    /// The lowercase status string used in summaries and manifests.
     pub fn as_str(self) -> &'static str {
         match self {
             FileStatus::Success => "success",
@@ -56,12 +49,11 @@ impl FileStatus {
 
 /// Process a single video file through the pipeline (async path).
 ///
-/// Port of `async_pipeline.py::process_file`. Runs the 7 stages in Python order
-/// (identify → extract_ref → fetch → extract_english → translate →
-/// create_tracks → mux). Sync stages run via `spawn_blocking`; deferred OCR and
-/// translation route through `executor` (the shared [`GpuWorkerHandle`]) so GPU
-/// work stays serialised. Returns `true` on success, `false` on failure
-/// (failures are logged, never propagated — matching the Python `except`).
+/// Runs the 7 stages in order (identify → extract_ref → fetch →
+/// extract_english → translate → create_tracks → mux). Sync stages run via
+/// `spawn_blocking`; deferred OCR and translation route through `executor` (the
+/// shared [`GpuWorkerHandle`]) so GPU work stays serialised. Returns `true` on
+/// success, `false` on failure (failures are logged, never propagated).
 ///
 /// `vision_probe` is the injectable Vision-OCR availability check passed to the
 /// extract stages (default: [`default_vision_ocr_probe`]).
@@ -86,8 +78,6 @@ pub async fn process_file(
 }
 
 /// Run a sync stage closure on the blocking pool, threading the context through.
-///
-/// Mirrors `ctx = await asyncio.to_thread(stage.run, ctx)`.
 async fn run_blocking<F>(f: F) -> Result<PipelineContext>
 where
     F: FnOnce() -> Result<PipelineContext> + Send + 'static,
@@ -141,11 +131,11 @@ async fn process_file_inner(
 
     // Stage 5 — Translate (font check + GPU translation).
     //
-    // The Rust `translate::run` does the font check inline and routes primary +
-    // extra translations through the executor. Because `executor` is the shared
-    // worker handle, the GPU calls serialise across all files. (Python overlaps
-    // the font-check IO with the GPU await via `asyncio.gather`; that is a
-    // latency optimisation only — the observable result is identical.)
+    // `translate::run` does the font check inline and routes primary + extra
+    // translations through the executor. Because `executor` is the shared worker
+    // handle, the GPU calls serialise across all files. (Running the font-check
+    // IO concurrently with the GPU await would only be a latency optimisation —
+    // the observable result is identical.)
     let exec = executor.clone();
     ctx = run_blocking(move || stages::translate::run(ctx, &exec, None)).await?;
     if ctx.translated_lines.as_ref().is_none_or(|l| l.is_empty()) {
@@ -168,9 +158,9 @@ async fn process_file_inner(
 
 /// Resolve pending OCR on the blocking pool, routing OCR through the worker.
 ///
-/// Port of `_handle_pending_ocr`. The `executor` (worker handle) implements the
-/// sync [`GpuExecutor`] by blocking on the worker reply; doing so inside
-/// `spawn_blocking` keeps GPU work serialised without blocking a runtime thread.
+/// The `executor` (worker handle) implements the sync [`GpuExecutor`] by
+/// blocking on the worker reply; doing so inside `spawn_blocking` keeps GPU work
+/// serialised without blocking a runtime thread.
 async fn resolve_pending_ocr_blocking(
     ctx: PipelineContext,
     executor: GpuWorkerHandle,
@@ -186,11 +176,11 @@ async fn resolve_pending_ocr_blocking(
 
 /// Orchestrate processing of all video files with bounded concurrency.
 ///
-/// Port of `async_pipeline.py::run_all`. Spawns one task per file, bounded by
-/// `config.workers` (falling back to `min(files, 4)` when unset, like Python),
-/// all sharing a single [`GpuWorker`] so GPU work stays serialised while IO/CPU
-/// overlaps. Skips files that already have Polish subtitles. Returns per-file
-/// `(path, status)` results in the original input order.
+/// Spawns one task per file, bounded by `config.workers` (falling back to
+/// `min(files, 4)` when unset), all sharing a single [`GpuWorker`] so GPU work
+/// stays serialised while IO/CPU overlaps. Skips files that already have Polish
+/// subtitles. Returns per-file `(path, status)` results in the original input
+/// order.
 pub async fn run_all(
     video_files: Vec<PathBuf>,
     root_dir: PathBuf,
@@ -253,8 +243,7 @@ async fn run_all_with_executor(
         let task_path = video_path.clone();
 
         let handle = tokio::spawn(async move {
-            // Hold a permit for the file's whole lifetime (the Python
-            // `async with semaphore:` wraps the entire per-file body).
+            // Hold a permit for the file's whole lifetime.
             let _permit = permit_sem.acquire_owned().await.expect("semaphore");
 
             // Check for existing Polish subtitles (IO-bound) — skip if present.
@@ -312,9 +301,9 @@ async fn run_all_with_executor(
             )
             .await;
 
-            // Match the Python behaviour: on success, unless --keep-artifacts,
-            // remove the file's work dir (and prune now-empty parents up to
-            // `.translate_temp`). Failures always keep artifacts for debugging.
+            // On success, unless --keep-artifacts, remove the file's work dir
+            // (and prune now-empty parents up to `.translate_temp`). Failures
+            // always keep artifacts for debugging.
             if success && !keep_artifacts {
                 cleanup_work_dir(&work_dir, &root_dir);
             }
@@ -329,8 +318,8 @@ async fn run_all_with_executor(
         joins.push((task_idx, task_path, handle));
     }
 
-    // Collect, restoring input order (Python appends as tasks complete; we keep
-    // the deterministic input order which is friendlier for callers/tests).
+    // Collect, restoring input order: tasks complete out of order, but we return
+    // the deterministic input order which is friendlier for callers/tests.
     //
     // Await EVERY task — never early-return on a JoinError. A panicked task is
     // recorded as a per-file `Failed` (using the idx/path we paired with it),
@@ -357,9 +346,8 @@ async fn run_all_with_executor(
 /// Remove a successful file's work dir and prune now-empty parent dirs up to
 /// (and including, if empty) the `.translate_temp` root under `root_dir`.
 ///
-/// Port of `translate_cmd.run`'s post-success `shutil.rmtree(work_dir)` +
-/// empty-parent pruning. Best-effort: failures are logged at debug and ignored
-/// (they must never turn a successful translation into a reported failure).
+/// Best-effort: failures are logged at debug and ignored (they must never turn
+/// a successful translation into a reported failure).
 fn cleanup_work_dir(work_dir: &Path, root_dir: &Path) {
     if !work_dir.exists() {
         return;
@@ -402,9 +390,8 @@ fn dir_is_empty(dir: &Path) -> Option<bool> {
 
 /// Process a single file synchronously (no tokio, no worker).
 ///
-/// Port of `pipeline.py::TranslationPipeline.process_video_file`. Runs the 7
-/// stages sequentially using the inline [`DirectGpuExecutor`] and the sync
-/// [`resolve_pending_ocr`]. Returns `true` on success, `false` on failure
+/// Runs the 7 stages sequentially using the inline [`DirectGpuExecutor`] and the
+/// sync [`resolve_pending_ocr`]. Returns `true` on success, `false` on failure
 /// (logged, not propagated). Used by the CLI single-file path.
 pub fn process_video_file(video_path: &Path, work_dir: &Path, config: PipelineConfig) -> bool {
     process_video_file_with(video_path, work_dir, config, default_vision_ocr_probe)
@@ -488,7 +475,7 @@ mod tests {
     fn cleanup_work_dir_removes_and_prunes() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        // Mirror create_work_dir layout: root/.translate_temp/Show/ep01/
+        // Match the create_work_dir layout: root/.translate_temp/Show/ep01/
         let work_dir = root.join(".translate_temp").join("Show").join("ep01");
         std::fs::create_dir_all(work_dir.join("candidates")).unwrap();
         std::fs::write(work_dir.join("artifact.srt"), b"x").unwrap();
@@ -619,8 +606,7 @@ mod tests {
     }
 
     /// The synchronous `process_video_file` path returns `false` (not a panic)
-    /// when a stage fails on a missing video. Mirrors the Python `except` that
-    /// logs and returns `False`.
+    /// when a stage fails on a missing video: failures are logged, not propagated.
     #[test]
     fn process_video_file_returns_false_on_failure() {
         let dir = tempfile::tempdir().unwrap();
@@ -651,7 +637,7 @@ mod tests {
             let sem = sem.clone();
             joins.push(tokio::spawn(async move {
                 let _permit = sem.acquire_owned().await.unwrap();
-                // Mirror process_file: sync GpuExecutor call inside spawn_blocking.
+                // Like process_file: sync GpuExecutor call inside spawn_blocking.
                 tokio::task::spawn_blocking(move || {
                     use crate::gpu::GpuExecutor;
                     let req = mt_ml::TranslateRequest {

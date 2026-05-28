@@ -1,6 +1,4 @@
 //! Final video muxing stage — combines video with subtitle tracks.
-//!
-//! Port of `movie_translator/stages/mux.py`.
 
 use std::path::{Path, PathBuf};
 
@@ -10,7 +8,7 @@ use mt_media::VideoOperations;
 use crate::error::{PipelineError, Result};
 use crate::gpu::GpuExecutor;
 
-/// Stage role name (matches the Python `MuxStage.name`).
+/// Stage role name.
 pub const NAME: &str = "mux";
 
 /// Suffix marker for the in-place mux output sitting next to the original.
@@ -18,8 +16,6 @@ pub const NAME: &str = "mux";
 pub const IN_PLACE_TEMP_MARKER: &str = ".translating";
 
 /// Return the sibling path used for the in-place mux temp file.
-///
-/// Port of `in_place_temp_path`.
 pub fn in_place_temp_path(video_path: &Path) -> PathBuf {
     let stem = video_path
         .file_stem()
@@ -36,7 +32,7 @@ pub fn in_place_temp_path(video_path: &Path) -> PathBuf {
 /// without invoking ffmpeg. `FfmpegMuxOps` is the production impl backed by
 /// [`mt_media::VideoOperations`]; tests substitute a fake.
 pub trait MuxOps {
-    /// Mirror of `VideoOperations.create_clean_video`.
+    /// Mux `source` with the given subtitle files (and optional fonts) into `output`.
     fn create_clean_video(
         &self,
         source: &Path,
@@ -47,7 +43,7 @@ pub trait MuxOps {
         original_sub_title: Option<&str>,
     ) -> Result<()>;
 
-    /// Mirror of `VideoOperations.verify_result`.
+    /// Verify the muxed `output` contains the expected tracks.
     fn verify_result(&self, output: &Path, expected_tracks: Option<&[SubtitleFile]>) -> Result<()>;
 }
 
@@ -87,7 +83,7 @@ impl MuxOps for FfmpegMuxOps {
 
 /// Run the mux stage with the production ffmpeg back-end.
 ///
-/// Port of `MuxStage.run`. Optionally inpaints burned-in subtitles (via
+/// Optionally inpaints burned-in subtitles (via
 /// `executor`), muxes subtitle tracks onto the (possibly inpainted) video,
 /// verifies the output, and replaces the original (atomically for in-place).
 pub fn run(ctx: PipelineContext, executor: &dyn GpuExecutor) -> Result<PipelineContext> {
@@ -214,7 +210,7 @@ pub fn run_with_ops(
 
 /// Replace the original with a backup-and-move strategy.
 ///
-/// Port of `MuxStage._replace_original`, reordered for data integrity:
+/// Ordered for data integrity:
 ///
 /// 1. **Verify the muxed temp file first** — so the original is never replaced
 ///    by output that fails verification.
@@ -280,7 +276,7 @@ fn replace_original(video_path: &Path, temp_video: &Path, ops: &dyn MuxOps) -> R
 /// In-place replace: verify the muxed temp first, then atomically rename it
 /// over the original.
 ///
-/// Port of `MuxStage._replace_in_place`. `fs::rename` is atomic on the same
+/// `fs::rename` is atomic on the same
 /// filesystem (POSIX `os.replace`). There is no separate backup file (peak
 /// disk use stays <=2x original); safety comes from verifying the temp output
 /// *before* the rename, so a verification failure leaves the original intact

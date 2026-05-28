@@ -1,6 +1,4 @@
-//! Subtitle track selection and extraction logic.
-//!
-//! Port of `movie_translator/subtitles/extractor.py` — mostly pure track-selection logic.
+//! Subtitle track selection and extraction logic (mostly pure track-selection).
 
 use std::path::Path;
 use std::process::Command;
@@ -66,8 +64,6 @@ const IMAGE_CODECS: &[&str] = &["hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtit
 // ---------------------------------------------------------------------------
 
 /// Extracts and selects subtitle tracks from video files.
-///
-/// Port of `SubtitleExtractor` class.
 pub struct SubtitleExtractor;
 
 impl SubtitleExtractor {
@@ -76,8 +72,6 @@ impl SubtitleExtractor {
     }
 
     /// Return subtitle track info for a video file.
-    ///
-    /// Port of `get_track_info`.
     pub fn get_track_info(&self, video_path: &Path) -> Result<TrackInfo, SubtitleExtractionError> {
         if !video_path.exists() {
             return Err(SubtitleExtractionError::VideoNotFound(
@@ -89,8 +83,6 @@ impl SubtitleExtractor {
     }
 
     /// Return `true` if the video contains a Polish (`pol`/`pl`) subtitle track.
-    ///
-    /// Port of `has_polish_subtitles`.
     pub fn has_polish_subtitles(&self, video_path: &Path) -> Result<bool, SubtitleExtractionError> {
         let track_info = self.get_track_info(video_path)?;
         Ok(track_info
@@ -100,8 +92,6 @@ impl SubtitleExtractor {
     }
 
     /// Find the best English subtitle track in `track_info`.
-    ///
-    /// Port of `find_english_track`.
     pub fn find_english_track(&self, track_info: &TrackInfo) -> Option<SubtitleTrack> {
         let english_tracks = get_english_tracks(track_info);
         if english_tracks.is_empty() {
@@ -111,8 +101,6 @@ impl SubtitleExtractor {
     }
 
     /// Return the file extension appropriate for the track's codec.
-    ///
-    /// Port of `get_subtitle_extension`.
     pub fn get_subtitle_extension(&self, track: &SubtitleTrack) -> &'static str {
         get_subtitle_extension_for_codec(&track.codec)
     }
@@ -183,8 +171,6 @@ impl Default for SubtitleExtractor {
 // ---------------------------------------------------------------------------
 
 /// Convert parsed `VideoInfo` to `TrackInfo`.
-///
-/// Port of `_convert_ffprobe_info` — pure function.
 pub fn convert_ffprobe_info(info: &crate::ffmpeg::VideoInfo) -> TrackInfo {
     let mut tracks = Vec::new();
     let mut subtitle_index: u32 = 0;
@@ -220,8 +206,6 @@ pub fn convert_ffprobe_info(info: &crate::ffmpeg::VideoInfo) -> TrackInfo {
 }
 
 /// Return English (or language-unset) tracks from `track_info`.
-///
-/// Port of `_get_english_tracks`.
 pub fn get_english_tracks(track_info: &TrackInfo) -> Vec<SubtitleTrack> {
     track_info
         .tracks
@@ -235,8 +219,6 @@ pub fn get_english_tracks(track_info: &TrackInfo) -> Vec<SubtitleTrack> {
 }
 
 /// Select the best track from a list of English tracks.
-///
-/// Port of `_select_best_track`.
 pub fn select_best_track(english_tracks: &[SubtitleTrack]) -> Option<SubtitleTrack> {
     let (dialogue_tracks, signs_tracks) = categorize_tracks(english_tracks);
 
@@ -255,8 +237,6 @@ pub fn select_best_track(english_tracks: &[SubtitleTrack]) -> Option<SubtitleTra
 }
 
 /// Categorize tracks into dialogue vs signs/songs.
-///
-/// Port of `_categorize_tracks`.
 pub fn categorize_tracks(tracks: &[SubtitleTrack]) -> (Vec<SubtitleTrack>, Vec<SubtitleTrack>) {
     let mut dialogue_tracks = Vec::new();
     let mut signs_tracks = Vec::new();
@@ -291,9 +271,8 @@ pub fn categorize_tracks(tracks: &[SubtitleTrack]) -> (Vec<SubtitleTrack>, Vec<S
 }
 
 /// Check if `track_name` contains a whole-word match for `keyword`
-/// (or keyword + optional 's').
-///
-/// Ports the `re.search(rf'\b{re.escape(keyword)}s?\b', track_name)` check.
+/// (or keyword + optional trailing 's'), equivalent to a `\b{keyword}s?\b`
+/// regex search.
 fn name_has_keyword(track_name: &str, keyword: &str) -> bool {
     // Find all occurrences of keyword (or keyword+'s') with word boundaries.
     let mut search = track_name;
@@ -335,8 +314,6 @@ fn name_has_keyword(track_name: &str, keyword: &str) -> bool {
 }
 
 /// Select the best track from already-categorized dialogue tracks.
-///
-/// Port of `_select_from_dialogue_tracks`.
 pub fn select_from_dialogue_tracks(dialogue_tracks: &[SubtitleTrack]) -> Option<SubtitleTrack> {
     let (text_tracks, image_tracks) = separate_by_codec(dialogue_tracks);
 
@@ -351,8 +328,6 @@ pub fn select_from_dialogue_tracks(dialogue_tracks: &[SubtitleTrack]) -> Option<
 }
 
 /// Select from signs/songs-only tracks (used when no dialogue tracks exist).
-///
-/// Port of `_select_from_signs_tracks`.
 pub fn select_from_signs_tracks(
     signs_tracks: &[SubtitleTrack],
     english_tracks: &[SubtitleTrack],
@@ -378,8 +353,6 @@ pub fn select_from_signs_tracks(
 }
 
 /// Partition tracks into text-based and image-based by codec.
-///
-/// Port of `_separate_by_codec`.
 pub fn separate_by_codec(tracks: &[SubtitleTrack]) -> (Vec<SubtitleTrack>, Vec<SubtitleTrack>) {
     let mut text_tracks = Vec::new();
     let mut image_tracks = Vec::new();
@@ -411,8 +384,6 @@ pub fn handle_image_tracks(image_tracks: &[SubtitleTrack]) -> Option<SubtitleTra
 }
 
 /// Return the file extension for a subtitle codec name.
-///
-/// Port of `get_subtitle_extension`.
 pub fn get_subtitle_extension_for_codec(codec: &str) -> &'static str {
     match codec.to_ascii_lowercase().as_str() {
         "ass" => ".ass",
@@ -633,7 +604,7 @@ mod tests {
         assert_eq!(get_subtitle_extension_for_codec("unknown_codec"), ".srt");
     }
 
-    // ----- Track selection (port of test_track_selection.py) -----
+    // ----- Track selection -----
 
     fn make_track_info(tracks: Vec<SubtitleTrack>) -> TrackInfo {
         TrackInfo { tracks }
@@ -641,7 +612,6 @@ mod tests {
 
     #[test]
     fn single_signs_track_rejected() {
-        // Port of test_single_signs_track_rejected
         let extractor = SubtitleExtractor::new();
         let track_info =
             make_track_info(vec![make_track(0, 0, "ass", "eng", "English Signs/Songs")]);
@@ -651,7 +621,6 @@ mod tests {
 
     #[test]
     fn prefers_dialogue_over_signs_when_both_present() {
-        // Port of test_prefers_dialogue_over_signs_when_both_present
         let extractor = SubtitleExtractor::new();
         let track_info = make_track_info(vec![
             make_track(0, 0, "ass", "eng", "English Signs/Songs"),
@@ -666,7 +635,6 @@ mod tests {
 
     #[test]
     fn prefers_dialogue_even_when_signs_listed_first() {
-        // Port of test_prefers_dialogue_even_when_signs_listed_first
         let extractor = SubtitleExtractor::new();
         let track_info = make_track_info(vec![
             make_track(0, 0, "ass", "eng", "Signs and Songs"),
@@ -681,7 +649,6 @@ mod tests {
 
     #[test]
     fn track_without_name_treated_as_dialogue() {
-        // Port of test_track_without_name_treated_as_dialogue
         let extractor = SubtitleExtractor::new();
         let track_info = make_track_info(vec![
             make_track(0, 0, "ass", "eng", "Signs"),
@@ -694,7 +661,6 @@ mod tests {
 
     #[test]
     fn multiple_signs_tracks_all_rejected() {
-        // Port of test_multiple_signs_tracks_all_rejected
         let extractor = SubtitleExtractor::new();
         let track_info = make_track_info(vec![
             make_track(0, 0, "ass", "eng", "English Signs"),

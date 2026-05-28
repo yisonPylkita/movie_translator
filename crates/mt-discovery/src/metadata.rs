@@ -1,7 +1,5 @@
 //! Container metadata extraction via ffprobe.
 //!
-//! Ported from `movie_translator/identifier/metadata.py`.
-//!
 //! The ffprobe binary is resolved via `mt_core::exec::get_ffprobe()` so
 //! discovery and mt-media share one binary-discovery path.
 
@@ -46,7 +44,7 @@ pub(crate) fn parse_ffprobe_output(json: &str) -> ContainerMetadata {
 
     let tags = &probe.format.tags;
 
-    // Common tag names across containers (match Python exactly)
+    // Common tag names across containers.
     let title = tags.get("title").or_else(|| tags.get("TITLE")).cloned();
 
     let episode = tags
@@ -61,9 +59,7 @@ pub(crate) fn parse_ffprobe_output(json: &str) -> ContainerMetadata {
 /// Extract title and episode metadata from a video container's tags.
 ///
 /// Shells out to `ffprobe` (resolved via `mt_core::exec::get_ffprobe()`).
-/// On any error returns a
-/// default [`ContainerMetadata`] with all fields `None`, matching the
-/// Python behaviour (`logger.debug` + return empty dict).
+/// On any error returns a default [`ContainerMetadata`] with all fields `None`.
 pub fn extract_container_metadata(video_path: &Path) -> ContainerMetadata {
     match run_ffprobe(video_path) {
         Ok(json) => parse_ffprobe_output(&json),

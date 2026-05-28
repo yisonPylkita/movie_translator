@@ -1,7 +1,6 @@
 //! Functional progress display built on `indicatif`.
 //!
-//! Minimal port of the spirit of `movie_translator/progress.py::ProgressTracker`:
-//! one overall bar tracking files completed plus per-file status lines. The Rust
+//! One overall bar tracking files completed plus per-file status lines. The
 //! pipeline orchestrator (`run_all`) currently exposes no per-stage progress
 //! events, so we render overall file completion and emit per-file start/finish
 //! lines. A richer per-stage TUI is a documented follow-up.

@@ -1,10 +1,8 @@
 //! Tokio GPU worker — serialises all GPU-bound work through a single task.
 //!
-//! Port of `movie_translator/gpu_queue.py` (`GpuQueue`). The GPU is a single
-//! shared resource: every translate / OCR / inpaint call must run **one at a
-//! time** across all concurrently-processed files. The Python implementation
-//! achieves this with a single-worker `asyncio.Queue`; we mirror it with a
-//! tokio mpsc channel feeding one worker task.
+//! The GPU is a single shared resource: every translate / OCR / inpaint call
+//! must run **one at a time** across all concurrently-processed files. We
+//! achieve this with a tokio mpsc channel feeding one worker task.
 //!
 //! # Design: sync `GpuExecutor` vs async worker
 //!
@@ -41,8 +39,8 @@ use crate::gpu::{DirectGpuExecutor, GpuExecutor};
 
 /// A unit of GPU work plus the channel to return its result.
 ///
-/// Mirrors the `GpuTask` variants in `gpu_queue.py`. Each variant carries the
-/// arguments of the corresponding [`GpuExecutor`] method.
+/// Each variant carries the arguments of the corresponding [`GpuExecutor`]
+/// method.
 enum Job {
     Translate {
         req: TranslateRequest,
@@ -97,8 +95,7 @@ impl GpuWorker {
     where
         E: GpuExecutor + Send + Sync + 'static,
     {
-        // Unbounded so `submit` never blocks the producer (matches the Python
-        // `asyncio.Queue()` default of unbounded capacity).
+        // Unbounded so `submit` never blocks the producer.
         let (tx, mut rx) = mpsc::unbounded_channel::<Job>();
         let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
         let executor = Arc::new(executor);
@@ -129,8 +126,7 @@ impl GpuWorker {
                 };
                 let exec = executor.clone();
                 // spawn_blocking because the underlying `mt_ml` calls are
-                // blocking subprocess spawns (mirrors Python's
-                // `asyncio.to_thread(task.execute)`).
+                // blocking subprocess spawns.
                 let _ = tokio::task::spawn_blocking(move || run_job(exec.as_ref(), job)).await;
             }
         });
@@ -149,8 +145,8 @@ impl GpuWorker {
 
     /// Stop the worker after draining queued jobs, then wait for it to exit.
     ///
-    /// Port of `GpuQueue.shutdown`. Sends an explicit stop signal so shutdown is
-    /// deterministic even if external [`GpuWorkerHandle`] clones are still alive
+    /// Sends an explicit stop signal so shutdown is deterministic even if
+    /// external [`GpuWorkerHandle`] clones are still alive
     /// (they simply become inert — further submissions error with a
     /// "worker stopped" error). Already-queued jobs are drained first so in-flight
     /// submissions still receive their reply.

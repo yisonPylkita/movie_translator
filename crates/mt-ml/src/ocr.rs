@@ -1,7 +1,6 @@
 //! Subtitle OCR via the Python `ml/ocr.py` helper script.
 //!
-//! Mirrors the `OcrTask` GPU task in `movie_translator/gpu_queue.py`, which
-//! has two modes: PGS bitmap tracks and burned-in subtitles.
+//! Has two modes: PGS bitmap tracks and burned-in subtitles.
 
 use crate::runner::run_script_json;
 use mt_core::{BurnedInResult, Result};

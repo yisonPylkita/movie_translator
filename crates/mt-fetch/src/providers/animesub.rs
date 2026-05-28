@@ -1,7 +1,5 @@
 //! AnimeSub.info provider — Polish anime subtitles.
 //!
-//! Ported from `movie_translator/subtitle_fetch/providers/animesub.py`.
-//!
 //! Scrapes animesub.info for subtitle files.
 //! Search by anime title, download as ZIP, extract subtitle files.
 
@@ -28,8 +26,6 @@ pub struct AnimeSubEntry {
 }
 
 /// Parse animesub.info search results HTML into structured entries.
-///
-/// Mirrors Python `_ResultParser`.
 ///
 /// The HTML structure is:
 /// ```html
@@ -112,8 +108,6 @@ pub fn parse_search_html(html: &str) -> Vec<AnimeSubEntry> {
 
 /// Infer the season number from an AnimeSub entry title.
 ///
-/// Mirrors Python `_extract_season_from_title()`.
-///
 /// Conventions:
 /// - `"Title ep01"` → Season 1 (no suffix)
 /// - `"Title 2 ep08"` → Season 2 (number suffix)
@@ -158,8 +152,6 @@ pub fn extract_season_from_title(base_title: &str, entry_title: &str) -> Option<
 }
 
 /// Check if an AnimeSub result matches the requested season and episode.
-///
-/// Mirrors Python `_entry_matches()`.
 pub fn entry_matches(title: &str, base_title: &str, season: Option<i32>, episode: i32) -> bool {
     let title_lower = title.to_lowercase();
 
@@ -430,7 +422,6 @@ impl super::SubtitleProvider for AnimeSubProvider {
 mod tests {
     use super::*;
 
-    // The exact same SAMPLE_HTML from test_animesub.py
     const SAMPLE_HTML: &str = r#"
 <table class="Napisy">
 <tr class="KNap">
@@ -488,8 +479,6 @@ mod tests {
 
     const BASE: &str = "Kono Subarashii Sekai ni Shukufuku wo!";
 
-    // ── PORT: TestResultParser ─────────────────────────────────────────────────
-
     #[test]
     fn parses_two_entries() {
         let entries = parse_search_html(SAMPLE_HTML);
@@ -518,8 +507,6 @@ mod tests {
         assert_eq!(entries[0].format, "Advanced SSA");
         assert_eq!(entries[1].format, "SubRip");
     }
-
-    // ── PORT: TestExtractSeasonFromTitle ──────────────────────────────────────
 
     #[test]
     fn no_suffix_is_season_1() {
@@ -586,8 +573,6 @@ mod tests {
             None
         );
     }
-
-    // ── PORT: TestEntryMatches ────────────────────────────────────────────────
 
     #[test]
     fn s1_ep01_matches_no_suffix() {
@@ -679,17 +664,15 @@ mod tests {
         ));
     }
 
-    // ── Provider-level unit tests (mirrors TestAnimeSubProvider) ─────────────
+    // ── Provider-level unit tests ───────────────────────────────────────────
 
     use crate::providers::SubtitleProvider as _;
 
-    /// Mirrors Python test_name.
     #[test]
     fn provider_name_is_animesub() {
         assert_eq!(AnimeSubProvider::new().name(), "animesub");
     }
 
-    /// Mirrors Python test_skips_non_polish_languages.
     /// Non-Polish languages return early before any HTTP request.
     #[test]
     fn search_skips_non_polish_languages() {
@@ -698,10 +681,10 @@ mod tests {
         assert_eq!(result, vec![]);
     }
 
-    /// Mirrors Python test_rejects_wrong_season: when searching for S1, the S2
-    /// ("Naruto 2 ep01") and S3 ("Naruto 3 ep01") entries are rejected while the
-    /// suffix-less S1 entry ("Naruto ep01") is accepted. Uses the pure
-    /// entry_matches() to avoid needing a mocked HTTP client.
+    /// When searching for S1, the S2 ("Naruto 2 ep01") and S3 ("Naruto 3 ep01")
+    /// entries are rejected while the suffix-less S1 entry ("Naruto ep01") is
+    /// accepted. Uses the pure entry_matches() to avoid needing a mocked HTTP
+    /// client.
     #[test]
     fn rejects_wrong_season_via_entry_matches() {
         let base = "Naruto";
@@ -725,8 +708,8 @@ mod tests {
         assert_eq!(accepted, vec!["Naruto ep01"]);
     }
 
-    /// Mirrors Python test_accepts_correct_season: when searching for S2, only
-    /// the S2 entry ("Naruto 2 ep01") is accepted, not the suffix-less S1 entry.
+    /// When searching for S2, only the S2 entry ("Naruto 2 ep01") is accepted,
+    /// not the suffix-less S1 entry.
     #[test]
     fn accepts_correct_season_via_entry_matches() {
         let base = "Naruto";
@@ -793,7 +776,7 @@ mod tests {
         assert_eq!(ext, "srt");
     }
 
-    /// Mirrors test_search_returns_matches — verifies subtitle_id construction.
+    /// Verifies subtitle_id construction.
     #[test]
     fn subtitle_id_combines_id_and_sh() {
         let entries = parse_search_html(SAMPLE_HTML);
@@ -818,7 +801,7 @@ mod tests {
         assert!(body.contains("sh=abc123"));
     }
 
-    /// Download ZIP extraction test (mirrors test_download_extracts_from_zip).
+    /// Download ZIP extraction test.
     #[test]
     fn download_extracts_subtitle_from_zip() {
         use std::io::Write as _;

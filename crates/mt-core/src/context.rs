@@ -7,9 +7,8 @@ use crate::types::{DialogueLine, OCRResult, SubtitleFile};
 
 /// Pipeline configuration.
 ///
-/// `model_cache` from the Python version is omitted — it holds a PyTorch model
-/// object that has no Rust equivalent. It will be handled separately when the
-/// ML backend bridge is implemented.
+/// There is no in-memory model cache here: ML inference runs out-of-process via
+/// the `ml/*.py` helpers, so there is no live model object to hold.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PipelineConfig {
     pub device: String,
@@ -111,8 +110,8 @@ pub struct PipelineContext {
     /// `true` after any stage has probed for burned-in subtitles.
     pub burned_in_probed: bool,
     pub pending_ocr: Option<PendingOcr>,
-    // `metrics` (MetricsCollector / NullCollector) is a Python-only concern
-    // and is omitted here; observability will be wired separately in Rust.
+    // No metrics/observability collector field: the metrics subsystem is not
+    // part of this implementation.
 }
 
 impl PipelineContext {

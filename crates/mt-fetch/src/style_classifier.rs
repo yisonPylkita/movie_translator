@@ -1,7 +1,5 @@
 //! Structural classification of ASS subtitle styles.
 //!
-//! Ported from `movie_translator/subtitle_fetch/style_classifier.py`.
-//!
 //! Classifies styles as dialogue or non-dialogue based on aggregate event
 //! properties rather than style name keywords. This is robust to arbitrary
 //! naming conventions across different fansub groups.
@@ -28,8 +26,6 @@ struct StyleMetrics {
 ///
 /// Analyses aggregate properties of events per style to determine which
 /// styles contain dialogue.  Works with a slice of `mt_subtitles::model::Event`.
-///
-/// Mirrors Python `classify_styles(subs) -> set[str]`.
 pub fn classify_styles(events: &[Event]) -> HashSet<String> {
     let mut style_metrics: HashMap<String, StyleMetrics> = HashMap::new();
 
@@ -45,7 +41,7 @@ pub fn classify_styles(events: &[Event]) -> HashSet<String> {
         m.count += 1;
         m.total_duration += event.end_ms - event.start_ms;
 
-        // plaintext: strip ASS override tags, then trim — mirrors pysubs2 .plaintext
+        // plaintext: strip ASS override tags, then trim.
         let plaintext = event.plaintext();
         let plain_trimmed = plaintext.trim().to_string();
         m.total_text_len += plain_trimmed.chars().count();
@@ -76,8 +72,6 @@ pub fn classify_styles(events: &[Event]) -> HashSet<String> {
 }
 
 /// Determine if a style is dialogue based on its aggregate metrics.
-///
-/// Mirrors Python `_is_dialogue(pos_ratio, avg_text, avg_dur, count) -> bool`.
 pub fn is_dialogue(pos_ratio: f64, avg_text: f64, avg_dur: f64, count: usize) -> bool {
     // Rule 1: High positioning = non-dialogue (signs/typesetting)
     if pos_ratio >= 0.5 {
@@ -123,10 +117,6 @@ mod tests {
             text: text.to_string(),
         }
     }
-
-    // -----------------------------------------------------------------------
-    // Tests ported from test_style_classifier.py
-    // -----------------------------------------------------------------------
 
     #[test]
     fn normal_dialogue_classified_as_dialogue() {

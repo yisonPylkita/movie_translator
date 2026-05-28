@@ -89,7 +89,8 @@ pub struct SubtitleFile {
 
 /// A normalized bounding box (values in [0, 1], top-left origin).
 ///
-/// Fields use `f64` to match Python's `float` (IEEE 754 double precision).
+/// Fields use `f64` (IEEE 754 double) for JSON/serde interop with the ML
+/// helpers, which emit plain JSON numbers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BoundingBox {
     /// Normalized left edge (0–1).
