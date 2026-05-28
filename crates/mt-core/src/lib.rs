@@ -4,7 +4,6 @@ pub mod context;
 pub mod error;
 pub mod exec;
 pub mod identity;
-pub mod paths;
 pub mod types;
 
 // Re-export the most-used items at crate root for ergonomic imports.
