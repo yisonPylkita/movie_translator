@@ -38,106 +38,78 @@ Fetched subtitles are often timed to different video releases. The alignment sys
 
 Primary alignment uses [ilass](https://github.com/SandroHc/ilass) (DP algorithm with split penalties), with a built-in cross-correlation fallback.
 
-## Requirements
-
-- **macOS** (recommended) or **Linux**
-- **Rust toolchain** — builds the `movie-translator` binary and the ilass alignment engine
-- **[uv](https://docs.astral.sh/uv/)** — Python package manager for the ML backend
-- **FFmpeg** development libraries (for ilass audio-based alignment)
-
-For burned-in subtitle OCR, macOS with Apple Silicon is required (uses Apple Vision framework).
-
 ## Quick Start
 
-### 1. Setup
+Everything is driven by [`just`](https://github.com/casey/just). Run `just` (or `just --list`) at any time to see every available recipe.
 
 ```bash
 git clone --recurse-submodules https://github.com/yisonPylkita/movie_translator.git
 cd movie_translator
 
-# Python ML backend (translation / OCR / inpainting + filename parsing)
-uv sync
+# macOS only — installs system tools: just, ffmpeg, git-lfs, uv, pkg-config.
+just brew
 
-# Fetch the AI translation model (Git LFS)
-git lfs install && git lfs pull
+# One-shot setup: Python env, submodules, model files, release binary.
+just setup
 
-# Build the Rust binary -> target/release/movie-translator
-cargo build --release
-
-# Build the ilass alignment engine (separate vendored binary)
-# macOS: brew install pkg-config ffmpeg
-cd vendor/ilass && cargo build --release && cd ../..
-```
-
-> **Already cloned without `--recurse-submodules`?** Run `git submodule update --init --recursive` to fetch the ilass submodule.
-
-`./setup.sh` runs the system-dependency, submodule, and model steps for you (macOS, via `brew bundle`).
-
-### 2. Translate Videos
-
-```bash
-# Translate all MKV/MP4 files in a directory
-./target/release/movie-translator ~/Downloads/anime
-
-# Or with just (builds + runs):
+# Translate a video file or a directory of videos.
 just run ~/Downloads/anime
 ```
 
-The tool will:
-1. Find all `.mkv` and `.mp4` files recursively
-2. Skip files that already have Polish subtitles
-3. Search for Polish subtitles online, validate and align them
-4. Fall back to AI translation if no suitable match is found
-5. Mux all Polish + English tracks into the video
+Linux: install `just`, `ffmpeg`, `git-lfs`, `uv`, and `pkg-config` from your distro's package manager (the equivalents of the `Brewfile`), then run `just setup`.
 
-### 3. Extract Subtitles
+**Prerequisite for both:** a working [Rust toolchain](https://rustup.rs/) (`rustup`) — the pinned compiler version is read from `rust-toolchain.toml`. For burned-in subtitle OCR, macOS with Apple Silicon is required (uses Apple Vision).
+
+> Already cloned without `--recurse-submodules`? `just setup` runs `git submodule update --init --recursive` for you.
+
+## Usage
+
+### Translate
+
+```bash
+# Translate every MKV/MP4 under a directory (or a single file)
+just run ~/Downloads/anime
+
+# Preview without modifying originals
+just run ~/Downloads/anime --dry-run
+
+# Disable online subtitle fetching (AI translation only)
+just run ~/Downloads/anime --no-fetch
+
+# Pick a translation backend (default on macOS runs both allegro AND apple)
+just run ~/Downloads/anime --model apple
+
+# Concurrency / batching / device
+just run ~/Downloads/anime --workers 4 --batch-size 8 --device cpu
+
+# Remove burned-in subtitles from video frames via inpainting (slow)
+just run ~/Downloads/anime --inpaint
+
+# Disk-frugal mode: replace originals in place (not compatible with --inpaint)
+just run ~/Downloads/anime --in-place
+
+# Keep intermediate artifacts under .translate_temp for debugging
+just run ~/Downloads/anime --keep-artifacts
+
+# All options
+just run --help
+```
+
+The translate flow finds all `.mkv`/`.mp4` files recursively, skips files that already have Polish subtitles, searches and validates online candidates, falls back to AI translation when needed, and muxes every Polish track + the original English back into the video.
+
+### Extract
 
 Extract subtitles from videos without translating — useful for pulling burned-in Polish subtitles from a low-quality source to apply to a better version:
 
 ```bash
 # Extract burned-in Polish subtitles via OCR
-movie-translator extract ~/Downloads/polish_version --ocr-language pl
+just extract ~/Downloads/polish_version --ocr-language pl
 
-# Then use them when translating the high-quality version
-movie-translator ~/Downloads/english_version --external-subs ~/Downloads/polish_version/extracted_subs
+# Use the extracted SRTs when translating the high-quality version
+just run ~/Downloads/english_version --external-subs ~/Downloads/polish_version/extracted_subs
 ```
 
 The extract command outputs SRT files and a `manifest.json` that the translate command uses for matching by media identity (title + season + episode).
-
-### 4. Common Options
-
-```bash
-# Preview without modifying originals
-movie-translator ~/Downloads/anime --dry-run
-
-# Disable online subtitle fetching (AI-only)
-movie-translator ~/Downloads/anime --no-fetch
-
-# Pick a translation backend (default on macOS runs both allegro and apple)
-movie-translator ~/Downloads/anime --model apple
-
-# Process multiple files concurrently (default: auto, min(files, 4))
-movie-translator ~/Downloads/anime --workers 4
-
-# Adjust batch size for memory/speed tradeoff
-movie-translator ~/Downloads/anime --batch-size 8
-
-# Use CPU instead of Apple Silicon GPU
-movie-translator ~/Downloads/anime --device cpu
-
-# Remove burned-in subtitles from frames via inpainting (slow)
-movie-translator ~/Downloads/anime --inpaint
-
-# Disk-frugal mode: replace originals in place (incompatible with --inpaint)
-movie-translator ~/Downloads/anime --in-place
-
-# Keep intermediate artifacts for debugging
-movie-translator ~/Downloads/anime --keep-artifacts
-
-# Show all options
-movie-translator --help
-movie-translator extract --help
-```
 
 ## How It Works
 
@@ -181,22 +153,22 @@ This approach works across arbitrary fansub naming conventions without maintaini
 
 ## Development
 
-The project is Rust-first (orchestration) with a Python ML backend.
+Every common task is a `just` recipe — run `just --list` to see them all.
 
-```bash
-# Rust (CLI + orchestration)
-just build       # Build the release binary (target/release/movie-translator)
-just test        # Run the Rust test suite
-just check       # Clippy + fmt check + ruff check on ml/ (mirrors CI, no modifications)
-just lint        # Auto-fix lint + format (Rust + Python ml/)
-just ci          # check + test (CI equivalent)
-just run <dir>   # Build and run the translate CLI
-
-# Python ML backend (translation / OCR / inpainting)
-just sync        # uv sync the Python environment
-just py-test     # Run the Python ML-backend test suite
-```
+| Recipe | What it does |
+| --- | --- |
+| `just setup` | First-time setup: Python env, submodules, model files, release binary |
+| `just build` | Rebuild the release binary + the vendored ilass engine |
+| `just run <input>` | Translate (default subcommand) |
+| `just extract <input>` | Extract subtitles only (no translation) |
+| `just test` | Run the Rust test suite |
+| `just py-test` | Run the Python ML-backend test suite |
+| `just check` | Clippy + fmt check + ruff (no modifications — mirrors CI) |
+| `just lint` | Auto-fix lint + format (Rust + Python) |
+| `just ci` | `check` + `test` (CI equivalent) |
+| `just clean` | Remove Rust build artifacts |
+| `just install-hooks` | Install a git pre-commit hook that runs `just check` |
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT — see `LICENSE`.

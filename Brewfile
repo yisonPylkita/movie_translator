@@ -1,3 +1,6 @@
 brew "direnv"
 brew "just"
 brew "git-lfs"
+brew "uv"
+brew "ffmpeg"
+brew "pkg-config"

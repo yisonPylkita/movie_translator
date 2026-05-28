@@ -1,52 +1,86 @@
-# Movie Translator development tasks
+# Movie Translator — English→Polish video subtitle translator.
 #
-# Orchestration is Rust (cargo workspace, crates/mt-*); machine-learning
-# inference stays in Python under ml/ (invoked by the Rust binary).
+# `just` is the entry point for everything: setup, build, run, tests, lint.
+# Run `just` (or `just --list`) to see every available recipe.
 
 default:
     @just --list
 
-# --- Rust (primary: CLI + orchestration) ---
+# ─── Setup ─────────────────────────────────────────────────────────────────
 
-# Build the release binary (target/release/movie-translator)
+# Full one-shot setup: Python env, submodules, model files, and the binary.
+# Idempotent — safe to re-run. On macOS, run `just brew` once first.
+setup: deps submodules model build
+    @echo
+    @echo "Setup complete. Try: just run /path/to/video.mkv --dry-run"
+
+# macOS only: install system tools (just, ffmpeg, git-lfs, uv, ...) via Homebrew.
+brew:
+    brew bundle
+
+# Install / sync the Python ML backend environment (torch, transformers, ...).
+deps:
+    uv sync
+
+# Initialise git submodules (vendor/ilass).
+submodules:
+    git submodule update --init --recursive
+
+# Pull the translation model files via git-lfs (Allegro BiDi en↔pl).
+model:
+    git lfs install
+    git lfs pull
+
+# ─── Build ─────────────────────────────────────────────────────────────────
+
+# Build the release binary + the vendored ilass alignment engine.
 build:
     cargo build --release --bin movie-translator
+    cd vendor/ilass && cargo build --release
 
-# Run the Rust test suite
+# Remove all Rust build artifacts.
+clean:
+    cargo clean
+
+# ─── Run ───────────────────────────────────────────────────────────────────
+
+# Translate videos: `just run <file-or-dir> [flags]` (run with --help for all flags).
+run input *args:
+    cargo run --release --quiet --bin movie-translator -- "{{ input }}" {{ args }}
+
+# Extract subtitles (text + burned-in OCR), no translation: `just extract <file-or-dir>`.
+extract input *args:
+    cargo run --release --quiet --bin movie-translator -- extract "{{ input }}" {{ args }}
+
+# ─── Tests + lint ──────────────────────────────────────────────────────────
+
+# Run the Rust test suite. Usage: `just test [extra cargo-test args]`
 test *args:
     cargo test --workspace {{ args }}
 
-# Lint + format check, no modifications (mirrors CI)
+# Run the Python ML-backend test suite.
+py-test *args:
+    uv run pytest -o addopts="" movie_translator {{ args }}
+
+# Lint + format check, no modifications (mirrors CI).
 check:
     cargo clippy --workspace --all-targets -- -D warnings
     cargo fmt --check
-    uv run ruff check ml/
+    uv run ruff check ml/ movie_translator/
 
-# Auto-fix lint + format (Rust + Python ML scripts)
+# Auto-fix lint + format issues (Rust + Python).
 lint:
     cargo clippy --workspace --all-targets --fix --allow-dirty --allow-staged -- -D warnings
     cargo fmt
-    uv run ruff check --fix ml/
-    uv run ruff format ml/
+    uv run ruff check --fix ml/ movie_translator/
+    uv run ruff format ml/ movie_translator/
 
-# Run all checks and tests (CI equivalent)
+# All checks + all tests (CI equivalent).
 ci: check test
 
-# Run the movie-translator binary. Usage: just run <file-or-dir> [args...]
-run dir *args:
-    cargo run --release --bin movie-translator -- "{{ dir }}" {{ args }}
+# ─── Misc ──────────────────────────────────────────────────────────────────
 
-# --- Python ML backend (translation / OCR / inpainting) ---
-
-# Install / sync the Python environment used by the ml/ scripts
-sync:
-    uv sync
-
-# Run the Python ML-backend test suite (translation/ocr/inpainting modules)
-py-test *args:
-    uv run pytest -v movie_translator/translation movie_translator/ocr movie_translator/inpainting {{ args }}
-
-# Install git pre-commit hook (runs `just check`)
+# Install a git pre-commit hook that runs `just check`.
 install-hooks:
     @echo '#!/bin/sh' > .git/hooks/pre-commit
     @echo 'just check' >> .git/hooks/pre-commit
