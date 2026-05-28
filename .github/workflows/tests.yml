@@ -53,6 +53,16 @@ jobs:
         env:
           UV_EXTRA_INDEX_URL: ${{ runner.os == 'Linux' && 'https://download.pytorch.org/whl/cpu' || '' }}
 
+      # PyO3 dynamically links to libpython from the uv-managed venv. On Linux,
+      # the dynamic loader needs LD_LIBRARY_PATH to find that libpython at
+      # runtime (macOS uses rpath and works without this).
+      - name: Configure libpython path (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          LIBPYTHON_DIR="$(uv run python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
+          echo "Resolved libpython dir: $LIBPYTHON_DIR"
+          echo "LD_LIBRARY_PATH=${LIBPYTHON_DIR}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+
       - name: Rustfmt (check)
         run: cargo fmt --check
 
