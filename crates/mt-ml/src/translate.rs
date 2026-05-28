@@ -1,12 +1,14 @@
-//! Translation via the Python `ml/translate.py` helper script.
+//! Translation via the embedded Python `movie_translator.translation`.
+//!
+//! Calls in-process through PyO3 (see [`crate::backend`]); the underlying
+//! `SubtitleTranslator` is cached across calls by a shared `ModelCache` so
+//! the model loads once per binary run, not once per file.
 
-use crate::runner::run_script_json;
 use mt_core::{DialogueLine, Result};
 use serde::{Deserialize, Serialize};
 
-/// JSON request sent to `ml/translate.py` on stdin.
-///
-/// Fields mirror the script contract (and the `TranslateTask` dataclass).
+/// Translation request — kept as a serde-friendly struct purely so callers
+/// (mt-pipeline / GPU executor trait) can pass a single value around.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranslateRequest {
     /// Dialogue lines to translate.
@@ -22,39 +24,29 @@ pub struct TranslateRequest {
     pub proper_nouns: Option<Vec<String>>,
 }
 
-/// JSON response from `ml/translate.py` on stdout.
+/// Response from a translate call (translated dialogue lines in input order).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranslateResponse {
-    /// Translated dialogue lines (same count/order as the request).
     pub lines: Vec<DialogueLine>,
 }
 
-/// Translate dialogue lines by spawning `ml/translate.py`.
+/// Translate dialogue lines through the embedded Python translator.
 ///
-/// The Python side loads the model once per call, translates, and returns the
-/// translated [`DialogueLine`]s in the same order.
+/// The first call loads the model; subsequent calls with matching
+/// `(device, batch_size, model)` reuse the cached instance.
 ///
 /// # Errors
-/// Propagates [`mt_core::MtError::Subprocess`] (with stderr) on script failure.
+/// Returns [`mt_core::MtError::Parse`] carrying the Python traceback when
+/// the in-process translation raises.
 pub fn translate(req: &TranslateRequest) -> Result<Vec<DialogueLine>> {
-    translate_with_args(req, &[])
-}
-
-/// Like [`translate`], but forwards extra CLI args to the script (e.g.
-/// `--self-test`). Internal/testing helper.
-pub(crate) fn translate_with_args(
-    req: &TranslateRequest,
-    args: &[&str],
-) -> Result<Vec<DialogueLine>> {
-    let resp: TranslateResponse = run_script_json("translate.py", args, Some(req))?;
-    Ok(resp.lines)
+    let proper = req.proper_nouns.as_deref();
+    crate::backend::translate(&req.lines, &req.device, req.batch_size, &req.model, proper)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Unit test: request serde shape matches the script contract.
     #[test]
     fn translate_request_serialize_shape() {
         let req = TranslateRequest {
@@ -76,7 +68,6 @@ mod tests {
         assert_eq!(json["lines"][0]["text"], "Hello");
     }
 
-    /// Unit test: `proper_nouns: None` is omitted from the serialized request.
     #[test]
     fn translate_request_omits_none_proper_nouns() {
         let req = TranslateRequest {
@@ -90,33 +81,38 @@ mod tests {
         assert!(json.get("proper_nouns").is_none());
     }
 
-    /// Unit test: response deserialises from the script's stdout shape.
+    /// Real-model end-to-end translation via the embedded Python.
+    /// Loads the cached Allegro BiDi model from `./models/allegro`, so it's
+    /// `#[ignore]` (heavy: ~2GB model). Run with
+    /// `cargo test -p mt-ml --release -- --ignored real_model_translates_via_pyo3`.
     #[test]
-    fn translate_response_deserialize_shape() {
-        let json = r#"{"lines":[{"start_ms":0,"end_ms":1000,"text":"[xl] Hello"}]}"#;
-        let resp: TranslateResponse = serde_json::from_str(json).expect("deserialize");
-        assert_eq!(resp.lines.len(), 1);
-        assert_eq!(resp.lines[0].text, "[xl] Hello");
-    }
-
-    /// Integration test: drive `translate` via `ml/translate.py --self-test`,
-    /// exercising the real spawn + stdin/stdout JSON path (no model needed).
-    /// Not `#[ignore]` — runs in CI.
-    #[test]
-    fn translate_self_test_via_public_path() {
+    #[ignore]
+    fn real_model_translates_via_pyo3() {
         let req = TranslateRequest {
-            lines: vec![DialogueLine {
-                start_ms: 0,
-                end_ms: 1000,
-                text: "Hello".to_string(),
-            }],
+            lines: vec![
+                DialogueLine {
+                    start_ms: 0,
+                    end_ms: 1000,
+                    text: "Hello, how are you?".to_string(),
+                },
+                DialogueLine {
+                    start_ms: 1000,
+                    end_ms: 2000,
+                    text: "I am fine, thank you.".to_string(),
+                },
+            ],
             device: "cpu".to_string(),
-            batch_size: 8,
+            batch_size: 2,
             model: "allegro".to_string(),
             proper_nouns: None,
         };
-        let lines = translate_with_args(&req, &["--self-test"]).expect("self-test translate");
-        assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].text, "[xl] Hello");
+        let out = translate(&req).expect("real translate");
+        assert_eq!(out.len(), 2);
+        // Polish output should be non-empty and differ from the input.
+        for (orig, translated) in req.lines.iter().zip(out.iter()) {
+            assert!(!translated.text.is_empty(), "translation empty");
+            assert_ne!(orig.text, translated.text, "no-op translation");
+            eprintln!("EN: {}\nPL: {}\n", orig.text, translated.text);
+        }
     }
 }
