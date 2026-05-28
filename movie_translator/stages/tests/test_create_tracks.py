@@ -42,7 +42,9 @@ class TestCreateTracksStage:
 
         assert result.subtitle_tracks is not None
         titles = [t.title for t in result.subtitle_tracks]
-        assert 'Polish (AI)' in titles
+        # Default config has model='allegro', so the primary AI track is labelled
+        # by backend name now (was just 'Polish (AI)' before multi-model support).
+        assert 'Polish (Allegro)' in titles
 
     def test_fetched_polish_includes_source(self, tmp_path):
         pol_file = tmp_path / 'pol.ass'
@@ -55,7 +57,7 @@ class TestCreateTracksStage:
         assert result.subtitle_tracks is not None
         titles = [t.title for t in result.subtitle_tracks]
         assert 'Polish (animesub)' in titles
-        assert 'Polish (AI)' in titles
+        assert 'Polish (Allegro)' in titles
 
     def test_fetched_polish_is_default(self, tmp_path):
         pol_file = tmp_path / 'pol.ass'
@@ -79,4 +81,19 @@ class TestCreateTracksStage:
         assert result.subtitle_tracks is not None
         defaults = [t for t in result.subtitle_tracks if t.is_default]
         assert len(defaults) == 1
-        assert defaults[0].title == 'Polish (AI)'
+        assert defaults[0].title == 'Polish (Allegro)'
+
+    def test_extra_translations_emit_extra_track(self, tmp_path):
+        ctx = self._make_ctx(tmp_path)
+        ctx.extra_translations = {'apple': [DialogueLine(1000, 2000, 'Cześć (apple)')]}
+
+        with patch('movie_translator.stages.create_tracks.SubtitleProcessor') as _MockProc:
+            result = CreateTracksStage().run(ctx)
+
+        assert result.subtitle_tracks is not None
+        titles = [t.title for t in result.subtitle_tracks]
+        # Both Allegro (primary) and Apple (extra) tracks present, primary first.
+        assert titles == ['Polish (Allegro)', 'Polish (Apple)']
+        defaults = [t for t in result.subtitle_tracks if t.is_default]
+        assert len(defaults) == 1
+        assert defaults[0].title == 'Polish (Allegro)'

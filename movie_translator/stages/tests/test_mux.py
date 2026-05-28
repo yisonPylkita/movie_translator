@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -288,3 +289,131 @@ class TestMuxStage:
 
             with pytest.raises(RuntimeError, match='wrong track count'):
                 MuxStage().run(ctx)
+
+    # ------------------------------------------------------------------
+    # --in-place mode
+    # ------------------------------------------------------------------
+
+    def _make_in_place_ctx(self, tmp_path):
+        ctx = self._make_ctx(tmp_path)
+        ctx.config.in_place = True
+        return ctx
+
+    def test_in_place_writes_temp_beside_original(self, tmp_path):
+        from movie_translator.stages.mux import in_place_temp_path
+
+        ctx = self._make_in_place_ctx(tmp_path)
+        expected_temp = in_place_temp_path(ctx.video_path)
+
+        observed_outputs: list[Path] = []
+
+        def fake_create_clean_video(source, tracks, output, **kwargs):
+            observed_outputs.append(Path(output))
+            Path(output).write_text('muxed content')
+
+        with patch('movie_translator.stages.mux.VideoOperations') as MockOps:
+            mock_ops = MockOps.return_value
+            mock_ops.create_clean_video.side_effect = fake_create_clean_video
+            mock_ops.verify_result.return_value = None
+
+            MuxStage().run(ctx)
+
+        # Temp was written beside the original, then atomically replaced it.
+        assert observed_outputs == [expected_temp]
+        assert ctx.video_path.read_text() == 'muxed content'
+        assert not expected_temp.exists()
+
+    def test_in_place_makes_no_backup(self, tmp_path):
+        ctx = self._make_in_place_ctx(tmp_path)
+
+        def fake_create_clean_video(source, tracks, output, **kwargs):
+            Path(output).write_text('muxed content')
+
+        with patch('movie_translator.stages.mux.VideoOperations') as MockOps:
+            mock_ops = MockOps.return_value
+            mock_ops.create_clean_video.side_effect = fake_create_clean_video
+            mock_ops.verify_result.return_value = None
+
+            MuxStage().run(ctx)
+
+        backup = ctx.video_path.with_suffix(ctx.video_path.suffix + '.backup')
+        assert not backup.exists()
+
+    def test_in_place_peak_disk_capped(self, tmp_path):
+        """During mux, only original + temp exist — no third full-size copy."""
+        from movie_translator.stages.mux import in_place_temp_path
+
+        ctx = self._make_in_place_ctx(tmp_path)
+        expected_temp = in_place_temp_path(ctx.video_path)
+
+        seen_peaks: list[set[Path]] = []
+
+        def fake_create_clean_video(source, tracks, output, **kwargs):
+            Path(output).write_text('muxed content')
+            # Snapshot every video-suffixed file in the dir at this point.
+            files = {
+                p for p in ctx.video_path.parent.iterdir() if p.suffix == ctx.video_path.suffix
+            }
+            seen_peaks.append(files)
+
+        with patch('movie_translator.stages.mux.VideoOperations') as MockOps:
+            mock_ops = MockOps.return_value
+            mock_ops.create_clean_video.side_effect = fake_create_clean_video
+            mock_ops.verify_result.return_value = None
+
+            MuxStage().run(ctx)
+
+        # Peak = original + temp only. No .backup, no third copy.
+        assert seen_peaks
+        peak = seen_peaks[0]
+        assert peak == {ctx.video_path, expected_temp}
+
+    def test_in_place_failure_unlinks_temp(self, tmp_path):
+        from movie_translator.stages.mux import in_place_temp_path
+
+        ctx = self._make_in_place_ctx(tmp_path)
+        expected_temp = in_place_temp_path(ctx.video_path)
+
+        def fake_create_clean_video(source, tracks, output, **kwargs):
+            Path(output).write_text('muxed content')
+
+        with patch('movie_translator.stages.mux.VideoOperations') as MockOps:
+            mock_ops = MockOps.return_value
+            mock_ops.create_clean_video.side_effect = fake_create_clean_video
+            mock_ops.verify_result.side_effect = RuntimeError('bad track count')
+
+            with pytest.raises(RuntimeError, match='bad track count'):
+                MuxStage().run(ctx)
+
+        # Original intact, sibling temp cleaned up.
+        assert ctx.video_path.read_text() == 'fake video'
+        assert not expected_temp.exists()
+
+    def test_in_place_dry_run_does_not_replace_original(self, tmp_path):
+        from movie_translator.stages.mux import in_place_temp_path
+
+        ctx = self._make_in_place_ctx(tmp_path)
+        ctx.config.dry_run = True
+        expected_temp = in_place_temp_path(ctx.video_path)
+
+        def fake_create_clean_video(source, tracks, output, **kwargs):
+            Path(output).write_text('muxed content')
+
+        with patch('movie_translator.stages.mux.VideoOperations') as MockOps:
+            mock_ops = MockOps.return_value
+            mock_ops.create_clean_video.side_effect = fake_create_clean_video
+            mock_ops.verify_result.return_value = None
+
+            MuxStage().run(ctx)
+
+        # Dry run: original untouched, temp left behind (next run will clean it).
+        assert ctx.video_path.read_text() == 'fake video'
+        assert expected_temp.exists()
+
+    def test_in_place_temp_path_format(self):
+        from movie_translator.stages.mux import in_place_temp_path
+
+        assert in_place_temp_path(Path('/x/Episode01.mkv')) == Path('/x/Episode01.translating.mkv')
+        assert in_place_temp_path(Path('/x/show.s01e02.mp4')) == Path(
+            '/x/show.s01e02.translating.mp4'
+        )

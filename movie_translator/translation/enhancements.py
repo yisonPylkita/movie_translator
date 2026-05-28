@@ -344,3 +344,57 @@ def restore_placeholders(text: str, mapping: dict[str, str]) -> str:
     for key, original in mapping.items():
         result = result.replace(key, original)
     return result
+
+
+# A line that is nothing but a placeholder tag + punctuation (e.g.
+# "__NM0__..." from "Lord Boscone...") should skip the model — it would
+# hallucinate random text from meaningless input. The translator pipelines
+# detect this with PLACEHOLDER_ONLY_RE.match() and short-circuit to a
+# restored copy of the original.
+PLACEHOLDER_ONLY_RE = re.compile(r'^__\w+__[.!?,;:…\s]*$')
+
+
+def apply_fallbacks(
+    originals: list[str],
+    translations: list[str],
+    skip_indices: set[int] | None = None,
+    cached_translations: dict[int, str] | None = None,
+    *,
+    logger=None,
+) -> list[str]:
+    """Replace empty or suspiciously-short translations with the originals.
+
+    Shared by every translation backend (seq2seq, Apple). `skip_indices`
+    marks lines that bypassed the model (placeholder-only, idiom-cached);
+    those keep their cached value verbatim.
+
+    `logger` is optional; when given, warnings are emitted for fallbacks.
+    """
+    if skip_indices is None:
+        skip_indices = set()
+    if cached_translations is None:
+        cached_translations = {}
+
+    result: list[str] = []
+    for i, (original, translated) in enumerate(zip(originals, translations, strict=True)):
+        if i in skip_indices:
+            result.append(cached_translations.get(i, translated))
+            continue
+
+        stripped = translated.strip()
+        if not stripped:
+            if logger:
+                logger.warning(
+                    f'Empty translation for line {i}: "{original}" — using original as fallback'
+                )
+            result.append(original)
+        elif len(stripped) < 2 and len(original.strip()) > 5:
+            if logger:
+                logger.warning(
+                    f'Suspiciously short translation for line {i}: '
+                    f'"{original}" -> "{translated}" — using original as fallback'
+                )
+            result.append(original)
+        else:
+            result.append(translated)
+    return result

@@ -5,6 +5,17 @@ from pathlib import Path
 
 VIDEO_EXTENSIONS = {'.mkv', '.mp4'}
 
+# Files like ``Episode01.translating.mkv`` are in-place mux temps left behind
+# by a crashed run — never treat them as input videos. The orphan-cleanup
+# pass in translate_cmd handles their removal.
+_IN_PLACE_TEMP_INFIX = '.translating'
+
+
+def _is_in_place_temp(path: Path) -> bool:
+    # path.stem strips the final suffix (e.g. ".mkv"), so a real temp like
+    # "Episode01.translating.mkv" has stem "Episode01.translating".
+    return path.stem.endswith(_IN_PLACE_TEMP_INFIX)
+
 
 def find_videos(input_path: Path) -> list[Path]:
     """Find all video files recursively from any input.
@@ -12,13 +23,14 @@ def find_videos(input_path: Path) -> list[Path]:
     - If input_path is a file: return [input_path] if it's a video, else []
     - If directory: recursively find all .mkv/.mp4 files, sorted
     - Skips hidden directories (starting with '.')
+    - Skips in-place mux temp files (``*.translating.<ext>``)
     - Returns [] for nonexistent paths
     """
     if not input_path.exists():
         return []
 
     if input_path.is_file():
-        if input_path.suffix.lower() in VIDEO_EXTENSIONS:
+        if input_path.suffix.lower() in VIDEO_EXTENSIONS and not _is_in_place_temp(input_path):
             return [input_path]
         return []
 
@@ -27,6 +39,8 @@ def find_videos(input_path: Path) -> list[Path]:
         if path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS:
             # Skip files inside hidden directories
             if any(part.startswith('.') for part in path.relative_to(input_path).parts):
+                continue
+            if _is_in_place_temp(path):
                 continue
             videos.append(path)
     return videos

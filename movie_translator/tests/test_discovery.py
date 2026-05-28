@@ -66,6 +66,20 @@ class TestFindVideos:
     def test_nonexistent_path(self, tmp_path):
         assert find_videos(tmp_path / 'nope') == []
 
+    def test_skips_in_place_temp_files(self, tmp_path):
+        # Crashed --in-place run can leave Episode01.translating.mkv beside
+        # Episode01.mkv. Discovery must not pick the orphan up as an input.
+        real = tmp_path / 'Episode01.mkv'
+        orphan = tmp_path / 'Episode01.translating.mkv'
+        real.touch()
+        orphan.touch()
+        assert find_videos(tmp_path) == [real]
+
+    def test_single_in_place_temp_file_argument_rejected(self, tmp_path):
+        orphan = tmp_path / 'foo.translating.mkv'
+        orphan.touch()
+        assert find_videos(orphan) == []
+
 
 class TestCreateWorkDir:
     def test_creates_work_dir_with_subdirs(self, tmp_path):

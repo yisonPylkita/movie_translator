@@ -24,7 +24,7 @@ class GpuTask(ABC):
     file_tag: str = ''
 
     @abstractmethod
-    def execute(self, model_cache: dict[str, Any], last_model_type: str | None) -> Any:
+    def execute(self) -> Any:
         """Run the GPU work synchronously. Called from a worker thread."""
 
 
@@ -35,21 +35,19 @@ class GpuTask(ABC):
 
 @dataclass
 class TranslateTask(GpuTask):
-    """Translate dialogue lines via the Helsinki-NLP model."""
+    """Translate dialogue lines via the configured backend."""
 
     model_type: str = field(init=False, default='translate')
 
     dialogue_lines: list[DialogueLine] = field(default_factory=list)
     device: str = 'cpu'
     batch_size: int = 32
-    model: str = 'Helsinki-NLP/opus-mt-en-pl'
+    model: str = 'allegro'
     progress_callback: ProgressCallback | None = None
     translation_cache: Any = None  # ModelCache instance
     proper_nouns: Any = None  # set[str] — character names to protect
 
-    def execute(
-        self, model_cache: dict[str, Any], last_model_type: str | None
-    ) -> list[DialogueLine]:
+    def execute(self) -> list[DialogueLine]:
         from movie_translator.translation import translate_dialogue_lines
 
         return translate_dialogue_lines(
@@ -79,9 +77,7 @@ class OcrTask(GpuTask):
     crop_ratio: float = 0.25
     fps: int = 1
 
-    def execute(
-        self, model_cache: dict[str, Any], last_model_type: str | None
-    ) -> Path | BurnedInResult | None:
+    def execute(self) -> Path | BurnedInResult | None:
         if self.ocr_type == 'pgs':
             from movie_translator.ocr.pgs_extractor import extract_pgs_track
 
@@ -113,7 +109,7 @@ class InpaintTask(GpuTask):
     device: str = 'cpu'
     backend: str = 'lama'
 
-    def execute(self, model_cache: dict[str, Any], last_model_type: str | None) -> None:
+    def execute(self) -> None:
         from movie_translator.inpainting import remove_burned_in_subtitles
 
         remove_burned_in_subtitles(
@@ -138,8 +134,6 @@ class GpuQueue:
     def __init__(self, tracker=None) -> None:
         self._queue: asyncio.Queue[tuple[GpuTask, asyncio.Future[Any]] | None] = asyncio.Queue()
         self._worker_task: asyncio.Task[None] | None = None
-        self._last_model_type: str | None = None
-        self._model_cache: dict[str, Any] = {}
         self._tracker = tracker  # ProgressTracker for GPU panel updates
 
     @property
@@ -176,10 +170,7 @@ class GpuQueue:
                 self._tracker.gpu_task_started(task.model_type, task.file_tag)
 
             try:
-                result = await asyncio.to_thread(
-                    task.execute, self._model_cache, self._last_model_type
-                )
-                self._last_model_type = task.model_type
+                result = await asyncio.to_thread(task.execute)
                 if not future.cancelled():
                     future.set_result(result)
                 if self._tracker:

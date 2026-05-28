@@ -74,19 +74,31 @@ class TranslateStage:
         # Detect character names from dialogue for translation protection
         proper_nouns = extract_proper_nouns_from_subtitles([line.text for line in dialogue_lines])
 
-        # Ensure model/backend is loaded before parallelizing (only loads once, cached after)
-        if ctx.config.model == 'apple':
-            _backend = cache.get_apple_backend(ctx.config.batch_size)
-            if _backend is None:
-                raise RuntimeError('Failed to load translation model')
-        else:
+        def _preload(model_name: str, required: bool) -> bool:
+            """Warm the cache for `model_name`. Returns True iff the model is usable."""
+            if model_name == 'apple':
+                if cache.get_apple_backend(ctx.config.batch_size) is None:
+                    if required:
+                        raise RuntimeError('Failed to load translation model')
+                    logger.warning(f'Extra model {model_name!r} unavailable, skipping')
+                    return False
+                return True
             with metrics.span('load_model') as s:
-                _translator, cached = cache.get_translator(
-                    ctx.config.device, ctx.config.batch_size, ctx.config.model
+                t, cached = cache.get_translator(
+                    ctx.config.device, ctx.config.batch_size, model_name
                 )
+                s.detail('model', model_name)
                 s.detail('cached', cached)
-            if _translator is None:
-                raise RuntimeError('Failed to load translation model')
+            if t is None:
+                if required:
+                    raise RuntimeError('Failed to load translation model')
+                logger.warning(f'Extra model {model_name!r} failed to load, skipping')
+                return False
+            return True
+
+        # Primary model must load. Extras are best-effort.
+        _preload(ctx.config.model, required=True)
+        usable_extras = [m for m in ctx.config.extra_models if _preload(m, required=False)]
 
         def _translate():
             with metrics.span('batch') as s:
@@ -130,4 +142,24 @@ class TranslateStage:
             raise RuntimeError('Translation failed — empty result')
 
         ctx.translated_lines = translated
+
+        # Translate again with each extra backend so we can emit additional
+        # Polish tracks (e.g. on macOS: 'allegro' as primary + 'apple' as extra).
+        for extra in usable_extras:
+            with metrics.span('batch_extra') as s:
+                s.detail('model', extra)
+                extra_lines = translate_dialogue_lines(
+                    dialogue_lines,
+                    ctx.config.device,
+                    ctx.config.batch_size,
+                    extra,
+                    progress_callback=None,
+                    model_cache=cache,
+                    proper_nouns=proper_nouns,
+                )
+                if extra_lines:
+                    s.detail('output_lines', len(extra_lines))
+                    ctx.extra_translations[extra] = extra_lines
+                else:
+                    logger.warning(f'Extra model {extra!r} produced no output, dropping track')
         return ctx

@@ -1,5 +1,4 @@
 import gc
-import re
 import time
 import warnings
 
@@ -10,7 +9,9 @@ from ..logging import logger
 from ..metrics.collector import MetricsCollector, NullCollector
 from ..types import DialogueLine, ProgressCallback
 from .enhancements import (
+    PLACEHOLDER_ONLY_RE,
     PreprocessingStats,
+    apply_fallbacks,
     extract_placeholders,
     postprocess_translation,
     preprocess_for_translation,
@@ -30,9 +31,6 @@ from .sentence_merger import merge_for_translation, unmerge_translations
 # Suppress the repeated "pip install sacremoses" warning from the Marian
 # tokenizer. sacremoses is optional and not needed for our use case.
 warnings.filterwarnings('ignore', message='.*sacremoses.*')
-
-# Matches lines that are entirely a placeholder tag + optional punctuation.
-_PLACEHOLDER_ONLY_RE = re.compile(r'^__\w+__[.!?,;:\u2026\s]*$')
 
 
 class SubtitleTranslator:
@@ -91,14 +89,8 @@ class SubtitleTranslator:
             logger.error(f'Failed to load model: {e}')
             return False
 
-    @property
-    def _is_nllb(self) -> bool:
-        return 'nllb' in self.model_config.get('huggingface_id', '').lower()
-
     def _load_tokenizer(self):
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
-        if self._is_nllb:
-            self.tokenizer.src_lang = 'eng_Latn'
 
     def _load_model(self):
         self.model = AutoModelForSeq2SeqLM.from_pretrained(
@@ -176,7 +168,7 @@ class SubtitleTranslator:
         placeholder_skip_indices: set[int] = set()
         placeholder_cached: dict[int, str] = {}
         for i, text in enumerate(texts):
-            if placeholder_mappings and _PLACEHOLDER_ONLY_RE.match(text.strip()):
+            if placeholder_mappings and PLACEHOLDER_ONLY_RE.match(text.strip()):
                 restored = restore_placeholders(text, placeholder_mappings[i])
                 placeholder_cached[i] = restored
                 placeholder_skip_indices.add(i)
@@ -205,7 +197,9 @@ class SubtitleTranslator:
                 for text, mapping in zip(decoded, placeholder_mappings, strict=True)
             ]
 
-        return self._apply_fallbacks(texts, decoded, skip_indices, cached_translations)
+        return apply_fallbacks(
+            texts, decoded, skip_indices, cached_translations, logger=logger
+        )
 
     def _validate_inputs(self, texts: list[str]) -> None:
         """Log warnings for inputs that may produce poor translations."""
@@ -240,44 +234,6 @@ class SubtitleTranslator:
         """Apply postprocessing cleanup to translations."""
         return [postprocess_translation(t) for t in translations]
 
-    def _apply_fallbacks(
-        self,
-        originals: list[str],
-        translations: list[str],
-        skip_indices: set[int] | None = None,
-        cached_translations: dict[int, str] | None = None,
-    ) -> list[str]:
-        """Apply fallback logic for empty or invalid translations."""
-        if skip_indices is None:
-            skip_indices = set()
-        if cached_translations is None:
-            cached_translations = {}
-
-        result = []
-        for i, (original, translated) in enumerate(zip(originals, translations, strict=True)):
-            if i in skip_indices:
-                result.append(cached_translations.get(i, translated))
-                continue
-
-            stripped_translation = translated.strip()
-
-            if not stripped_translation:
-                logger.warning(
-                    f'Empty translation for line {i}: "{original}" - '
-                    'using original text as fallback'
-                )
-                result.append(original)
-            elif len(stripped_translation) < 2 and len(original.strip()) > 5:
-                logger.warning(
-                    f'Suspiciously short translation for line {i}: '
-                    f'"{original}" -> "{translated}" - using original as fallback'
-                )
-                result.append(original)
-            else:
-                result.append(translated)
-
-        return result
-
     def _preprocess_texts(self, texts: list[str]) -> list[str]:
         huggingface_id = self.model_config.get('huggingface_id', '').lower()
         if 'bidi' in huggingface_id:
@@ -301,18 +257,13 @@ class SubtitleTranslator:
     def _generate_translations(self, encoded: dict) -> torch.Tensor:
         if self.model is None:
             raise RuntimeError('Model not loaded — call load_model() first')
-        generate_kwargs: dict = dict(
-            **encoded,
-            max_new_tokens=128,
-            num_beams=1,
-            do_sample=False,
-        )
-        if self._is_nllb and self.tokenizer is not None:
-            generate_kwargs['forced_bos_token_id'] = self.tokenizer.convert_tokens_to_ids(
-                'pol_Latn'
-            )
         with torch.inference_mode():
-            return self.model.generate(**generate_kwargs)
+            return self.model.generate(
+                **encoded,
+                max_new_tokens=128,
+                num_beams=1,
+                do_sample=False,
+            )
 
     def _decode_outputs(self, outputs: torch.Tensor) -> list[str]:
         if self.tokenizer is None:

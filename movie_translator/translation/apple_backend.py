@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import platform
-import re
 import shutil
 import subprocess
 import time
@@ -13,7 +12,9 @@ from pathlib import Path
 from ..logging import logger
 from ..types import ProgressCallback
 from .enhancements import (
+    PLACEHOLDER_ONLY_RE,
     PreprocessingStats,
+    apply_fallbacks,
     extract_placeholders,
     postprocess_translation,
     preprocess_for_translation,
@@ -25,11 +26,6 @@ from .sentence_merger import merge_for_translation, unmerge_translations
 _SWIFT_DIR = Path(__file__).parent / 'swift'
 _SWIFT_SOURCE = _SWIFT_DIR / 'translate_bridge.swift'
 _SWIFT_BINARY = _SWIFT_DIR / 'translate_bridge'
-
-# A line that is nothing but a placeholder tag + punctuation should skip
-# the model — it would hallucinate random text for meaningless input.
-_PLACEHOLDER_ONLY_RE = re.compile(r'^__\w+__[.!?,;:\u2026\s]*$')
-
 
 class AppleTranslationError(RuntimeError):
     """Raised when Apple Translation fails."""
@@ -126,7 +122,7 @@ class AppleTranslationBackend:
 
                 # If the line is nothing but a placeholder tag + punctuation
                 # (e.g. "__NM0__..." from "Lord Boscone..."), skip the model.
-                if _PLACEHOLDER_ONLY_RE.match(protected.strip()):
+                if PLACEHOLDER_ONLY_RE.match(protected.strip()):
                     restored = restore_placeholders(protected, mapping)
                     processed_texts.append(restored)
                     skip_indices.add(i)
@@ -188,8 +184,8 @@ class AppleTranslationBackend:
             for text, mapping in zip(translations, placeholder_mappings, strict=True)
         ]
 
-        translations = _apply_fallbacks(
-            merged_texts, translations, skip_indices, cached_translations
+        translations = apply_fallbacks(
+            merged_texts, translations, skip_indices, cached_translations, logger=logger
         )
 
         if self.enable_enhancements and self.preprocessing_stats.total_processed > 0:
@@ -199,34 +195,6 @@ class AppleTranslationBackend:
 
     def cleanup(self) -> None:
         """No-op — Apple backend is stateless."""
-
-
-def _apply_fallbacks(
-    originals: list[str],
-    translations: list[str],
-    skip_indices: set[int],
-    cached_translations: dict[int, str],
-) -> list[str]:
-    """Apply fallback logic: empty/suspicious translations -> original text."""
-    result = []
-    for i, (original, translated) in enumerate(zip(originals, translations, strict=True)):
-        if i in skip_indices:
-            result.append(cached_translations.get(i, translated))
-            continue
-
-        stripped = translated.strip()
-        if not stripped:
-            logger.warning(f'Empty Apple translation for: "{original}" \u2014 using original')
-            result.append(original)
-        elif len(stripped) < 2 and len(original.strip()) > 5:
-            logger.warning(
-                f'Suspiciously short Apple translation: "{original}" \u2192 "{translated}" \u2014 using original'
-            )
-            result.append(original)
-        else:
-            result.append(translated)
-
-    return result
 
 
 def _ensure_binary() -> Path:

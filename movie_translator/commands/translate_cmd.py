@@ -17,7 +17,7 @@ from ..pipeline import TranslationPipeline
 from ..progress import ProgressTracker
 from ..subtitles import SubtitleExtractor
 from ..translation import ModelCache
-from .common import check_dependencies, resolve_model
+from .common import check_dependencies, resolve_models
 
 
 def parse_args(argv: list[str] | None = None):
@@ -37,13 +37,22 @@ def parse_args(argv: list[str] | None = None):
         '--model',
         choices=['allegro', 'apple'],
         default=None,
-        help='Translation backend (default: auto-detect, prefers apple on macOS 26+)',
+        help='Translation backend (default on macOS: run BOTH allegro and apple, emit '
+        'two PL subtitle tracks; otherwise: allegro). Pass an explicit backend to use '
+        'only that one.',
     )
     parser.add_argument('--no-fetch', action='store_true')
     parser.add_argument(
         '--inpaint',
         action='store_true',
         help='Remove burned-in subtitles from video frames via inpainting (slow)',
+    )
+    parser.add_argument(
+        '--in-place',
+        action='store_true',
+        help='Disk-frugal mode: write mux output beside the original and atomically '
+        'replace it. Peak disk per worker ≈ 2× original size (no .backup copy). '
+        'Incompatible with --inpaint.',
     )
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--keep-artifacts', action='store_true')
@@ -91,8 +100,10 @@ def _sync_main(video_files, root_dir, args, collector, report_builder):
             device=args.device,
             batch_size=args.batch_size,
             model=args.model,
+            extra_models=args.extra_models,
             enable_fetch=not args.no_fetch,
             enable_inpaint=args.inpaint,
+            in_place=args.in_place,
             tracker=tracker,
             metrics=collector,
             external_subs_dir=Path(args.external_subs) if args.external_subs else None,
@@ -185,9 +196,11 @@ async def _async_main(video_files, root_dir, args, collector, report_builder, wo
         device=args.device,
         batch_size=args.batch_size,
         model=args.model,
+        extra_models=args.extra_models,
         enable_fetch=not args.no_fetch,
         enable_inpaint=args.inpaint,
         dry_run=args.dry_run,
+        in_place=args.in_place,
         workers=workers,
         external_subs_dir=Path(args.external_subs) if args.external_subs else None,
         model_cache=ModelCache(),
@@ -212,11 +225,41 @@ async def _async_main(video_files, root_dir, args, collector, report_builder, wo
             report_builder.end_video()
 
 
+def _cleanup_in_place_orphans(video_files: list[Path]) -> None:
+    """Delete stale ``*.translating.*`` temp files from a prior crashed run.
+
+    Only files whose stem maps back to a discovered input video are deleted —
+    that way an unrelated user file that happens to contain ``.translating``
+    in the name is left alone.
+    """
+    from ..stages.mux import in_place_temp_path
+
+    removed = 0
+    for vp in video_files:
+        orphan = in_place_temp_path(vp)
+        if orphan.exists():
+            try:
+                orphan.unlink()
+                removed += 1
+                logger.warning(f'Removed orphan temp: {orphan.name}')
+            except OSError as e:
+                logger.warning(f'Could not remove orphan {orphan}: {e}')
+    if removed:
+        console.print(f'[yellow]Cleaned up {removed} orphan temp file(s) from prior run[/yellow]')
+
+
 def run(argv: list[str] | None = None) -> None:
     """Entry point for the translate flow (default command)."""
     args = parse_args(argv)
     set_verbose(args.verbose)
-    args.model = resolve_model(args.model)
+    args.model, args.extra_models = resolve_models(args.model)
+
+    if args.in_place and args.inpaint:
+        console.print(
+            '[red]❌ --in-place is incompatible with --inpaint '
+            '(inpainting requires an extra full-size temp copy).[/red]'
+        )
+        sys.exit(2)
 
     input_path = Path(args.input)
     if not input_path.exists():
@@ -232,6 +275,12 @@ def run(argv: list[str] | None = None) -> None:
         sys.exit(1)
 
     root_dir = input_path if input_path.is_dir() else input_path.parent
+
+    if args.in_place:
+        _cleanup_in_place_orphans(video_files)
+        console.print(
+            '[blue]In-place mode: peak disk ≈ 2× per worker; originals replaced atomically.[/blue]'
+        )
 
     if args.dry_run:
         console.print('[yellow]Dry run mode - originals will not be modified[/yellow]')

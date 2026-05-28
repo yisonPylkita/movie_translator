@@ -12,6 +12,14 @@ from ..types import SubtitleFile
 _LANG_TO_TRACK = {'pl': 'pol', 'en': 'eng'}
 
 
+def _model_label(model_name: str) -> str:
+    """Human-readable label for a translation backend (used as track title)."""
+    return {
+        'allegro': 'Allegro',
+        'apple': 'Apple',
+    }.get(model_name, model_name)
+
+
 def _load_external_subs(
     external_dir: Path,
     identity: object,
@@ -93,21 +101,38 @@ class CreateTracksStage:
             else:
                 replace_chars = True
 
-        # Create AI Polish subtitle file
-        with ctx.metrics.span('create_polish_subtitles'):
-            ai_polish_ass = ctx.work_dir / f'{ctx.video_path.stem}_polish_ai.ass'
+        # Create one Polish subtitle file per translation model used. Primary
+        # model (ctx.config.model) goes first; extras follow in their config order.
+        primary_model = ctx.config.model
+        polish_files: list[tuple[str, Path]] = []  # (model_name, ass_path)
+
+        with ctx.metrics.span('create_polish_subtitles') as s:
+            primary_ass = ctx.work_dir / f'{ctx.video_path.stem}_polish_{primary_model}.ass'
             SubtitleProcessor.create_polish_subtitles(
                 ctx.english_source,
                 ctx.translated_lines,
-                ai_polish_ass,
+                primary_ass,
                 replace_chars,
             )
+            polish_files.append((primary_model, primary_ass))
+
+            for extra_model, extra_lines in ctx.extra_translations.items():
+                extra_ass = ctx.work_dir / f'{ctx.video_path.stem}_polish_{extra_model}.ass'
+                SubtitleProcessor.create_polish_subtitles(
+                    ctx.english_source,
+                    extra_lines,
+                    extra_ass,
+                    replace_chars,
+                )
+                polish_files.append((extra_model, extra_ass))
+            s.detail('tracks', len(polish_files))
 
         if ctx.font_info.fallback_font_family:
             with ctx.metrics.span('override_font'):
-                SubtitleProcessor.override_font_name(
-                    ai_polish_ass, ctx.font_info.fallback_font_family
-                )
+                for _, ass_path in polish_files:
+                    SubtitleProcessor.override_font_name(
+                        ass_path, ctx.font_info.fallback_font_family
+                    )
 
         # Build track list
         with ctx.metrics.span('build_track_list') as s:
@@ -123,14 +148,16 @@ class CreateTracksStage:
                         ctx.font_info.fallback_font_family,
                     )
 
-            tracks.append(
-                SubtitleFile(
-                    ai_polish_ass,
-                    'pol',
-                    'Polish (AI)',
-                    is_default=not bool(fetched_pol_list),
+            for i, (model_name, ass_path) in enumerate(polish_files):
+                is_default = i == 0 and not fetched_pol_list
+                tracks.append(
+                    SubtitleFile(
+                        ass_path,
+                        'pol',
+                        f'Polish ({_model_label(model_name)})',
+                        is_default=is_default,
+                    )
                 )
-            )
 
             # Add external subtitles if configured
             if ctx.config.external_subs_dir and ctx.identity:

@@ -23,9 +23,14 @@ class PipelineConfig:
     device: str = 'mps'
     batch_size: int = 16
     model: str = 'allegro'
+    # Extra translation backends to run in addition to `model`. Each adds a
+    # separate Polish subtitle track to the output (e.g. on macOS we run both
+    # Allegro and Apple Translation so the user can switch in their player).
+    extra_models: list[str] = field(default_factory=list)
     enable_fetch: bool = True
     enable_inpaint: bool = False
     dry_run: bool = False
+    in_place: bool = False
     workers: int = 4
     external_subs_dir: Path | None = None
     model_cache: ModelCache | None = None
@@ -80,6 +85,9 @@ class PipelineContext:
     english_source: Path | None = None
     dialogue_lines: list[DialogueLine] | None = None
     translated_lines: list[DialogueLine] | None = None
+    # Translations from extra_models, keyed by model name. Populated alongside
+    # translated_lines when config.extra_models is non-empty.
+    extra_translations: dict[str, list[DialogueLine]] = field(default_factory=dict)
     font_info: FontInfo | None = None
     subtitle_tracks: list[SubtitleFile] | None = None
     ocr_results: list[OCRResult] | None = None

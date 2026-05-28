@@ -181,28 +181,45 @@ async def process_file(
                 font_info = await asyncio.to_thread(translate_stage.check_fonts, ctx)
                 ctx.font_info = font_info
 
-        async def _translate_gpu():
+        async def _translate_one(model_name: str, report_progress: bool) -> list | None:
+            assert ctx.dialogue_lines is not None
             tracker.set_gpu_status(tracker_key, 'queued')
 
             def _on_progress(lines_done: int, total_lines: int, rate: float) -> None:
+                if not report_progress:
+                    return
                 tracker.set_stage_progress(tracker_key, lines_done, total_lines, rate=rate)
                 tracker.gpu_task_progress(lines_done, total_lines, rate)
 
-            assert ctx.dialogue_lines is not None
             task = TranslateTask(
                 dialogue_lines=ctx.dialogue_lines,
                 device=config.device,
                 batch_size=config.batch_size,
-                model=config.model,
+                model=model_name,
                 progress_callback=_on_progress,
                 file_tag=file_tag,
                 translation_cache=config.model_cache,
                 proper_nouns=proper_nouns,
             )
-            with ctx.metrics.span('translate.batch'):
+            span_name = 'translate.batch' if report_progress else 'translate.batch_extra'
+            with ctx.metrics.span(span_name) as s:
+                s.detail('model', model_name)
                 result = await gpu_queue.submit(task)
             tracker.set_gpu_status(tracker_key, 'none')
-            ctx.translated_lines = result
+            return result
+
+        async def _translate_gpu():
+            ctx.translated_lines = await _translate_one(config.model, report_progress=True)
+            # Extra backends run sequentially after the primary so the tracker
+            # progress reflects user-visible work.
+            for extra in config.extra_models:
+                try:
+                    extra_lines = await _translate_one(extra, report_progress=False)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(f'Extra model {extra!r} failed: {exc}; skipping track')
+                    continue
+                if extra_lines:
+                    ctx.extra_translations[extra] = extra_lines
 
         await asyncio.gather(_check_fonts(), _translate_gpu())
 

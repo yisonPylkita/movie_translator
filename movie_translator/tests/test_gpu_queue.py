@@ -20,21 +20,20 @@ class StubTask(GpuTask):
     model_type: str = field(init=False, default='stub')
     value: Any = 42
 
-    def execute(self, model_cache: dict[str, Any], last_model_type: str | None) -> Any:
+    def execute(self) -> Any:
         return self.value
 
 
 @dataclass
 class RecordingTask(GpuTask):
-    """Records execution order and model_cache contents."""
+    """Records execution order."""
 
     model_type: str = field(init=False, default='recorder')
     label: str = ''
     log: list[str] = field(default_factory=list)
 
-    def execute(self, model_cache: dict[str, Any], last_model_type: str | None) -> str:
+    def execute(self) -> str:
         self.log.append(self.label)
-        model_cache.setdefault('seen', []).append(self.label)
         return self.label
 
 
@@ -42,7 +41,7 @@ class RecordingTask(GpuTask):
 class FailingTask(GpuTask):
     model_type: str = field(init=False, default='fail')
 
-    def execute(self, model_cache: dict[str, Any], last_model_type: str | None) -> Any:
+    def execute(self) -> Any:
         raise RuntimeError('boom')
 
 
@@ -80,16 +79,6 @@ class TestGpuQueue:
         result = await q.submit(StubTask(value='ok'))
         assert result == 'ok'
         await q.shutdown()
-
-    async def test_model_cache_shared_between_tasks(self):
-        q = GpuQueue()
-        log: list[str] = []
-        q.start()
-        await q.submit(RecordingTask(label='a', log=log))
-        await q.submit(RecordingTask(label='b', log=log))
-        await q.shutdown()
-        # Both tasks wrote into the same model_cache dict
-        assert q._model_cache.get('seen') == ['a', 'b']
 
     async def test_shutdown_stops_worker(self):
         q = GpuQueue()

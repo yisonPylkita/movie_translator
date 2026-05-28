@@ -32,9 +32,25 @@ def check_dependencies() -> bool:
 
 
 def resolve_model(explicit_choice: str | None) -> str:
-    """Pick translation backend: explicit choice, or auto-detect Apple, or Allegro."""
+    """Back-compat: returns just the primary model. New code should use resolve_models()."""
+    primary, _ = resolve_models(explicit_choice)
+    return primary
+
+
+def resolve_models(explicit_choice: str | None) -> tuple[str, list[str]]:
+    """Pick the primary translation backend + any extra backends to also run.
+
+    Returns (primary_model, extra_models). Each extra model produces an
+    additional Polish subtitle track in the output MKV. On macOS where Apple
+    Translation is available we default to running Allegro AND Apple so the
+    user gets both tracks (Allegro keeps proper nouns intact, Apple has the
+    higher chrF on plain dialogue).
+
+    If the caller passed `--model X` explicitly we honor it and run nothing
+    extra.
+    """
     if explicit_choice is not None:
-        return explicit_choice
+        return explicit_choice, []
 
     try:
         from movie_translator.translation.apple_backend import (
@@ -43,9 +59,11 @@ def resolve_model(explicit_choice: str | None) -> str:
         )
 
         if is_available() and check_languages_installed():
-            logger.info('Apple Translation available — using on-device backend')
-            return 'apple'
+            logger.info(
+                'Apple Translation available — running Allegro + Apple (two PL tracks)'
+            )
+            return 'allegro', ['apple']
     except Exception:
         pass
 
-    return 'allegro'
+    return 'allegro', []

@@ -26,7 +26,7 @@ class TestTranslateTask:
             batch_size=16,
             model='test-model',
         )
-        result = task.execute({}, None)
+        result = task.execute()
 
         mock_translate.assert_called_once_with(
             dialogue_lines=lines,
@@ -54,7 +54,7 @@ class TestOcrTask:
             track_index=2,
             work_dir=tmp_path,
         )
-        result = task.execute({}, None)
+        result = task.execute()
         mock_pgs.assert_called_once_with(
             video_path=tmp_path / 'video.mkv',
             track_index=2,
@@ -72,7 +72,7 @@ class TestOcrTask:
             crop_ratio=0.3,
             fps=2,
         )
-        result = task.execute({}, None)
+        result = task.execute()
         mock_burned.assert_called_once_with(
             video_path=tmp_path / 'video.mkv',
             output_dir=tmp_path,
@@ -98,7 +98,7 @@ class TestInpaintTask:
             device='mps',
             backend='opencv-ns',
         )
-        result = task.execute({}, None)
+        result = task.execute()
         mock_remove.assert_called_once_with(
             video_path=tmp_path / 'in.mkv',
             output_path=tmp_path / 'out.mkv',

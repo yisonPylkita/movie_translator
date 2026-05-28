@@ -54,6 +54,10 @@ packages = ["movie_translator"]
 
 [dependency-groups]
 dev = ["ruff~=0.14", "pytest~=8.0", "pytest-xdist~=3.5", "pytest-cov~=6.0", "pytest-asyncio>=0.24", "ty"]
+# `uv sync --group benchmarks` to install scoring deps used by
+# benchmarks/onepiece/strategies.py. Kept out of runtime + dev groups so
+# the production install stays lean.
+benchmarks = ["sacrebleu~=2.6"]
 
 [tool.ruff]
 line-length = 100

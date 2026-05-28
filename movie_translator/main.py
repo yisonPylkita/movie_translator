@@ -8,6 +8,10 @@ def main():
         from .commands.extract_cmd import run
 
         run(sys.argv[2:])
+    elif len(sys.argv) > 1 and sys.argv[1] == 'iphone':
+        from .commands.iphone_cmd import run
+
+        run(sys.argv[2:])
     else:
         from .commands.translate_cmd import run
 
