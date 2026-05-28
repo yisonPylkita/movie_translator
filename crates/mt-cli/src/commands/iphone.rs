@@ -1,8 +1,7 @@
 //! `iphone` subcommand: remux MKV -> iPhone-compatible MP4 in place.
 //!
 //! Port of `movie_translator/commands/iphone_cmd.py` plus the
-//! `movie_translator/iphone/{converter,zip_packer}.py` modules it depends on
-//! (those were not previously ported to any crate, so they are ported inline
+//! `movie_translator/iphone/converter.py` module it depends on (ported inline
 //! here, behavior-preserving).
 
 use std::path::{Path, PathBuf};
@@ -34,11 +33,6 @@ pub struct IphoneArgs {
     /// Probe and skip-check only.
     #[arg(long = "dry-run", default_value_t = false)]
     pub dry_run: bool,
-
-    /// After conversion, pack all .mp4 outputs into <input>.zip and delete the
-    /// intermediate .mp4 files.
-    #[arg(long = "zip", default_value_t = false)]
-    pub do_zip: bool,
 
     #[arg(long, short = 'v', default_value_t = false)]
     pub verbose: bool,
@@ -391,16 +385,14 @@ pub async fn run(args: IphoneArgs) -> Result<i32> {
     }
 
     let mkv_files = find_mkvs(&input_path);
-    if mkv_files.is_empty() && !args.do_zip {
+    if mkv_files.is_empty() {
         eprintln!("No .mkv files found in {}", input_path.display());
         return Ok(if input_path.is_dir() { 0 } else { 1 });
     }
 
-    if !mkv_files.is_empty() {
-        let removed = cleanup_orphans(&mkv_files);
-        if removed > 0 {
-            eprintln!("Cleaned up {removed} orphan .converting.mp4 file(s) from a prior run");
-        }
+    let removed = cleanup_orphans(&mkv_files);
+    if removed > 0 {
+        eprintln!("Cleaned up {removed} orphan .converting.mp4 file(s) from a prior run");
     }
 
     let workers = if args.workers > 0 {
@@ -409,72 +401,14 @@ pub async fn run(args: IphoneArgs) -> Result<i32> {
         (mkv_files.len().max(1) as u32).min(4)
     };
 
-    let mut fail = 0usize;
-    if !mkv_files.is_empty() {
-        eprintln!(
-            "Converting {} file(s) -> MP4 in place (workers={workers})",
-            mkv_files.len()
-        );
-        let results = run_conversions(mkv_files, workers, args.dry_run).await;
-        let (_, _, f) = print_summary(&results);
-        fail = f;
-    }
-
-    if args.do_zip {
-        if args.dry_run {
-            eprintln!("--dry-run: skipping zip packing");
-            return Ok(0);
-        }
-        if !input_path.is_dir() {
-            eprintln!("--zip requires a directory as input");
-            return Ok(1);
-        }
-        let mut mp4_files: Vec<PathBuf> = walk_mp4s(&input_path);
-        mp4_files.sort();
-        if mp4_files.is_empty() {
-            eprintln!("No .mp4 files to pack");
-            return Ok(0);
-        }
-        eprintln!(
-            "Packing {} file(s) into a store-only zip...",
-            mp4_files.len()
-        );
-        let zip_path = crate::commands::zip_store::pack_and_clean(&input_path, &mp4_files)
-            .context("packing converted MP4s into a store-only zip")?;
-        eprintln!("✓ Zip created: {}", zip_path.display());
-    }
+    eprintln!(
+        "Converting {} file(s) -> MP4 in place (workers={workers})",
+        mkv_files.len()
+    );
+    let results = run_conversions(mkv_files, workers, args.dry_run).await;
+    let (_, _, fail) = print_summary(&results);
 
     Ok(if fail > 0 { 1 } else { 0 })
-}
-
-/// Recursively collect `.mp4` files under `dir`, skipping any path component
-/// that starts with a dot (mirrors the Python rglob + hidden-part filter).
-fn walk_mp4s(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut stack = vec![dir.to_path_buf()];
-    while let Some(d) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&d) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if name.starts_with('.') {
-                continue;
-            }
-            if path.is_dir() {
-                stack.push(path);
-            } else if path
-                .extension()
-                .map(|e| e.eq_ignore_ascii_case("mp4"))
-                .unwrap_or(false)
-            {
-                out.push(path);
-            }
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -493,14 +427,12 @@ mod tests {
         assert_eq!(args.input, "/movies");
         assert_eq!(args.workers, 0);
         assert!(!args.dry_run);
-        assert!(!args.do_zip);
         assert!(!args.verbose);
     }
 
     #[test]
-    fn zip_and_dry_run_flags() {
-        let args = parse(&["/movies", "--zip", "--dry-run", "--workers", "2"]);
-        assert!(args.do_zip);
+    fn dry_run_and_workers_flags() {
+        let args = parse(&["/movies", "--dry-run", "--workers", "2"]);
         assert!(args.dry_run);
         assert_eq!(args.workers, 2);
     }
