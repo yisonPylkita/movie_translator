@@ -11,7 +11,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 ttf-parser = "0.25"
-dirs = "5"
+dirs = "6"
 tempfile = "3"
 tracing = { workspace = true }
 
