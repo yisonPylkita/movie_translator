@@ -243,7 +243,9 @@ class SubtitleTranslator:
     def _encode_texts(self, texts: list[str]) -> dict:
         if self.tokenizer is None:
             raise RuntimeError('Tokenizer not loaded — call load_model() first')
-        encoded = self.tokenizer.batch_encode_plus(
+        # transformers 5 removed the deprecated `batch_encode_plus`; the
+        # tokenizer's __call__ takes the same arguments and handles batches.
+        encoded = self.tokenizer(
             texts,
             return_tensors='pt',
             padding=True,

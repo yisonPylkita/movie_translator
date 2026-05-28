@@ -64,7 +64,9 @@ def model_and_tokenizer():
 def translate(tokenizer, model, device, texts: list[str], max_new_tokens: int = 128) -> list[str]:
     """Translate texts using the BiDi model."""
     prefixed = [f'>>pol<< {t}' for t in texts]
-    encoded = tokenizer.batch_encode_plus(
+    # transformers 5 removed `batch_encode_plus`; the tokenizer __call__ is the
+    # supported equivalent.
+    encoded = tokenizer(
         prefixed,
         return_tensors='pt',
         padding=True,

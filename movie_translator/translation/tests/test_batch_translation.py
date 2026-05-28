@@ -30,7 +30,7 @@ class TestBatchTranslation:
             batch_index[0] += 1
             return result
 
-        translator.tokenizer.batch_encode_plus.side_effect = mock_encode
+        translator.tokenizer.side_effect = mock_encode
         translator.model.generate.side_effect = mock_generate
         translator.tokenizer.batch_decode.side_effect = mock_decode
 
@@ -64,7 +64,7 @@ class TestBatchTranslation:
             batch_index[0] += 1
             return result
 
-        translator.tokenizer.batch_encode_plus.side_effect = mock_encode
+        translator.tokenizer.side_effect = mock_encode
         translator.model.generate.side_effect = mock_generate
         translator.tokenizer.batch_decode.side_effect = mock_decode
 
@@ -96,7 +96,7 @@ class TestBatchTranslation:
             batch_index[0] += 1
             return result
 
-        translator.tokenizer.batch_encode_plus.side_effect = mock_encode
+        translator.tokenizer.side_effect = mock_encode
         translator.model.generate.side_effect = mock_generate
         translator.tokenizer.batch_decode.side_effect = mock_decode
 
@@ -129,7 +129,7 @@ class TestBatchTranslation:
             batch_index[0] += 1
             return result
 
-        translator.tokenizer.batch_encode_plus.side_effect = mock_encode
+        translator.tokenizer.side_effect = mock_encode
         translator.model.generate.side_effect = mock_generate
         translator.tokenizer.batch_decode.side_effect = mock_decode
 
@@ -145,7 +145,7 @@ class TestBatchTranslation:
         translator.tokenizer = MagicMock()
         translator.model = MagicMock()
 
-        translator.tokenizer.batch_encode_plus.return_value = {'input_ids': MagicMock()}
+        translator.tokenizer.return_value = {'input_ids': MagicMock()}
         translator.model.generate.return_value = MagicMock()
         translator.tokenizer.batch_decode.return_value = ['Pojedyncza linia.']
 
@@ -192,7 +192,7 @@ class TestBatchTranslation:
             batch_index[0] += 1
             return result
 
-        translator.tokenizer.batch_encode_plus.side_effect = mock_encode
+        translator.tokenizer.side_effect = mock_encode
         translator.model.generate.side_effect = mock_generate
         translator.tokenizer.batch_decode.side_effect = mock_decode
 
@@ -232,7 +232,7 @@ class TestSentenceMerging:
             # Return a translation for the single merged unit
             return ['Imperium wypowiedzialo wojne.']
 
-        translator.tokenizer.batch_encode_plus.side_effect = mock_encode
+        translator.tokenizer.side_effect = mock_encode
         translator.model.generate.side_effect = mock_generate
         translator.tokenizer.batch_decode.side_effect = mock_decode
 
@@ -268,7 +268,7 @@ class TestSentenceMerging:
             # in one batch and must return 2 translations.
             return ['- Pojde.', '- Nie, zostań!']
 
-        translator.tokenizer.batch_encode_plus.side_effect = mock_encode
+        translator.tokenizer.side_effect = mock_encode
         translator.model.generate.side_effect = mock_generate
         translator.tokenizer.batch_decode.side_effect = mock_decode
 
