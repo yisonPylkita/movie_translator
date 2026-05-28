@@ -97,7 +97,7 @@ pub fn compute_napiprojekt_hash(path: &Path) -> Result<String> {
     let mut hasher = Md5::new();
     hasher.update(&buf);
     let result = hasher.finalize();
-    Ok(format!("{:x}", result))
+    Ok(result.iter().map(|b| format!("{b:02x}")).collect())
 }
 
 #[cfg(test)]

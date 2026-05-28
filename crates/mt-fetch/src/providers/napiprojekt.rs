@@ -26,7 +26,11 @@ pub fn compute_token(file_hash: &str) -> String {
     let input = format!("{MAGIC_PREFIX}{file_hash}");
     let mut hasher = Md5::new();
     hasher.update(input.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 /// Build the POST form body for the NapiProjekt API.

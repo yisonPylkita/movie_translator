@@ -14,7 +14,7 @@ thiserror = { version = "2" }
 reqwest = { version = "0.12", features = ["blocking", "cookies", "rustls-tls", "json"], default-features = false }
 scraper = "0.20"
 quick-xml = { version = "0.36" }
-md-5 = "0.10"
+md-5 = "0.11"
 zip = "2"
 regex = "1"
 tracing = "0.1"
