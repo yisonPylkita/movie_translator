@@ -1,7 +1,7 @@
 [project]
 name = "movie-translator"
 version = "1.0.0"
-description = "AI-powered subtitle translator for video files (English → Polish)"
+description = "ML backend (translation, OCR, inpainting, filename parsing) for the movie-translator Rust CLI"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10,<3.15"
@@ -9,8 +9,7 @@ authors = [{ name = "Movie Translator Team" }]
 keywords = ["subtitles", "translation", "video", "mkv", "mp4", "ai", "polish"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "Environment :: Console",
-    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
@@ -50,7 +49,7 @@ build-backend = "hatchling.build"
 packages = ["movie_translator"]
 
 [dependency-groups]
-dev = ["ruff>=0.14", "pytest>=9.0", "pytest-xdist>=3.5", "pytest-cov>=6.0", "pytest-asyncio>=0.24", "ty"]
+dev = ["ruff>=0.14", "pytest>=9.0", "pytest-xdist>=3.5", "pytest-asyncio>=0.24", "ty"]
 # `uv sync --group benchmarks` to install scoring deps used by
 # benchmarks/onepiece/strategies.py. Kept out of runtime + dev groups so
 # the production install stays lean.
@@ -73,25 +72,14 @@ indent-style = "space"
 quote-style = "single"
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "movie_translator"]
+testpaths = ["movie_translator"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
-addopts = "-n auto --cov=movie_translator --cov-report=term-missing:skip-covered"
+addopts = "-n auto"
 asyncio_mode = "auto"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks integration tests requiring FFmpeg",
-]
-
-[tool.coverage.run]
-source = ["movie_translator"]
-omit = ["*/tests/*"]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "if __name__ == .__main__.",
-    "if TYPE_CHECKING:",
 ]
 
 [tool.ty.src]
