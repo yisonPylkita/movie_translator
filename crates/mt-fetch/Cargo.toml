@@ -13,7 +13,7 @@ serde_json = { workspace = true }
 thiserror = { version = "2" }
 reqwest = { version = "0.12", features = ["blocking", "cookies", "rustls-tls", "json"], default-features = false }
 scraper = "0.20"
-quick-xml = { version = "0.36" }
+quick-xml = { version = "0.40" }
 md-5 = "0.11"
 zip = "2"
 regex = "1"

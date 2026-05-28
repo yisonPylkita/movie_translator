@@ -57,6 +57,20 @@ pub struct PodnapisiSubtitle {
 ///   </subtitle>
 /// </results>
 /// ```
+/// Append decoded text to the field matching the currently open tag.
+///
+/// Uses `+=` rather than assignment because a single element's character data
+/// can be split across multiple events (plain text plus resolved entity
+/// references) in quick-xml >= 0.37.
+fn append_to_field(sub: &mut PodnapisiSubtitle, tag: &str, text: &str) {
+    match tag {
+        "id" => sub.id.push_str(text),
+        "language" => sub.language.push_str(text),
+        "release" => sub.release.push_str(text),
+        _ => {}
+    }
+}
+
 pub fn parse_xml_response(xml: &str) -> Result<Vec<PodnapisiSubtitle>, FetchError> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
@@ -83,13 +97,25 @@ pub fn parse_xml_response(xml: &str) -> Result<Vec<PodnapisiSubtitle>, FetchErro
             }
             Ok(Event::Text(e)) => {
                 if let Some(ref mut sub) = current {
-                    let text = e.unescape().unwrap_or_default().to_string();
-                    match current_tag.as_str() {
-                        "id" => sub.id = text,
-                        "language" => sub.language = text,
-                        "release" => sub.release = text,
-                        _ => {}
-                    }
+                    let text = e.decode().unwrap_or_default();
+                    append_to_field(sub, &current_tag, &text);
+                }
+            }
+            // quick-xml >= 0.37 surfaces entity references (`&amp;` etc.) as
+            // separate `GeneralRef` events instead of unescaping them inline
+            // within `Text`. Resolve the predefined XML entities and append so
+            // the field text matches the old `unescape()` behavior.
+            Ok(Event::GeneralRef(e)) => {
+                if let Some(ref mut sub) = current {
+                    let resolved = if let Some(c) = e.resolve_char_ref().ok().flatten() {
+                        c.to_string()
+                    } else {
+                        let name = e.decode().unwrap_or_default();
+                        quick_xml::escape::resolve_predefined_entity(&name)
+                            .unwrap_or("")
+                            .to_string()
+                    };
+                    append_to_field(sub, &current_tag, &resolved);
                 }
             }
             Ok(Event::End(e)) => {
