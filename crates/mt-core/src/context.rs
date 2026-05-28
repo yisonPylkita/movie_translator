@@ -144,7 +144,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pipeline_config_default_matches_python() {
+    fn config_defaults() {
         let cfg = PipelineConfig::default();
         assert_eq!(cfg.device, "mps");
         assert_eq!(cfg.batch_size, 16);

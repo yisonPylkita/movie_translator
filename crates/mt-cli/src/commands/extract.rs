@@ -342,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_match_python() {
+    fn defaults() {
         let args = parse(&["/movies"]);
         assert_eq!(args.input, "/movies");
         assert!(args.output.is_none());

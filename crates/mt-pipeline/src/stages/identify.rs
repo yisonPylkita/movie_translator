@@ -26,7 +26,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn name_matches_python() {
+    fn name() {
         assert_eq!(NAME, "identify");
     }
 }

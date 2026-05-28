@@ -463,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn file_status_strings_match_python() {
+    fn file_status_strings() {
         assert_eq!(FileStatus::Success.as_str(), "success");
         assert_eq!(FileStatus::Failed.as_str(), "failed");
         assert_eq!(FileStatus::Skipped.as_str(), "skipped");

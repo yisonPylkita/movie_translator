@@ -290,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_match_python_argparse() {
+    fn defaults() {
         let args = parse(&["movie.mkv"]);
         assert_eq!(args.input, "movie.mkv");
         assert_eq!(args.batch_size, 16);

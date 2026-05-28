@@ -418,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_match_python() {
+    fn defaults() {
         let args = parse(&["/movies"]);
         assert_eq!(args.input, "/movies");
         assert_eq!(args.workers, 0);
