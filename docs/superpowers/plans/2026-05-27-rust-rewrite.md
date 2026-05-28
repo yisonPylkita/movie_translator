@@ -191,10 +191,10 @@ Reference: `movie_translator/{pipeline.py,async_pipeline.py,gpu_queue.py,progres
 Reference: `movie_translator/{main.py}`, `commands/*`.
 
 ### Task 8.1: CLI args (clap)
-- [ ] Port arg parsing for `translate`, `extract`, `iphone` subcommands matching `commands/*` + `main.py`. Test parsing → config. Commit.
+- [ ] Port arg parsing for `translate`, `extract` subcommands matching `commands/*` + `main.py`. Test parsing → config. Commit.
 
 ### Task 8.2: Commands
-**Reference:** `commands/{translate_cmd.py,extract_cmd.py,iphone_cmd.py,common.py}`.
+**Reference:** `commands/{translate_cmd.py,extract_cmd.py,common.py}`.
 - [ ] Port each command to invoke mt-pipeline. Commit per command.
 
 ### Task 8.3: Progress display (TUI)

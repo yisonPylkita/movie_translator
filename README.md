@@ -18,7 +18,7 @@ Takes video files (MKV or MP4) and produces new video files with as many Polish 
 6. **Translates** with AI as a fallback when no Polish subtitles are found online
 7. **Muxes** everything back into the video — all Polish tracks plus the original English
 
-There is also a standalone **extract** command for pulling subtitles out of videos (text tracks and burned-in OCR) without translating, and an **iphone** command for remuxing MKVs into iPhone-compatible MP4s.
+There is also a standalone **extract** command for pulling subtitles out of videos (text tracks and burned-in OCR) without translating.
 
 ### Subtitle Sources
 
@@ -104,15 +104,7 @@ movie-translator ~/Downloads/english_version --external-subs ~/Downloads/polish_
 
 The extract command outputs SRT files and a `manifest.json` that the translate command uses for matching by media identity (title + season + episode).
 
-### 4. iPhone Remux
-
-Remux MKVs into iPhone-compatible MP4s in place (stream-copy only, no transcode — keeps the Japanese audio and Polish subtitle tracks):
-
-```bash
-movie-translator iphone ~/Downloads/anime
-```
-
-### 5. Common Options
+### 4. Common Options
 
 ```bash
 # Preview without modifying originals

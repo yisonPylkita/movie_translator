@@ -1,7 +1,7 @@
 //! `movie-translator` binary entry point.
 //!
 //! Routes the first argument to a subcommand — `extract` → extract,
-//! `iphone` → iphone, anything else → the default translate command.
+//! anything else → the default translate command.
 //!
 //! Uses a multi-threaded tokio runtime: `run_all` overlaps file IO/CPU work
 //! across worker threads while serialising GPU work on a single worker.
@@ -9,7 +9,7 @@
 use anyhow::Result;
 use clap::Parser;
 
-use mt_cli::commands::{extract, iphone, translate};
+use mt_cli::commands::{extract, translate};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
@@ -26,10 +26,6 @@ async fn main() {
             // clap parses argv[0] (prog) + the args after `extract`.
             let args = parse_or_exit::<extract::ExtractArgs>(&argv, 2, "extract");
             extract::run(args).await
-        }
-        Some("iphone") => {
-            let args = parse_or_exit::<iphone::IphoneArgs>(&argv, 2, "iphone");
-            iphone::run(args).await
         }
         _ => {
             // Default = translate. Parse the full argv (no subcommand to skip).
