@@ -25,4 +25,4 @@ encoding_rs = "0.8"
 tempfile = "3"
 
 [dependencies.ndarray]
-version = "0.16"
+version = "0.17"
