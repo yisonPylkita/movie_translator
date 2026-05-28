@@ -82,7 +82,7 @@ pub struct GpuWorker {
 
 impl GpuWorker {
     /// Spawn a worker that executes jobs via `DirectGpuExecutor`
-    /// (the real `mt_ml` helper scripts).
+    /// (the real `mt_ml` embedded-Python calls).
     pub fn spawn() -> Self {
         Self::spawn_with(DirectGpuExecutor::new())
     }
@@ -126,7 +126,7 @@ impl GpuWorker {
                 };
                 let exec = executor.clone();
                 // spawn_blocking because the underlying `mt_ml` calls are
-                // blocking subprocess spawns.
+                // synchronous PyO3 (GIL-acquiring) calls into embedded CPython.
                 let _ = tokio::task::spawn_blocking(move || run_job(exec.as_ref(), job)).await;
             }
         });

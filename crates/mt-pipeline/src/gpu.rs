@@ -1,7 +1,7 @@
 //! GPU work abstraction and deferred-OCR resolution.
 //!
-//! GPU-bound work (translation, OCR, inpainting) is performed by the ML helper
-//! scripts via the [`mt_ml`] crate. To keep stages testable and to serialise
+//! GPU-bound work (translation, OCR, inpainting) is performed by the embedded
+//! CPython interpreter via the [`mt_ml`] crate. To keep stages testable and to serialise
 //! GPU access, stages never call these functions directly: they either go
 //! through a [`GpuExecutor`] or record a [`mt_core::PendingOcr`] for the
 //! orchestrator to resolve later.

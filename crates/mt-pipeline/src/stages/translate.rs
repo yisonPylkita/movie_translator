@@ -365,7 +365,8 @@ mod tests {
     }
 
     /// Integration test: translate via the real `DirectGpuExecutor`, which
-    /// drives `ml/translate.py`. Live model load → `#[ignore]`.
+    /// calls the embedded Python translator through PyO3. Live model load →
+    /// `#[ignore]`.
     #[test]
     #[ignore = "requires translation model"]
     fn run_via_direct_executor() {
