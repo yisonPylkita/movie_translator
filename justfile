@@ -3,6 +3,12 @@
 # `just` is the entry point for everything: setup, build, run, tests, lint.
 # Run `just` (or `just --list`) to see every available recipe.
 
+# PyO3 needs to know which Python interpreter to embed at build time. We
+# point it at the uv-managed venv so the embedded interpreter sees the same
+# packages the Python code uses (torch, transformers, guessit, …).
+# `just deps` creates the venv before any build runs.
+export PYO3_PYTHON := justfile_directory() + "/.venv/bin/python"
+
 default:
     @just --list
 
@@ -34,7 +40,8 @@ model:
 # ─── Build ─────────────────────────────────────────────────────────────────
 
 # Build the release binary + the vendored ilass alignment engine.
-build:
+# Depends on `deps` so the venv exists before cargo links against libpython.
+build: deps
     cargo build --release --bin movie-translator
     cd vendor/ilass && cargo build --release
 
@@ -55,7 +62,7 @@ extract input *args:
 # ─── Tests + lint ──────────────────────────────────────────────────────────
 
 # Run the Rust test suite. Usage: `just test [extra cargo-test args]`
-test *args:
+test *args: deps
     cargo test --workspace {{ args }}
 
 # Run the Python ML-backend test suite.
@@ -63,17 +70,17 @@ py-test *args:
     uv run pytest -o addopts="" movie_translator {{ args }}
 
 # Lint + format check, no modifications (mirrors CI).
-check:
+check: deps
     cargo clippy --workspace --all-targets -- -D warnings
     cargo fmt --check
-    uv run ruff check ml/ movie_translator/
+    uv run ruff check movie_translator/
 
 # Auto-fix lint + format issues (Rust + Python).
-lint:
+lint: deps
     cargo clippy --workspace --all-targets --fix --allow-dirty --allow-staged -- -D warnings
     cargo fmt
-    uv run ruff check --fix ml/ movie_translator/
-    uv run ruff format ml/ movie_translator/
+    uv run ruff check --fix movie_translator/
+    uv run ruff format movie_translator/
 
 # All checks + all tests (CI equivalent).
 ci: check test

@@ -14,6 +14,14 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-26]
 
+    env:
+      # PyO3 embeds CPython into the binary. It needs to know which Python
+      # interpreter to link against at build time; we point it at the uv-managed
+      # venv so the embedded interpreter sees the same packages the Python code
+      # uses (torch, transformers, guessit, ...). The venv is created by
+      # `uv sync` below, before any cargo command runs.
+      PYO3_PYTHON: ${{ github.workspace }}/.venv/bin/python
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,10 +37,6 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
 
-      # Python is needed at test time: a handful of Rust integration tests spawn
-      # the ml/ CLI scripts (filename parsing via guessit/aniparse, and the
-      # ml/*.py --self-test contract round-trips). Heavy ML deps (torch) are only
-      # used by #[ignore]'d tests, which do not run in CI.
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
@@ -42,6 +46,9 @@ jobs:
       - name: Set up Python 3.14
         run: uv python install 3.14
 
+      # `uv sync` creates `.venv/` and installs runtime + dev deps. This MUST
+      # run before any cargo command — PyO3 reads `PYO3_PYTHON` (the venv's
+      # python) at link time and the venv must exist.
       - name: Install Python ML-backend deps
         run: uv sync --group dev
         env:
@@ -59,5 +66,5 @@ jobs:
       - name: Run Rust tests
         run: cargo test --workspace
 
-      - name: Ruff (ml/ scripts)
-        run: uv run ruff check ml/
+      - name: Ruff (movie_translator package)
+        run: uv run ruff check movie_translator/
