@@ -4,9 +4,11 @@
 
 pub mod commands;
 pub mod common;
-pub mod progress;
+pub mod tui;
 
 use std::sync::Once;
+
+use mt_pipeline::ProgressSender;
 
 static TRACING_INIT: Once = Once::new();
 
@@ -41,18 +43,47 @@ fn default_filter(verbose: bool) -> String {
 /// Initialise the tracing subscriber once. `verbose` raises our crates to DEBUG.
 ///
 /// Logs go to stderr so stdout stays clean for the summary line. Uses an
-/// `EnvFilter` so
-/// third-party crates stay capped at `warn` (no html5ever/hyper/rustls DEBUG
-/// flood under `-v`); honours a `RUST_LOG` override.
+/// `EnvFilter` so third-party crates stay capped at `warn` (no
+/// html5ever/hyper/rustls DEBUG flood under `-v`); honours a `RUST_LOG`
+/// override.
 pub fn init_tracing(verbose: bool) {
+    init_tracing_with(verbose, None);
+}
+
+/// Like [`init_tracing`] but also installs a [`tui::TuiTracingLayer`] that
+/// forwards tracing events into the TUI's progress channel as `Log` events.
+///
+/// Without a TUI sender this is identical to [`init_tracing`]: stderr-only,
+/// info/debug filtered as configured. With a TUI sender, tracing events ALSO
+/// reach the TUI's log pane (the fmt-stderr layer is dropped when the TUI is
+/// active to avoid double-painting the alternate screen).
+pub fn init_tracing_with(verbose: bool, tui_sender: Option<ProgressSender>) {
     TRACING_INIT.call_once(|| {
+        use tracing_subscriber::prelude::*;
+
         let filter = tracing_subscriber::EnvFilter::try_from_default_env()
             .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_filter(verbose)));
-        let _ = tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .with_writer(std::io::stderr)
-            .with_target(false)
-            .try_init();
+
+        match tui_sender {
+            Some(sender) => {
+                // TUI-active mode: send tracing into the TUI log pane ONLY.
+                // Writing to stderr concurrently with the alternate-screen
+                // ratatui draws would paint over the TUI.
+                let layer = tui::TuiTracingLayer::new(sender);
+                let _ = tracing_subscriber::registry()
+                    .with(filter)
+                    .with(layer)
+                    .try_init();
+            }
+            None => {
+                // Headless / plain mode: keep the fmt-stderr layer.
+                let _ = tracing_subscriber::fmt()
+                    .with_env_filter(filter)
+                    .with_writer(std::io::stderr)
+                    .with_target(false)
+                    .try_init();
+            }
+        }
     });
 }
 

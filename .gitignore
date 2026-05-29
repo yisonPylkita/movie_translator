@@ -44,3 +44,6 @@ movie_translator/translation/swift/translate_bridge
 *.mp4
 *.avi
 benchmarks/onepiece/
+
+# Rust build artifacts
+target/

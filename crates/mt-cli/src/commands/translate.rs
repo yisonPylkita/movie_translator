@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use mt_core::PipelineConfig;
 use mt_discovery::find_videos;
-use mt_pipeline::{run_all, FileStatus};
+use mt_pipeline::{run_all_with_progress, FileStatus, ProgressSender};
 
 use crate::common::{check_dependencies, resolve_models};
-use crate::progress::Progress;
+use crate::tui::{python_stderr_capture_path, spawn_tui, stdout_is_tty};
 
 /// Default device per platform — `mps` on macOS, `cpu` elsewhere.
 fn default_device() -> String {
@@ -188,8 +188,6 @@ pub fn cleanup_in_place_orphans(video_files: &[PathBuf]) -> usize {
 pub async fn run(args: TranslateArgs) -> anyhow::Result<i32> {
     use anyhow::Context;
 
-    crate::init_tracing(args.verbose);
-
     warn_unimplemented_metrics(args.metrics);
 
     let (model, extra_models) = resolve_models(args.model.as_deref());
@@ -237,46 +235,55 @@ pub async fn run(args: TranslateArgs) -> anyhow::Result<i32> {
 
     let config = args.to_config(model, extra_models);
 
-    let progress = Progress::new(video_files.len() as u64);
-    for vp in &video_files {
-        progress.start_file(&display_name(vp, &root_dir));
+    // Wire up the TUI: a bounded mpsc carries ProgressEvents from the pipeline
+    // (and tracing events via the TuiTracingLayer) to a renderer thread. In
+    // plain (no-TTY) mode the same channel is drained by a one-line-per-event
+    // printer instead.
+    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let sender = ProgressSender::new(event_tx);
+
+    // Tracing must be initialised AFTER the sender exists so the layer can
+    // ship into the channel. Once a TUI sender is supplied, tracing skips the
+    // fmt-stderr layer to avoid clobbering the alternate screen.
+    let interactive = stdout_is_tty();
+    if interactive {
+        crate::init_tracing_with(args.verbose, Some(sender.clone()));
+    } else {
+        crate::init_tracing(args.verbose);
     }
 
-    let results = match run_all(video_files, root_dir, config).await {
+    let python_log_path = python_stderr_capture_path(&root_dir);
+    let tui = spawn_tui(event_rx, python_log_path.clone(), !interactive);
+
+    let result = run_all_with_progress(video_files, root_dir.clone(), config, sender.clone()).await;
+
+    // Drop the sender so the TUI's receiver hits EOF and the renderer exits.
+    drop(sender);
+
+    let results = match result {
         Ok(r) => r,
         Err(e) => {
-            progress.finish();
-            // Propagate with context so `main` prints the full chain, including
-            // the structured PipelineError cause from the libraries.
+            // Tear the TUI down before printing the error so the chain isn't
+            // hidden behind the alternate-screen.
+            let _ = tui.join();
             return Err(e).context("running the translation pipeline");
         }
     };
 
-    for (vp, status) in &results {
-        progress.finish_file(
-            &vp.file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default(),
-            status.as_str(),
-        );
-    }
-    progress.finish();
+    // Wait for the TUI to drain remaining events and tear itself down.
+    let _ = tui.join();
 
     let summary = format_summary(&results, args.dry_run);
     if !summary.is_empty() {
         println!("{summary}");
     }
+    // Best-effort hint about the python stderr capture file.
+    if python_log_path.exists() {
+        eprintln!("python stderr captured at: {}", python_log_path.display());
+    }
 
     let any_failed = results.iter().any(|(_, s)| *s == FileStatus::Failed);
     Ok(if any_failed { 1 } else { 0 })
-}
-
-fn display_name(video_path: &Path, root_dir: &Path) -> String {
-    video_path
-        .strip_prefix(root_dir)
-        .unwrap_or(video_path)
-        .to_string_lossy()
-        .to_string()
 }
 
 #[cfg(test)]
