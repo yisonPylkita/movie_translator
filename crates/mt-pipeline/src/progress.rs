@@ -68,10 +68,21 @@ impl FinishStatus {
 pub enum ProgressEvent {
     /// Static list of files the run will attempt — emitted once at the start
     /// of `run_all`. The TUI uses this to pre-populate "queued" rows.
-    Queued { files: Vec<PathBuf> },
-    FileStarted { path: PathBuf },
-    StageEntered { path: PathBuf, stage: Stage },
-    OcrProgress { path: PathBuf, done: u64, total: u64 },
+    Queued {
+        files: Vec<PathBuf>,
+    },
+    FileStarted {
+        path: PathBuf,
+    },
+    StageEntered {
+        path: PathBuf,
+        stage: Stage,
+    },
+    OcrProgress {
+        path: PathBuf,
+        done: u64,
+        total: u64,
+    },
     FetchResult {
         path: PathBuf,
         candidates_found: u32,
@@ -89,7 +100,10 @@ pub enum ProgressEvent {
         target: String,
         message: String,
     },
-    FileFinished { path: PathBuf, status: FinishStatus },
+    FileFinished {
+        path: PathBuf,
+        status: FinishStatus,
+    },
 }
 
 /// Optional sink for `ProgressEvent`s.
@@ -188,6 +202,9 @@ mod tests {
         assert_eq!(FinishStatus::Success.as_str(), "success");
         assert_eq!(FinishStatus::Failed.as_str(), "failed");
         assert_eq!(FinishStatus::Skipped.as_str(), "skipped");
-        assert_eq!(FinishStatus::SkippedNoSubs.as_str(), "skipped (no subtitles)");
+        assert_eq!(
+            FinishStatus::SkippedNoSubs.as_str(),
+            "skipped (no subtitles)"
+        );
     }
 }

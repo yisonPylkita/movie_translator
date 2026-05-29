@@ -437,10 +437,7 @@ async fn run_all_with_executor(
             // On success OR a no-subs skip the file's work dir is empty/junk —
             // remove it (unless --keep-artifacts). Genuine failures keep the
             // dir around for debugging.
-            let cleanup = matches!(
-                outcome,
-                FileOutcome::Success | FileOutcome::SkippedNoSubs
-            );
+            let cleanup = matches!(outcome, FileOutcome::Success | FileOutcome::SkippedNoSubs);
             if cleanup && !keep_artifacts {
                 cleanup_work_dir(&work_dir, &root_dir);
             }
@@ -448,9 +445,7 @@ async fn run_all_with_executor(
             let (status, finish_status) = match outcome {
                 FileOutcome::Success => (FileStatus::Success, FinishStatus::Success),
                 FileOutcome::Failed => (FileStatus::Failed, FinishStatus::Failed),
-                FileOutcome::SkippedNoSubs => {
-                    (FileStatus::Skipped, FinishStatus::SkippedNoSubs)
-                }
+                FileOutcome::SkippedNoSubs => (FileStatus::Skipped, FinishStatus::SkippedNoSubs),
             };
             progress.send(ProgressEvent::FileFinished {
                 path: video_path.clone(),
@@ -827,14 +822,10 @@ mod tests {
         };
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let sender = ProgressSender::new(tx);
-        let results = run_all_with_progress(
-            files.clone(),
-            dir.path().to_path_buf(),
-            config,
-            sender,
-        )
-        .await
-        .unwrap();
+        let results =
+            run_all_with_progress(files.clone(), dir.path().to_path_buf(), config, sender)
+                .await
+                .unwrap();
         assert_eq!(results.len(), 3);
 
         // Drain the channel.
@@ -884,9 +875,7 @@ mod tests {
         let (file_status, finish_status) = match FileOutcome::SkippedNoSubs {
             FileOutcome::Success => (FileStatus::Success, FinishStatus::Success),
             FileOutcome::Failed => (FileStatus::Failed, FinishStatus::Failed),
-            FileOutcome::SkippedNoSubs => {
-                (FileStatus::Skipped, FinishStatus::SkippedNoSubs)
-            }
+            FileOutcome::SkippedNoSubs => (FileStatus::Skipped, FinishStatus::SkippedNoSubs),
         };
         assert_eq!(file_status, FileStatus::Skipped);
         assert_eq!(finish_status, FinishStatus::SkippedNoSubs);

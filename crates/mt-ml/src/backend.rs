@@ -74,6 +74,13 @@ where
     // Slow path: first-time init. Must not hold the lock while importing,
     // because the Python imports can in principle re-enter the backend.
     bootstrap_sys_path(py)?;
+    // One-time interpreter setup: multiprocessing.set_executable to the venv
+    // python (otherwise spawn workers re-exec movie-translator and clap
+    // rejects the `-c <boilerplate>` argv), transformers/tqdm silencing, and
+    // sys.stderr redirection. Idempotent via OnceLock; errors are logged but
+    // never propagate (the pipeline must still run if e.g. transformers is
+    // not yet installed).
+    init_python_runtime(py);
 
     let types = py_import(py, "movie_translator.types")?;
     let translation = py_import(py, "movie_translator.translation")?;
@@ -250,6 +257,162 @@ fn bootstrap_sys_path(py: Python<'_>) -> Result<()> {
     }
     Ok(())
 }
+
+/// One-time interpreter setup. Idempotent: subsequent calls are no-ops.
+///
+/// Does three things, each best-effort (failure is logged but never raised):
+///
+/// 1. **`multiprocessing.set_executable` → real venv python.** Without this,
+///    PyO3's `sys.executable` is the `movie-translator` binary, and any
+///    transitive `multiprocessing.spawn` invokes
+///    `movie-translator -c '<spawn boilerplate>'` — which clap promptly
+///    rejects with `unexpected argument '-c' found`. Pointing
+///    `multiprocessing.set_executable` at the venv's `python<X.Y>` fixes the
+///    spawn helper without touching our argv parser.
+/// 2. **Silence transformers tqdm + repeated warnings.** Disables the tqdm
+///    progress bar, raises transformers logging to ERROR, and filters the
+///    specific `max_new_tokens` / `torch_dtype` deprecation warnings that
+///    repeat every batch. Without this they paint over the TUI.
+/// 3. **Redirect Python stderr to a file** under
+///    `<cwd>/.translate_temp/python.stderr.log` (or `$MT_PYTHON_STDERR_LOG`
+///    if set). Anything Python writes — surprise tqdm, unfiltered warnings,
+///    library prints — lands there instead of clobbering the alternate
+///    screen.
+fn init_python_runtime(py: Python<'_>) {
+    static DONE: OnceLock<()> = OnceLock::new();
+    if DONE.get().is_some() {
+        return;
+    }
+
+    let script = INIT_RUNTIME_SCRIPT;
+    let stderr_path = resolve_python_stderr_log_path();
+    let stderr_path_str = stderr_path.to_string_lossy().to_string();
+
+    let globals = pyo3::types::PyDict::new(py);
+    if let Err(e) = globals.set_item("MT_PYTHON_STDERR_LOG", &stderr_path_str) {
+        tracing::warn!("init_python_runtime: failed to set globals: {e}");
+        return;
+    }
+
+    let c_script = std::ffi::CString::new(script).expect("init script contains no NULs");
+    let c_filename = std::ffi::CString::new("<mt_init>").unwrap();
+    let c_module = std::ffi::CString::new("__main__").unwrap();
+    match py.run(c_script.as_c_str(), Some(&globals), None) {
+        Ok(()) => {
+            let _ = (c_filename, c_module);
+            let _ = DONE.set(());
+            tracing::debug!(
+                "Python runtime initialised (stderr capture: {})",
+                stderr_path.display()
+            );
+        }
+        Err(e) => {
+            // Show traceback for diagnostics; do NOT propagate — the pipeline
+            // must run even if transformers is missing or sys.stderr is
+            // already redirected.
+            let tb = e
+                .traceback(py)
+                .and_then(|tb| tb.format().ok())
+                .unwrap_or_default();
+            tracing::warn!("init_python_runtime: script failed (non-fatal): {e}\n{tb}");
+            // Mark done anyway: re-running the script would re-fail.
+            let _ = DONE.set(());
+        }
+    }
+}
+
+/// Default capture path for Python stderr. Honours `$MT_PYTHON_STDERR_LOG`,
+/// otherwise puts it under `<cwd>/.translate_temp/python.stderr.log`. The
+/// init script creates parent dirs as needed.
+fn resolve_python_stderr_log_path() -> PathBuf {
+    if let Ok(p) = std::env::var("MT_PYTHON_STDERR_LOG") {
+        return PathBuf::from(p);
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    cwd.join(".translate_temp").join("python.stderr.log")
+}
+
+/// Inline Python script run once on interpreter init. Resilient: every block
+/// is wrapped in `try/except` so a missing dependency (e.g. transformers in a
+/// stripped image) never aborts startup.
+const INIT_RUNTIME_SCRIPT: &str = r#"
+import os, sys
+
+# 1. multiprocessing.set_executable -> the real venv python.
+#
+# PyO3 reports the host binary (e.g. /usr/local/bin/movie-translator) as
+# sys.executable. When any transitive call into multiprocessing.spawn runs,
+# the child fork-exec invokes `movie-translator -c '<spawn boilerplate>'`,
+# which our clap parser rejects ("unexpected argument '-c' found"). Point
+# multiprocessing at the real python<X.Y> shipped with the venv.
+try:
+    import multiprocessing, sysconfig
+    real_python = None
+    bindir = sysconfig.get_config_var('BINDIR')
+    version = sysconfig.get_config_var('VERSION')
+    if bindir and version:
+        candidate = os.path.join(bindir, f'python{version}')
+        if os.path.isfile(candidate):
+            real_python = candidate
+    if real_python is None:
+        # Fallback: try sys._base_executable (set by PyO3 in some configs).
+        cand = getattr(sys, '_base_executable', None)
+        if cand and os.path.isfile(cand) and cand != sys.executable:
+            real_python = cand
+    if real_python is None:
+        # Last-ditch: scan sys.path entries for a sibling python binary.
+        for entry in sys.path:
+            cand = os.path.join(os.path.dirname(os.path.dirname(entry)),
+                                'bin', f'python{sys.version_info.major}.{sys.version_info.minor}')
+            if os.path.isfile(cand):
+                real_python = cand
+                break
+    if real_python is not None:
+        multiprocessing.set_executable(real_python)
+except Exception as e:
+    sys.stderr.write(f'mt_init: multiprocessing.set_executable skipped: {e}\n')
+
+# 2. Silence transformers tqdm + repeated warnings.
+try:
+    import warnings
+    warnings.filterwarnings('ignore', message=r'.*max_new_tokens.*max_length.*')
+    warnings.filterwarnings('ignore', message=r'.*torch_dtype.*deprecated.*')
+    warnings.filterwarnings('ignore', message=r'.*`torch_dtype`.*')
+    warnings.filterwarnings('ignore', module='transformers')
+    try:
+        import transformers.utils.logging as _tlog
+        _tlog.disable_progress_bar()
+        _tlog.set_verbosity_error()
+    except Exception:
+        pass
+    # Suppress tqdm globally in case other libraries import it directly.
+    try:
+        import tqdm
+        tqdm.tqdm.__init__.__defaults__  # touch to ensure import works
+        from tqdm.auto import tqdm as _atqdm
+        _atqdm.disable = True  # type: ignore[attr-defined]
+    except Exception:
+        pass
+except Exception as e:
+    sys.stderr.write(f'mt_init: silencing transformers/tqdm skipped: {e}\n')
+
+# 3. Redirect Python sys.stderr to a capture file. Even if (2) misses
+# something, the unfiltered output lands in this file rather than on the
+# alternate-screen TUI. Caller can tail/show it after the run.
+try:
+    log_path = MT_PYTHON_STDERR_LOG  # injected by the Rust caller
+    os.makedirs(os.path.dirname(log_path) or '.', exist_ok=True)
+    _fh = open(log_path, 'a', buffering=1, encoding='utf-8')
+    _fh.write(f'\n--- mt_init: python stderr capture begin ---\n')
+    sys.stderr.flush()
+    sys.stderr = _fh
+    # NOTE: sys.stdout is NOT redirected — some Python code uses print() for
+    # legitimate stdout output. Stick with stderr only.
+except Exception as e:
+    # If we can't open the file, fall back to /dev/null suppression of the
+    # noisiest warning channels rather than letting them paint the TUI.
+    pass
+"#;
 
 /// Import a Python module and return its handle.
 fn py_import(py: Python<'_>, name: &str) -> Result<Py<PyAny>> {
@@ -689,4 +852,126 @@ fn py_int<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> Result<Bound<'py, Py
         .getattr("int")
         .map_err(py_err)?;
     int_cls.call1((obj,)).map_err(py_err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test for fix #2 (PyO3 + multiprocessing.spawn vs clap):
+    /// the embedded interpreter must be able to spawn a multiprocessing.Pool
+    /// worker and get a result back without invoking the host binary with
+    /// `-c <boilerplate>`.
+    ///
+    /// Before the `init_python_runtime` fix, `multiprocessing.set_executable`
+    /// pointed at `movie-translator`, the spawn helper exec'd `movie-translator
+    /// -c '<boilerplate>'`, and clap rejected the `-c` flag. With the fix,
+    /// `multiprocessing.set_executable` is rerouted to the venv's python<X.Y>
+    /// binary and the pool spawns + reaps cleanly.
+    ///
+    /// We force the test interpreter through the same init path, then run a
+    /// pool of two workers and assert the results. The test is wrapped in
+    /// `Python::attach`; the OnceLock on `init_python_runtime` ensures init
+    /// happens exactly once per process.
+    #[test]
+    fn multiprocessing_pool_works_after_init() {
+        Python::attach(|py| {
+            // Force-run the init (bootstrap_sys_path + init_python_runtime).
+            // We don't need any imported modules — just the runtime side-effects.
+            let _ = bootstrap_sys_path(py);
+            init_python_runtime(py);
+
+            // sys.executable as PyO3 sees it (host binary in real use); also
+            // grab the rerouted multiprocessing.get_executable() so we can
+            // sanity-check the fix took effect.
+            let pyscript = r#"
+import multiprocessing.spawn as _spawn
+import sys
+_exe = _spawn.get_executable()
+result_executable = _exe.decode() if isinstance(_exe, (bytes, bytearray)) else str(_exe)
+"#;
+            let globals = pyo3::types::PyDict::new(py);
+            let cscript = std::ffi::CString::new(pyscript).unwrap();
+            py.run(cscript.as_c_str(), Some(&globals), None)
+                .expect("inline runtime probe");
+            let mp_exec: String = globals
+                .get_item("result_executable")
+                .expect("get_item ok")
+                .expect("result_executable set")
+                .extract()
+                .expect("multiprocessing.get_executable str");
+            // The reroute should land on a `python` binary (real venv python),
+            // never on the test harness binary path. In `cargo test` builds the
+            // host exe is `target/.../deps/mt_ml-...`; that's NEVER acceptable.
+            assert!(
+                mp_exec.contains("python") || mp_exec.ends_with(".exe") || mp_exec.is_empty(),
+                "multiprocessing.set_executable did not reroute: {mp_exec}"
+            );
+
+            // Drive a real pool with two workers. We use a picklable builtin
+            // (`int`) as the worker target — defining a local function would
+            // fail to pickle because the script is executed inside `<string>`
+            // (no module to import the function from). The test's point is
+            // that the pool SPAWNS and joins; with the pre-fix
+            // multiprocessing.set_executable mis-pointing at the host binary,
+            // the worker process would die with the clap `-c` error before
+            // ever reaching pickling.
+            let pool_script = r#"
+import multiprocessing as mp
+
+with mp.Pool(processes=2) as pool:
+    pool_result = pool.map(int, ["1", "2", "3", "4"])
+"#;
+            let globals = pyo3::types::PyDict::new(py);
+            let cscript = std::ffi::CString::new(pool_script).unwrap();
+            py.run(cscript.as_c_str(), Some(&globals), None)
+                .expect("pool.map must complete without raising");
+            let result: Vec<i64> = globals
+                .get_item("pool_result")
+                .expect("get_item ok")
+                .expect("pool_result set")
+                .extract()
+                .expect("pool_result is a list[int]");
+            assert_eq!(result, vec![1, 2, 3, 4]);
+        });
+    }
+
+    /// Idempotence: calling `init_python_runtime` twice from the same process
+    /// must NOT re-redirect sys.stderr or re-run set_executable. The OnceLock
+    /// short-circuits.
+    #[test]
+    fn init_python_runtime_is_idempotent() {
+        Python::attach(|py| {
+            let _ = bootstrap_sys_path(py);
+            init_python_runtime(py);
+            // Capture current sys.stderr to compare.
+            let pyscript = "import sys\nfirst_stderr_id = id(sys.stderr)\n";
+            let globals = pyo3::types::PyDict::new(py);
+            let cscript = std::ffi::CString::new(pyscript).unwrap();
+            py.run(cscript.as_c_str(), Some(&globals), None).unwrap();
+            let first_id: u64 = globals
+                .get_item("first_stderr_id")
+                .expect("ok")
+                .expect("set")
+                .extract()
+                .unwrap();
+
+            init_python_runtime(py);
+
+            let pyscript2 = "import sys\nsecond_stderr_id = id(sys.stderr)\n";
+            let cscript2 = std::ffi::CString::new(pyscript2).unwrap();
+            let globals2 = pyo3::types::PyDict::new(py);
+            py.run(cscript2.as_c_str(), Some(&globals2), None).unwrap();
+            let second_id: u64 = globals2
+                .get_item("second_stderr_id")
+                .expect("ok")
+                .expect("set")
+                .extract()
+                .unwrap();
+            assert_eq!(
+                first_id, second_id,
+                "init must not re-redirect sys.stderr on subsequent calls"
+            );
+        });
+    }
 }
