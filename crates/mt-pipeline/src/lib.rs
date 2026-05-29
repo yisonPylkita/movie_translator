@@ -21,6 +21,7 @@
 pub mod error;
 pub mod gpu;
 pub mod orchestrator;
+pub mod progress;
 pub mod proper_nouns;
 pub mod stages;
 pub mod vision;
@@ -28,7 +29,8 @@ pub mod worker;
 
 pub use error::{PipelineError, Result};
 pub use gpu::{resolve_pending_ocr, DirectGpuExecutor, GpuExecutor, OcrStageLabel};
-pub use orchestrator::{process_file, process_video_file, run_all, FileStatus};
+pub use orchestrator::{process_file, process_video_file, run_all, run_all_with_progress, FileStatus};
+pub use progress::{FinishStatus, ProgressEvent, ProgressSender, Stage};
 pub use proper_nouns::extract_proper_nouns_from_subtitles;
 pub use vision::{default_vision_ocr_probe, VisionOcrProbe};
 pub use worker::{GpuWorker, GpuWorkerHandle};

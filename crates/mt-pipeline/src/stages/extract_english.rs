@@ -60,13 +60,14 @@ pub fn run_with_probe(
     }
 
     if ctx.english_source.is_none() && ctx.pending_ocr.is_none() {
-        return Err(PipelineError::Stage(format!(
-            "No English subtitle source found for {}",
+        tracing::info!(
+            "{}: no English subtitle source — will skip",
             ctx.video_path
                 .file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
-        )));
+        );
+        return Err(PipelineError::NoEnglishSource);
     }
 
     if let Some(source) = ctx.english_source.clone() {
@@ -188,7 +189,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ctx = base_ctx(dir.path());
         let err = run_with_probe(ctx, || false).unwrap_err();
-        assert!(matches!(err, PipelineError::Stage(_)));
+        // Fix #5: this MUST be the dedicated NoEnglishSource variant so the
+        // orchestrator can route it to `Skipped (no subtitles)` rather than
+        // `Failed`. Catching it as a generic `Stage(_)` would still mark the
+        // file failed.
+        assert!(matches!(err, PipelineError::NoEnglishSource));
+        assert!(err.is_no_english_source());
     }
 
     #[test]
@@ -207,7 +213,7 @@ mod tests {
         let mut ctx = base_ctx(dir.path());
         ctx.burned_in_probed = true;
         let err = run_with_probe(ctx, || true).unwrap_err();
-        // No source, no pending → RuntimeError equivalent.
-        assert!(matches!(err, PipelineError::Stage(_)));
+        // No source, no pending → the no-subs sentinel (skip-not-fail).
+        assert!(matches!(err, PipelineError::NoEnglishSource));
     }
 }

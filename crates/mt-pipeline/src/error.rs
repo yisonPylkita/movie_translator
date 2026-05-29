@@ -55,6 +55,22 @@ pub enum PipelineError {
     /// via the variants above.
     #[error("{0}")]
     Stage(String),
+
+    /// No English subtitle source could be obtained for this file (no embedded
+    /// English track, no PGS, no fetched subtitle, no burned-in OCR yield).
+    /// This is treated as a *skip*, not a failure, because it usually means the
+    /// file is intentionally dialogue-less (NC/OP/ED clips, music videos).
+    #[error("no English subtitle source available")]
+    NoEnglishSource,
+}
+
+impl PipelineError {
+    /// True if this error should mark the file as "skipped (no subtitles)"
+    /// rather than "failed". Used by the orchestrator to translate stage
+    /// failures into the appropriate per-file [`crate::FileStatus`].
+    pub fn is_no_english_source(&self) -> bool {
+        matches!(self, PipelineError::NoEnglishSource)
+    }
 }
 
 /// Convenience `Result` alias for pipeline stages.
@@ -97,5 +113,14 @@ mod tests {
         let err = PipelineError::Stage("No English subtitle source".into());
         assert!(err.source().is_none());
         assert_eq!(err.to_string(), "No English subtitle source");
+    }
+
+    /// `NoEnglishSource` is a distinct variant the orchestrator routes to
+    /// `Skipped (no subtitles)` rather than `Failed`.
+    #[test]
+    fn no_english_source_predicate() {
+        let err = PipelineError::NoEnglishSource;
+        assert!(err.is_no_english_source());
+        assert!(!PipelineError::Stage("x".into()).is_no_english_source());
     }
 }

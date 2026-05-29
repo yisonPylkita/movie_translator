@@ -43,3 +43,4 @@ movie_translator/translation/swift/translate_bridge
 *.mkv
 *.mp4
 *.avi
+benchmarks/onepiece/

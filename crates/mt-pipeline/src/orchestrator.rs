@@ -24,6 +24,7 @@ use tokio::sync::Semaphore;
 
 use crate::error::{PipelineError, Result};
 use crate::gpu::{resolve_pending_ocr, DirectGpuExecutor, GpuExecutor, OcrStageLabel};
+use crate::progress::{FinishStatus, ProgressEvent, ProgressSender, Stage};
 use crate::stages;
 use crate::vision::{default_vision_ocr_probe, VisionOcrProbe};
 use crate::worker::{GpuWorker, GpuWorkerHandle};
@@ -64,15 +65,66 @@ pub async fn process_file(
     executor: GpuWorkerHandle,
     vision_probe: VisionOcrProbe,
 ) -> bool {
-    match process_file_inner(video_path.clone(), work_dir, config, executor, vision_probe).await {
-        Ok(()) => true,
+    process_file_with_progress(
+        video_path,
+        work_dir,
+        config,
+        executor,
+        vision_probe,
+        ProgressSender::disabled(),
+    )
+    .await
+        == FileOutcome::Success
+}
+
+/// Per-file outcome the orchestrator distinguishes when aggregating.
+///
+/// `SkippedNoSubs` is the principled "no English subtitle source" case (see fix
+/// #5) — preserved separately so `run_all` can report it as `Skipped`, not
+/// `Failed`, in the summary while the TUI shows the dedicated label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileOutcome {
+    Success,
+    Failed,
+    SkippedNoSubs,
+}
+
+/// Same as [`process_file`] but emits structured progress events. Returns the
+/// fine-grained [`FileOutcome`].
+pub async fn process_file_with_progress(
+    video_path: PathBuf,
+    work_dir: PathBuf,
+    config: PipelineConfig,
+    executor: GpuWorkerHandle,
+    vision_probe: VisionOcrProbe,
+    progress: ProgressSender,
+) -> FileOutcome {
+    match process_file_inner(
+        video_path.clone(),
+        work_dir,
+        config,
+        executor,
+        vision_probe,
+        progress,
+    )
+    .await
+    {
+        Ok(()) => FileOutcome::Success,
+        Err(e) if e.is_no_english_source() => {
+            let name = video_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            tracing::info!("Skipping {name}: no English subtitle source");
+            FileOutcome::SkippedNoSubs
+        }
         Err(e) => {
             let name = video_path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
             tracing::error!("Failed: {name} - {e}");
-            false
+            FileOutcome::Failed
         }
     }
 }
@@ -93,13 +145,23 @@ async fn process_file_inner(
     config: PipelineConfig,
     executor: GpuWorkerHandle,
     vision_probe: VisionOcrProbe,
+    progress: ProgressSender,
 ) -> Result<()> {
     let mut ctx = PipelineContext::new(video_path.clone(), work_dir, config);
 
+    let emit_stage = |stage: Stage| {
+        progress.send(ProgressEvent::StageEntered {
+            path: video_path.clone(),
+            stage,
+        });
+    };
+
     // Stage 1 — Identify (IO).
+    emit_stage(Stage::Identify);
     ctx = run_blocking(move || stages::identify::run(ctx)).await?;
 
     // Stage 2 — Extract Reference (IO + deferred OCR).
+    emit_stage(Stage::ExtractRef);
     ctx = run_blocking(move || stages::extract_ref::run_with_probe(ctx, vision_probe)).await?;
     if ctx.pending_ocr.is_some() {
         ctx =
@@ -107,9 +169,11 @@ async fn process_file_inner(
     }
 
     // Stage 3 — Fetch (IO).
+    emit_stage(Stage::Fetch);
     ctx = run_blocking(move || stages::fetch::run(ctx)).await?;
 
     // Stage 4 — Extract English (IO + deferred OCR).
+    emit_stage(Stage::ExtractEnglish);
     ctx = run_blocking(move || stages::extract_english::run_with_probe(ctx, vision_probe)).await?;
     if ctx.pending_ocr.is_some() {
         ctx = resolve_pending_ocr_blocking(ctx, executor.clone(), OcrStageLabel::ExtractEnglish)
@@ -117,10 +181,9 @@ async fn process_file_inner(
     }
 
     if ctx.english_source.is_none() {
-        return Err(PipelineError::Stage(format!(
-            "No English subtitle source found for {}",
-            video_path.display()
-        )));
+        // Pipeline produced no English source even after extract + burned-in
+        // OCR — treat as `NoEnglishSource` (skip-not-fail). See fix #5.
+        return Err(PipelineError::NoEnglishSource);
     }
     if ctx.dialogue_lines.is_none() {
         return Err(PipelineError::Stage(format!(
@@ -136,6 +199,7 @@ async fn process_file_inner(
     // handle, the GPU calls serialise across all files. (Running the font-check
     // IO concurrently with the GPU await would only be a latency optimisation —
     // the observable result is identical.)
+    emit_stage(Stage::Translate);
     let exec = executor.clone();
     ctx = run_blocking(move || stages::translate::run(ctx, &exec, None)).await?;
     if ctx.translated_lines.as_ref().is_none_or(|l| l.is_empty()) {
@@ -145,10 +209,12 @@ async fn process_file_inner(
     }
 
     // Stage 6 — Create Tracks (IO).
+    emit_stage(Stage::CreateTracks);
     ctx = run_blocking(move || stages::create_tracks::run(ctx)).await?;
 
     // Stage 7 — Mux (optional inpaint GPU + IO). The mux stage performs the
     // inpaint through the executor internally (serialised through the worker).
+    emit_stage(Stage::Mux);
     let exec = executor.clone();
     ctx = run_blocking(move || stages::mux::run(ctx, &exec)).await?;
 
@@ -189,6 +255,25 @@ pub async fn run_all(
     run_all_with(video_files, root_dir, config, default_vision_ocr_probe).await
 }
 
+/// Like [`run_all`] but also emits structured [`ProgressEvent`]s to `progress`
+/// (the CLI feeds these to the ratatui TUI). Pass [`ProgressSender::disabled`]
+/// to behave exactly like [`run_all`].
+pub async fn run_all_with_progress(
+    video_files: Vec<PathBuf>,
+    root_dir: PathBuf,
+    config: PipelineConfig,
+    progress: ProgressSender,
+) -> Result<Vec<(PathBuf, FileStatus)>> {
+    run_all_full(
+        video_files,
+        root_dir,
+        config,
+        default_vision_ocr_probe,
+        progress,
+    )
+    .await
+}
+
 /// Like [`run_all`], with an injectable Vision-OCR probe (for tests).
 pub async fn run_all_with(
     video_files: Vec<PathBuf>,
@@ -196,11 +281,34 @@ pub async fn run_all_with(
     config: PipelineConfig,
     vision_probe: VisionOcrProbe,
 ) -> Result<Vec<(PathBuf, FileStatus)>> {
+    run_all_full(
+        video_files,
+        root_dir,
+        config,
+        vision_probe,
+        ProgressSender::disabled(),
+    )
+    .await
+}
+
+async fn run_all_full(
+    video_files: Vec<PathBuf>,
+    root_dir: PathBuf,
+    config: PipelineConfig,
+    vision_probe: VisionOcrProbe,
+    progress: ProgressSender,
+) -> Result<Vec<(PathBuf, FileStatus)>> {
     let workers = if config.workers > 0 {
         config.workers
     } else {
         (video_files.len() as u32).clamp(1, 4)
     };
+
+    // Pre-populate the TUI with the queued file list. The orchestrator emits
+    // FileStarted / StageEntered / FileFinished as the run progresses.
+    progress.send(ProgressEvent::Queued {
+        files: video_files.clone(),
+    });
 
     let worker = GpuWorker::spawn();
     let result = run_all_with_executor(
@@ -210,6 +318,7 @@ pub async fn run_all_with(
         vision_probe,
         &worker,
         workers,
+        progress,
     )
     .await;
     worker.shutdown().await;
@@ -218,6 +327,7 @@ pub async fn run_all_with(
 
 /// Shared implementation that takes an already-spawned worker, so tests can
 /// supply a fake executor and assert serialisation.
+#[allow(clippy::too_many_arguments)]
 async fn run_all_with_executor(
     video_files: Vec<PathBuf>,
     root_dir: PathBuf,
@@ -225,6 +335,7 @@ async fn run_all_with_executor(
     vision_probe: VisionOcrProbe,
     worker: &GpuWorker,
     workers: u32,
+    progress: ProgressSender,
 ) -> Result<Vec<(PathBuf, FileStatus)>> {
     let semaphore = Arc::new(Semaphore::new(workers.max(1) as usize));
     let handle = worker.handle();
@@ -241,10 +352,15 @@ async fn run_all_with_executor(
         let root_dir = root_dir.clone();
         let task_idx = idx;
         let task_path = video_path.clone();
+        let progress = progress.clone();
 
         let handle = tokio::spawn(async move {
             // Hold a permit for the file's whole lifetime.
             let _permit = permit_sem.acquire_owned().await.expect("semaphore");
+
+            progress.send(ProgressEvent::FileStarted {
+                path: video_path.clone(),
+            });
 
             // Check for existing Polish subtitles (IO-bound) — skip if present.
             //
@@ -265,6 +381,10 @@ async fn run_all_with_executor(
                         "Failed to probe Polish subtitles for {}: {e}",
                         video_path.display()
                     );
+                    progress.send(ProgressEvent::FileFinished {
+                        path: video_path.clone(),
+                        status: FinishStatus::Failed,
+                    });
                     return (idx, video_path, FileStatus::Failed);
                 }
                 Err(join_err) => {
@@ -272,11 +392,19 @@ async fn run_all_with_executor(
                         "Polish-subtitle probe task panicked for {}: {join_err}",
                         video_path.display()
                     );
+                    progress.send(ProgressEvent::FileFinished {
+                        path: video_path.clone(),
+                        status: FinishStatus::Failed,
+                    });
                     return (idx, video_path, FileStatus::Failed);
                 }
             };
 
             if has_polish {
+                progress.send(ProgressEvent::FileFinished {
+                    path: video_path.clone(),
+                    status: FinishStatus::Skipped,
+                });
                 return (idx, video_path, FileStatus::Skipped);
             }
 
@@ -287,32 +415,47 @@ async fn run_all_with_executor(
                         "Failed to create work dir for {}: {e}",
                         video_path.display()
                     );
+                    progress.send(ProgressEvent::FileFinished {
+                        path: video_path.clone(),
+                        status: FinishStatus::Failed,
+                    });
                     return (idx, video_path, FileStatus::Failed);
                 }
             };
 
             let keep_artifacts = config.keep_artifacts;
-            let success = process_file(
+            let outcome = process_file_with_progress(
                 video_path.clone(),
                 work_dir.clone(),
                 config,
                 executor,
                 vision_probe,
+                progress.clone(),
             )
             .await;
 
-            // On success, unless --keep-artifacts, remove the file's work dir
-            // (and prune now-empty parents up to `.translate_temp`). Failures
-            // always keep artifacts for debugging.
-            if success && !keep_artifacts {
+            // On success OR a no-subs skip the file's work dir is empty/junk —
+            // remove it (unless --keep-artifacts). Genuine failures keep the
+            // dir around for debugging.
+            let cleanup = matches!(
+                outcome,
+                FileOutcome::Success | FileOutcome::SkippedNoSubs
+            );
+            if cleanup && !keep_artifacts {
                 cleanup_work_dir(&work_dir, &root_dir);
             }
 
-            let status = if success {
-                FileStatus::Success
-            } else {
-                FileStatus::Failed
+            let (status, finish_status) = match outcome {
+                FileOutcome::Success => (FileStatus::Success, FinishStatus::Success),
+                FileOutcome::Failed => (FileStatus::Failed, FinishStatus::Failed),
+                FileOutcome::SkippedNoSubs => {
+                    (FileStatus::Skipped, FinishStatus::SkippedNoSubs)
+                }
             };
+            progress.send(ProgressEvent::FileFinished {
+                path: video_path.clone(),
+                status: finish_status,
+            });
             (idx, video_path, status)
         });
         joins.push((task_idx, task_path, handle));
@@ -663,6 +806,90 @@ mod tests {
             "GPU work must serialise across concurrent files"
         );
         worker.shutdown().await;
+    }
+
+    /// Fix #5 + progress plumbing: `run_all_with_progress` emits a `Queued`
+    /// event for the discovered file list, then `FileStarted`/`FileFinished`
+    /// for each file. With unprobeable files everything terminates as
+    /// `Failed`, so we only assert the event SEQUENCE here — the no-subs
+    /// → `Skipped` mapping is exercised by the extract_english tests +
+    /// `FileOutcome` unit test below.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn run_all_with_progress_emits_lifecycle_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let files: Vec<PathBuf> = (0..3)
+            .map(|i| dir.path().join(format!("ep{i}.mkv")))
+            .collect();
+        let config = PipelineConfig {
+            workers: 1,
+            enable_fetch: false,
+            ..Default::default()
+        };
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let sender = ProgressSender::new(tx);
+        let results = run_all_with_progress(
+            files.clone(),
+            dir.path().to_path_buf(),
+            config,
+            sender,
+        )
+        .await
+        .unwrap();
+        assert_eq!(results.len(), 3);
+
+        // Drain the channel.
+        let mut events = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            events.push(ev);
+        }
+        // First event is always Queued(files).
+        match &events[0] {
+            ProgressEvent::Queued { files: q } => {
+                assert_eq!(q.len(), 3);
+            }
+            other => panic!("expected first event Queued, got {other:?}"),
+        }
+        // Every file must produce a FileStarted and a FileFinished.
+        let started: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                ProgressEvent::FileStarted { path } => Some(path.clone()),
+                _ => None,
+            })
+            .collect();
+        let finished: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                ProgressEvent::FileFinished { path, status } => Some((path.clone(), *status)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(started.len(), 3, "every file must emit FileStarted");
+        assert_eq!(finished.len(), 3, "every file must emit FileFinished");
+        for (_, s) in &finished {
+            assert!(
+                matches!(s, FinishStatus::Failed),
+                "unprobeable files finish Failed"
+            );
+        }
+    }
+
+    /// Fix #5: a stage returning `PipelineError::NoEnglishSource` from
+    /// `process_file_with_progress` collapses to `FileOutcome::SkippedNoSubs`,
+    /// which the orchestrator maps to `FileStatus::Skipped` (not Failed) and
+    /// `FinishStatus::SkippedNoSubs` for the TUI.
+    #[test]
+    fn no_english_source_maps_to_skipped_not_failed() {
+        // Direct mapping check — what the orchestrator does in the inner block.
+        let (file_status, finish_status) = match FileOutcome::SkippedNoSubs {
+            FileOutcome::Success => (FileStatus::Success, FinishStatus::Success),
+            FileOutcome::Failed => (FileStatus::Failed, FinishStatus::Failed),
+            FileOutcome::SkippedNoSubs => {
+                (FileStatus::Skipped, FinishStatus::SkippedNoSubs)
+            }
+        };
+        assert_eq!(file_status, FileStatus::Skipped);
+        assert_eq!(finish_status, FinishStatus::SkippedNoSubs);
     }
 
     /// Full async `process_file` over a real fixture using `--self-test` ML
