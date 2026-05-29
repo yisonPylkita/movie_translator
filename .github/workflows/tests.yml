@@ -25,7 +25,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          lfs: true
+          # CI doesn't need the LFS-stored translation model: the real-model
+          # tests are #[ignore]'d and never run by default. Skipping LFS avoids
+          # tripping the repo's LFS bandwidth quota.
+          lfs: false
           submodules: true
 
       # Install the exact toolchain pinned in rust-toolchain.toml (single source
