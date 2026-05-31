@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel in-flight runs for the same ref when a newer push lands — so a PR
+# rebase or a quick follow-up push doesn't stack redundant runs on the matrix.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
