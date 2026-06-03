@@ -1,0 +1,78 @@
+{
+ "variant": "full",
+ "rows": [
+  {
+   "engine": "faster-whisper",
+   "model": "small",
+   "lang": "en",
+   "ok": true,
+   "rtf": 0.124,
+   "ram_mb": 2822,
+   "n_seg": 357,
+   "error": null,
+   "timing_start_ms": 754,
+   "timing_matched": 331,
+   "wer": 0.843,
+   "cer": 0.623,
+   "chrf": 59.5
+  },
+  {
+   "engine": "faster-whisper",
+   "model": "small",
+   "lang": "ja",
+   "ok": true,
+   "rtf": 0.207,
+   "ram_mb": 3277,
+   "n_seg": 496,
+   "error": null,
+   "timing_start_ms": 799,
+   "timing_matched": 427
+  },
+  {
+   "engine": "mlx-whisper",
+   "model": "large-v3",
+   "lang": "en",
+   "ok": true,
+   "rtf": 0.82,
+   "ram_mb": 3583,
+   "n_seg": 1021,
+   "error": null,
+   "timing_start_ms": 832,
+   "timing_matched": 376,
+   "wer": 0.837,
+   "cer": 0.621,
+   "chrf": 58.5
+  },
+  {
+   "engine": "mlx-whisper",
+   "model": "large-v3",
+   "lang": "ja",
+   "ok": true,
+   "rtf": 0.402,
+   "ram_mb": 3583,
+   "n_seg": 449,
+   "error": null,
+   "timing_start_ms": 3601,
+   "timing_matched": 150
+  },
+  {
+   "engine": "whisperx",
+   "model": "large-v3",
+   "lang": "en",
+   "ok": true,
+   "rtf": 0.466,
+   "ram_mb": 5741,
+   "n_seg": 333,
+   "error": null,
+   "timing_start_ms": 619,
+   "timing_matched": 327,
+   "wer": 0.797,
+   "cer": 0.598,
+   "chrf": 58.8
+  }
+ ],
+ "ja_agreement_cer": {
+  "faster-whisper/small": 1.756,
+  "mlx-whisper/large-v3": 0.736
+ }
+}

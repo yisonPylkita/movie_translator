@@ -1,0 +1,1802 @@
+{
+ "engine": "faster-whisper",
+ "model": "small",
+ "lang": "en",
+ "wav": "en_full.wav",
+ "segments": [
+  {
+   "start_ms": 0,
+   "end_ms": 2000,
+   "text": "You"
+  },
+  {
+   "start_ms": 30000,
+   "end_ms": 40880,
+   "text": "It was the fall of 2017"
+  },
+  {
+   "start_ms": 48680,
+   "end_ms": 56760,
+   "text": "My uncle was hit by a truck when he was only 17 and since then I've been in a coma for 17 years"
+  },
+  {
+   "start_ms": 57720,
+   "end_ms": 60440,
+   "text": "Until he woke up"
+  },
+  {
+   "start_ms": 71320,
+   "end_ms": 75759,
+   "text": "Dear Ellers, Grand Bahamaltona, Galtoba Relax"
+  },
+  {
+   "start_ms": 77960,
+   "end_ms": 79960,
+   "text": "And he lost his mind"
+  },
+  {
+   "start_ms": 83120,
+   "end_ms": 85640,
+   "text": "Yeah, I don't understand"
+  },
+  {
+   "start_ms": 87200,
+   "end_ms": 89200,
+   "text": "Japanese"
+  },
+  {
+   "start_ms": 90000,
+   "end_ms": 96720,
+   "text": "No, my bad, I was in Grand Bahamal, a fantasy world where they speak a whole different language"
+  },
+  {
+   "start_ms": 101280,
+   "end_ms": 103280,
+   "text": "Good morning"
+  },
+  {
+   "start_ms": 107280,
+   "end_ms": 109280,
+   "text": "Let's take your temperature"
+  },
+  {
+   "start_ms": 109800,
+   "end_ms": 117040,
+   "text": "They'll store bar tone our rebel girl. All right, I'll check on you later"
+  },
+  {
+   "start_ms": 126000,
+   "end_ms": 132960,
+   "text": "You're Takafumi my sister's kid, but where is everyone else"
+  },
+  {
+   "start_ms": 133760,
+   "end_ms": 141640,
+   "text": "Well, our family had a huge falling out because of you what to do with you while you were in a coma"
+  },
+  {
+   "start_ms": 141640,
+   "end_ms": 143640,
+   "text": "And let me tell you it wasn't cheap"
+  },
+  {
+   "start_ms": 144760,
+   "end_ms": 147720,
+   "text": "My mom said she didn't want to see you"
+  },
+  {
+   "start_ms": 152960,
+   "end_ms": 154960,
+   "text": "Ikura's quora"
+  },
+  {
+   "start_ms": 157920,
+   "end_ms": 161760,
+   "text": "Okay, huh I'll prove Grand Bahamal is real"
+  },
+  {
+   "start_ms": 162960,
+   "end_ms": 164960,
+   "text": "You really don't"
+  },
+  {
+   "start_ms": 170360,
+   "end_ms": 172360,
+   "text": "Okay"
+  },
+  {
+   "start_ms": 177360,
+   "end_ms": 180480,
+   "text": "Morgan round this is just sad"
+  },
+  {
+   "start_ms": 183600,
+   "end_ms": 185600,
+   "text": "Hey"
+  },
+  {
+   "start_ms": 185640,
+   "end_ms": 187640,
+   "text": "Money has been a little tight lately"
+  },
+  {
+   "start_ms": 188440,
+   "end_ms": 194760,
+   "text": "So I brought some documents for you to sign and after that they're going to send you somewhere to help you get back"
+  },
+  {
+   "start_ms": 205800,
+   "end_ms": 213160,
+   "text": "What the hell wind return it of course it's Japanese here"
+  },
+  {
+   "start_ms": 217640,
+   "end_ms": 219640,
+   "text": "Oh"
+  },
+  {
+   "start_ms": 231320,
+   "end_ms": 236800,
+   "text": "Hold on now, did you just say you were sending me away somewhere? No, I didn't"
+  },
+  {
+   "start_ms": 237560,
+   "end_ms": 240200,
+   "text": "Yes, sure. Yeah. Yeah. So what was that? Hmm?"
+  },
+  {
+   "start_ms": 241000,
+   "end_ms": 242840,
+   "text": "It's magic"
+  },
+  {
+   "start_ms": 242840,
+   "end_ms": 244640,
+   "text": "fire"
+  },
+  {
+   "start_ms": 244640,
+   "end_ms": 247600,
+   "text": "Whoa awesome. Wait, how are you doing that?"
+  },
+  {
+   "start_ms": 247640,
+   "end_ms": 251980,
+   "text": "That's nothing. I want to know Sega when the console wars, huh?"
+  },
+  {
+   "start_ms": 252840,
+   "end_ms": 254520,
+   "text": "Sega"
+  },
+  {
+   "start_ms": 254520,
+   "end_ms": 255920,
+   "text": "now"
+  },
+  {
+   "start_ms": 255920,
+   "end_ms": 262040,
+   "text": "Well these days Sony and Nintendo are the biggest console makers, huh? No Sega is"
+  },
+  {
+   "start_ms": 262960,
+   "end_ms": 264960,
+   "text": "This some say God"
+  },
+  {
+   "start_ms": 265600,
+   "end_ms": 268880,
+   "text": "Well, they stopped making consoles"
+  },
+  {
+   "start_ms": 272720,
+   "end_ms": 274720,
+   "text": "The chorus quora"
+  },
+  {
+   "start_ms": 275720,
+   "end_ms": 279000,
+   "text": "Hey uncle, what's he Kura's cure on me? Oh"
+  },
+  {
+   "start_ms": 280560,
+   "end_ms": 284800,
+   "text": "It's a memory erasing spell so I can forget sad things"
+  },
+  {
+   "start_ms": 286200,
+   "end_ms": 292100,
+   "text": "Sega was that important. There were a lot of sad times in Grand Bahamal want to see"
+  },
+  {
+   "start_ms": 305040,
+   "end_ms": 307040,
+   "text": "Oh"
+  },
+  {
+   "start_ms": 308640,
+   "end_ms": 310640,
+   "text": "It's sad right"
+  },
+  {
+   "start_ms": 311000,
+   "end_ms": 313000,
+   "text": "spirits of memory"
+  },
+  {
+   "start_ms": 313000,
+   "end_ms": 316560,
+   "text": "deliver untold I guess Sega meant a lot to him a"
+  },
+  {
+   "start_ms": 320000,
+   "end_ms": 322000,
+   "text": "Week later"
+  },
+  {
+   "start_ms": 322320,
+   "end_ms": 327520,
+   "text": "My uncle was discharged so we decided to find a way to make some money off his powers"
+  },
+  {
+   "start_ms": 328040,
+   "end_ms": 334120,
+   "text": "We started by uploading videos to YouTube, but we only earned about 60,000 yen and a half revenue"
+  },
+  {
+   "start_ms": 334720,
+   "end_ms": 336720,
+   "text": "I"
+  },
+  {
+   "start_ms": 364720,
+   "end_ms": 369720,
+   "text": "I won't be able to change, so don't give up on your goals"
+  },
+  {
+   "start_ms": 369720,
+   "end_ms": 377720,
+   "text": "Someone has decided, but I don't know how to live"
+  },
+  {
+   "start_ms": 377720,
+   "end_ms": 387720,
+   "text": "I don't know how to do what I want to do, but I know that I'm strong"
+  },
+  {
+   "start_ms": 387720,
+   "end_ms": 391720,
+   "text": "I believe in what I've done, no reason to give up again"
+  },
+  {
+   "start_ms": 391720,
+   "end_ms": 396720,
+   "text": "The days we've been walking on, the meaning of missing"
+  },
+  {
+   "start_ms": 396720,
+   "end_ms": 400720,
+   "text": "Is losing memories, I'm struggling now to overcome"
+  },
+  {
+   "start_ms": 400720,
+   "end_ms": 404720,
+   "text": "I won't give up, until the very end"
+  },
+  {
+   "start_ms": 404720,
+   "end_ms": 406720,
+   "text": "Get down, let's get down"
+  },
+  {
+   "start_ms": 406720,
+   "end_ms": 413720,
+   "text": "I'll remember the light of my heart"
+  },
+  {
+   "start_ms": 413720,
+   "end_ms": 418720,
+   "text": "Trust yourself, don't be afraid"
+  },
+  {
+   "start_ms": 418720,
+   "end_ms": 423720,
+   "text": "Save yourself, don't forget"
+  },
+  {
+   "start_ms": 440720,
+   "end_ms": 442720,
+   "text": "I've been meaning to ask you"
+  },
+  {
+   "start_ms": 442720,
+   "end_ms": 445720,
+   "text": "Why do you have such a big place?"
+  },
+  {
+   "start_ms": 446720,
+   "end_ms": 450720,
+   "text": "I was living with someone, but it got complicated"
+  },
+  {
+   "start_ms": 450720,
+   "end_ms": 452720,
+   "text": "Like with a lover?"
+  },
+  {
+   "start_ms": 452720,
+   "end_ms": 454720,
+   "text": "Not like that"
+  },
+  {
+   "start_ms": 454720,
+   "end_ms": 455720,
+   "text": "Okay"
+  },
+  {
+   "start_ms": 455720,
+   "end_ms": 458720,
+   "text": "Listen, they were just a roommate, get it?"
+  },
+  {
+   "start_ms": 461720,
+   "end_ms": 464720,
+   "text": "Roommates weren't a thing back then?"
+  },
+  {
+   "start_ms": 464720,
+   "end_ms": 467720,
+   "text": "Whoa, you looked that up really fast"
+  },
+  {
+   "start_ms": 467720,
+   "end_ms": 469720,
+   "text": "What a tidy computer"
+  },
+  {
+   "start_ms": 470720,
+   "end_ms": 471720,
+   "text": "Huh?"
+  },
+  {
+   "start_ms": 474720,
+   "end_ms": 476720,
+   "text": "That's so weird"
+  },
+  {
+   "start_ms": 476720,
+   "end_ms": 479720,
+   "text": "You finding a friend to live with you here?"
+  },
+  {
+   "start_ms": 485720,
+   "end_ms": 488720,
+   "text": "Uncle, so tell me, what were people like in the other world?"
+  },
+  {
+   "start_ms": 488720,
+   "end_ms": 490720,
+   "text": "What about your friends?"
+  },
+  {
+   "start_ms": 490720,
+   "end_ms": 494720,
+   "text": "I flew solo pretty much the entire time I was there"
+  },
+  {
+   "start_ms": 499720,
+   "end_ms": 504720,
+   "text": "I see"
+  },
+  {
+   "start_ms": 511720,
+   "end_ms": 514720,
+   "text": "All the people in the other world were really hot"
+  },
+  {
+   "start_ms": 514720,
+   "end_ms": 517720,
+   "text": "You trip over beautiful people"
+  },
+  {
+   "start_ms": 517720,
+   "end_ms": 519720,
+   "text": "Oh, really?"
+  },
+  {
+   "start_ms": 519720,
+   "end_ms": 521720,
+   "text": "Must have been hideous"
+  },
+  {
+   "start_ms": 530720,
+   "end_ms": 534720,
+   "text": "They hunted me down like I was an orc"
+  },
+  {
+   "start_ms": 534720,
+   "end_ms": 536720,
+   "text": "Uncle, hold on"
+  },
+  {
+   "start_ms": 536720,
+   "end_ms": 538720,
+   "text": "And they would stop"
+  },
+  {
+   "start_ms": 539720,
+   "end_ms": 542720,
+   "text": "I'm just trying to watch the dishes right now, man"
+  },
+  {
+   "start_ms": 542720,
+   "end_ms": 545720,
+   "text": "That wasn't like that every day"
+  },
+  {
+   "start_ms": 545720,
+   "end_ms": 547720,
+   "text": "But there was one girl who was really aggressive"
+  },
+  {
+   "start_ms": 547720,
+   "end_ms": 549720,
+   "text": "Tell me this later"
+  },
+  {
+   "start_ms": 549720,
+   "end_ms": 552720,
+   "text": "She would show up every day to harass me to my face"
+  },
+  {
+   "start_ms": 552720,
+   "end_ms": 554720,
+   "text": "No matter what I did to prove myself"
+  },
+  {
+   "start_ms": 554720,
+   "end_ms": 557720,
+   "text": "She would treat me like garbage"
+  },
+  {
+   "start_ms": 559720,
+   "end_ms": 561720,
+   "text": "That's awful"
+  },
+  {
+   "start_ms": 561720,
+   "end_ms": 564720,
+   "text": "Even in a fantasy world, that stuff happens"
+  },
+  {
+   "start_ms": 564720,
+   "end_ms": 567720,
+   "text": "When we first met, I saved her from a monster"
+  },
+  {
+   "start_ms": 567720,
+   "end_ms": 569720,
+   "text": "And she'd even thank me"
+  },
+  {
+   "start_ms": 569720,
+   "end_ms": 571720,
+   "text": "What was her problem?"
+  },
+  {
+   "start_ms": 571720,
+   "end_ms": 572720,
+   "text": "Right?"
+  },
+  {
+   "start_ms": 572720,
+   "end_ms": 575720,
+   "text": "She was like, nobody asked for your help"
+  },
+  {
+   "start_ms": 575720,
+   "end_ms": 576720,
+   "text": "Don't touch me"
+  },
+  {
+   "start_ms": 576720,
+   "end_ms": 579720,
+   "text": "Then I said, I didn't save you just to hit on you"
+  },
+  {
+   "start_ms": 579720,
+   "end_ms": 580720,
+   "text": "How stuck up are you?"
+  },
+  {
+   "start_ms": 580720,
+   "end_ms": 583720,
+   "text": "Then she's all like, I'm the only one who can even stand to be around"
+  },
+  {
+   "start_ms": 583720,
+   "end_ms": 585720,
+   "text": "Your horrid face without puking"
+  },
+  {
+   "start_ms": 585720,
+   "end_ms": 587720,
+   "text": "Before I drank"
+  },
+  {
+   "start_ms": 587720,
+   "end_ms": 590720,
+   "text": "She was just really mean to me every day, alright?"
+  },
+  {
+   "start_ms": 590720,
+   "end_ms": 593720,
+   "text": "I ditched her in a city and then ran off"
+  },
+  {
+   "start_ms": 599720,
+   "end_ms": 601720,
+   "text": "Don't touch me"
+  },
+  {
+   "start_ms": 601720,
+   "end_ms": 603720,
+   "text": "I don't need your help"
+  },
+  {
+   "start_ms": 604720,
+   "end_ms": 607720,
+   "text": "I'm the only one who can stand your orc face"
+  },
+  {
+   "start_ms": 607720,
+   "end_ms": 608720,
+   "text": "Without puking"
+  },
+  {
+   "start_ms": 608720,
+   "end_ms": 610720,
+   "text": "Before I jerk"
+  },
+  {
+   "start_ms": 611720,
+   "end_ms": 613720,
+   "text": "Oh!"
+  },
+  {
+   "start_ms": 616720,
+   "end_ms": 620720,
+   "text": "The Sundari archetype wasn't established until 2004"
+  },
+  {
+   "start_ms": 620720,
+   "end_ms": 623720,
+   "text": "Four years after my uncle was in a coma"
+  },
+  {
+   "start_ms": 623720,
+   "end_ms": 625720,
+   "text": "What happened to her?"
+  },
+  {
+   "start_ms": 625720,
+   "end_ms": 627720,
+   "text": "Huh? I don't know"
+  },
+  {
+   "start_ms": 629720,
+   "end_ms": 631720,
+   "text": "If I'm being honest"
+  },
+  {
+   "start_ms": 631720,
+   "end_ms": 634720,
+   "text": "Things weren't that great for me in the other world"
+  },
+  {
+   "start_ms": 636720,
+   "end_ms": 637720,
+   "text": "But"
+  },
+  {
+   "start_ms": 637720,
+   "end_ms": 639720,
+   "text": "Come back here"
+  },
+  {
+   "start_ms": 639720,
+   "end_ms": 642720,
+   "text": "The internet? Fiber lines? Weepy?"
+  },
+  {
+   "start_ms": 642720,
+   "end_ms": 644720,
+   "text": "It's all great"
+  },
+  {
+   "start_ms": 644720,
+   "end_ms": 648720,
+   "text": "And people around the world love my videos"
+  },
+  {
+   "start_ms": 648720,
+   "end_ms": 650720,
+   "text": "Huh?"
+  },
+  {
+   "start_ms": 655720,
+   "end_ms": 659720,
+   "text": "It was then that my uncle fell into a new fantasy world"
+  },
+  {
+   "start_ms": 659720,
+   "end_ms": 661720,
+   "text": "Known as the internet"
+  },
+  {
+   "start_ms": 661720,
+   "end_ms": 664720,
+   "text": "Huh? How does he know my face is red?"
+  },
+  {
+   "start_ms": 664720,
+   "end_ms": 665720,
+   "text": "Am I on camera?"
+  },
+  {
+   "start_ms": 665720,
+   "end_ms": 667720,
+   "text": "It's internet slang"
+  },
+  {
+   "start_ms": 667720,
+   "end_ms": 669720,
+   "text": "And I never write in my own comments"
+  },
+  {
+   "start_ms": 669720,
+   "end_ms": 671720,
+   "text": "Hey, don't worry"
+  },
+  {
+   "start_ms": 671720,
+   "end_ms": 673720,
+   "text": "It's just a joke"
+  },
+  {
+   "start_ms": 673720,
+   "end_ms": 677720,
+   "text": "Hey, why are they writing a bunch of W's?"
+  },
+  {
+   "start_ms": 677720,
+   "end_ms": 680720,
+   "text": "He still needs to learn about trolls"
+  },
+  {
+   "start_ms": 684720,
+   "end_ms": 686720,
+   "text": "I want this phone"
+  },
+  {
+   "start_ms": 686720,
+   "end_ms": 688720,
+   "text": "It doesn't flip, it spins"
+  },
+  {
+   "start_ms": 688720,
+   "end_ms": 690720,
+   "text": "But it's 2G"
+  },
+  {
+   "start_ms": 690720,
+   "end_ms": 691720,
+   "text": "Huh?"
+  },
+  {
+   "start_ms": 691720,
+   "end_ms": 693720,
+   "text": "So I buy it through this online auction"
+  },
+  {
+   "start_ms": 693720,
+   "end_ms": 695720,
+   "text": "The problem is it uses an old network"
+  },
+  {
+   "start_ms": 695720,
+   "end_ms": 697720,
+   "text": "So I don't think you could even make calls"
+  },
+  {
+   "start_ms": 697720,
+   "end_ms": 699720,
+   "text": "But it spins"
+  },
+  {
+   "start_ms": 699720,
+   "end_ms": 703720,
+   "text": "Yeah, but how would you get in touch with your old friends?"
+  },
+  {
+   "start_ms": 703720,
+   "end_ms": 705720,
+   "text": "Takafumi"
+  },
+  {
+   "start_ms": 705720,
+   "end_ms": 709720,
+   "text": "Do you think a man who committed himself to Sega"
+  },
+  {
+   "start_ms": 709720,
+   "end_ms": 712720,
+   "text": "Truly deserves to live a full life?"
+  },
+  {
+   "start_ms": 714720,
+   "end_ms": 718720,
+   "text": "Why is he letting a game system dictate his life so much?"
+  },
+  {
+   "start_ms": 719720,
+   "end_ms": 724720,
+   "text": "Oh, this one looks like the cheapest price"
+  },
+  {
+   "start_ms": 724720,
+   "end_ms": 726720,
+   "text": "You already looked it up?"
+  },
+  {
+   "start_ms": 726720,
+   "end_ms": 729720,
+   "text": "Those little smartphones are really fast"
+  },
+  {
+   "start_ms": 729720,
+   "end_ms": 731720,
+   "text": "You could always learn to use one"
+  },
+  {
+   "start_ms": 732720,
+   "end_ms": 735720,
+   "text": "Touching, swiping, pinching"
+  },
+  {
+   "start_ms": 735720,
+   "end_ms": 738720,
+   "text": "I prefer to have a bunch of buttons to push"
+  },
+  {
+   "start_ms": 738720,
+   "end_ms": 740720,
+   "text": "I guess"
+  },
+  {
+   "start_ms": 740720,
+   "end_ms": 743720,
+   "text": "They don't make new versions of the cool phones"
+  },
+  {
+   "start_ms": 743720,
+   "end_ms": 746720,
+   "text": "That slide open or spin anymore, do they?"
+  },
+  {
+   "start_ms": 746720,
+   "end_ms": 748720,
+   "text": "It's innovation"
+  },
+  {
+   "start_ms": 748720,
+   "end_ms": 750720,
+   "text": "Everything is touchscreens"
+  },
+  {
+   "start_ms": 750720,
+   "end_ms": 752720,
+   "text": "A lot happens in 17 years"
+  },
+  {
+   "start_ms": 752720,
+   "end_ms": 756720,
+   "text": "You know, I did some technical innovations of my own in the other world"
+  },
+  {
+   "start_ms": 756720,
+   "end_ms": 758720,
+   "text": "Oh yeah?"
+  },
+  {
+   "start_ms": 758720,
+   "end_ms": 761720,
+   "text": "I met a pot that overflowed with water"
+  },
+  {
+   "start_ms": 761720,
+   "end_ms": 763720,
+   "text": "To stop a village just dropped"
+  },
+  {
+   "start_ms": 763720,
+   "end_ms": 765720,
+   "text": "Whoa, how?"
+  },
+  {
+   "start_ms": 765720,
+   "end_ms": 767720,
+   "text": "I used two spells"
+  },
+  {
+   "start_ms": 767720,
+   "end_ms": 770720,
+   "text": "It'll just be easier to show you how I did it"
+  },
+  {
+   "start_ms": 770720,
+   "end_ms": 772720,
+   "text": "Diggers, Elron"
+  },
+  {
+   "start_ms": 776720,
+   "end_ms": 778720,
+   "text": "Whoa"
+  },
+  {
+   "start_ms": 778720,
+   "end_ms": 781720,
+   "text": "Is this one of your memories?"
+  },
+  {
+   "start_ms": 781720,
+   "end_ms": 785720,
+   "text": "There are these spell cards charged with magic"
+  },
+  {
+   "start_ms": 785720,
+   "end_ms": 792720,
+   "text": "With a lot of work, I managed to reverse the electrolysis process to create water"
+  },
+  {
+   "start_ms": 792720,
+   "end_ms": 794720,
+   "text": "You beat modern science?"
+  },
+  {
+   "start_ms": 794720,
+   "end_ms": 796720,
+   "text": "Wow, you must have blown other minds"
+  },
+  {
+   "start_ms": 796720,
+   "end_ms": 800720,
+   "text": "I mean, I bet all those villagers were cheering your name"
+  },
+  {
+   "start_ms": 800720,
+   "end_ms": 802720,
+   "text": "No"
+  },
+  {
+   "start_ms": 806720,
+   "end_ms": 808720,
+   "text": "They tried to hang me"
+  },
+  {
+   "start_ms": 810720,
+   "end_ms": 813720,
+   "text": "They destroyed the pot"
+  },
+  {
+   "start_ms": 815720,
+   "end_ms": 819720,
+   "text": "I guess what I did was sacrilegious"
+  },
+  {
+   "start_ms": 819720,
+   "end_ms": 821720,
+   "text": "Stop"
+  },
+  {
+   "start_ms": 821720,
+   "end_ms": 824720,
+   "text": "Someone rescued you"
+  },
+  {
+   "start_ms": 824720,
+   "end_ms": 826720,
+   "text": "Who's that awful woman?"
+  },
+  {
+   "start_ms": 826720,
+   "end_ms": 828720,
+   "text": "What? That's her?"
+  },
+  {
+   "start_ms": 828720,
+   "end_ms": 830720,
+   "text": "Yes, I know he has an evil face"
+  },
+  {
+   "start_ms": 830720,
+   "end_ms": 832720,
+   "text": "It's like an orc"
+  },
+  {
+   "start_ms": 832720,
+   "end_ms": 834720,
+   "text": "I don't understand why you wouldn't trust him"
+  },
+  {
+   "start_ms": 834720,
+   "end_ms": 836720,
+   "text": "I promise"
+  },
+  {
+   "start_ms": 840720,
+   "end_ms": 842720,
+   "text": "Get grace"
+  },
+  {
+   "start_ms": 842720,
+   "end_ms": 844720,
+   "text": "Yeah, that's pretty much it"
+  },
+  {
+   "start_ms": 849720,
+   "end_ms": 851720,
+   "text": "I get it"
+  },
+  {
+   "start_ms": 851720,
+   "end_ms": 854720,
+   "text": "First person view is hard to follow"
+  },
+  {
+   "start_ms": 854720,
+   "end_ms": 856720,
+   "text": "Hey, what's that?"
+  },
+  {
+   "start_ms": 856720,
+   "end_ms": 860720,
+   "text": "I can swipe here to rotate the camera around"
+  },
+  {
+   "start_ms": 860720,
+   "end_ms": 861720,
+   "text": "There we are"
+  },
+  {
+   "start_ms": 861720,
+   "end_ms": 862720,
+   "text": "You can do that"
+  },
+  {
+   "start_ms": 862720,
+   "end_ms": 864720,
+   "text": "Pinch in to zoom out"
+  },
+  {
+   "start_ms": 864720,
+   "end_ms": 867720,
+   "text": "Oh, you weren't kidding, you were being hunted"
+  },
+  {
+   "start_ms": 867720,
+   "end_ms": 870720,
+   "text": "Oh, can we see what happened to that girl?"
+  },
+  {
+   "start_ms": 870720,
+   "end_ms": 873720,
+   "text": "Yeah, I'll pinch out to zoom in"
+  },
+  {
+   "start_ms": 878720,
+   "end_ms": 880720,
+   "text": "I'm powered"
+  },
+  {
+   "start_ms": 880720,
+   "end_ms": 882720,
+   "text": "He ran away"
+  },
+  {
+   "start_ms": 887720,
+   "end_ms": 888720,
+   "text": "Loser"
+  },
+  {
+   "start_ms": 888720,
+   "end_ms": 891720,
+   "text": "She saved you and she's hot"
+  },
+  {
+   "start_ms": 891720,
+   "end_ms": 892720,
+   "text": "Yeah, I know"
+  },
+  {
+   "start_ms": 892720,
+   "end_ms": 893720,
+   "text": "I'm a coward"
+  },
+  {
+   "start_ms": 893720,
+   "end_ms": 894720,
+   "text": "What?"
+  },
+  {
+   "start_ms": 896720,
+   "end_ms": 898720,
+   "text": "My auction"
+  },
+  {
+   "start_ms": 903720,
+   "end_ms": 904720,
+   "text": "I'm dead"
+  },
+  {
+   "start_ms": 904720,
+   "end_ms": 906720,
+   "text": "Wait, how much is delivery?"
+  },
+  {
+   "start_ms": 914720,
+   "end_ms": 916720,
+   "text": "My god, 2,000"
+  },
+  {
+   "start_ms": 916720,
+   "end_ms": 919720,
+   "text": "Their address is on some remote island"
+  },
+  {
+   "start_ms": 921720,
+   "end_ms": 925720,
+   "text": "There's no fee if you meet them to get the phone in person"
+  },
+  {
+   "start_ms": 947720,
+   "end_ms": 948720,
+   "text": "I'll be back"
+  },
+  {
+   "start_ms": 952720,
+   "end_ms": 953720,
+   "text": "Oh"
+  },
+  {
+   "start_ms": 956720,
+   "end_ms": 958720,
+   "text": "I'm home"
+  },
+  {
+   "start_ms": 962720,
+   "end_ms": 963720,
+   "text": "Question"
+  },
+  {
+   "start_ms": 966720,
+   "end_ms": 968720,
+   "text": "Could you pick up these headphones for me?"
+  },
+  {
+   "start_ms": 968720,
+   "end_ms": 970720,
+   "text": "Where are they?"
+  },
+  {
+   "start_ms": 970720,
+   "end_ms": 971720,
+   "text": "Kumamoto"
+  },
+  {
+   "start_ms": 971720,
+   "end_ms": 973720,
+   "text": "Five minutes"
+  },
+  {
+   "start_ms": 975720,
+   "end_ms": 976720,
+   "text": "And this sofa?"
+  },
+  {
+   "start_ms": 976720,
+   "end_ms": 978720,
+   "text": "That looks really heavy"
+  },
+  {
+   "start_ms": 978720,
+   "end_ms": 980720,
+   "text": "I will give you a shorter massage"
+  },
+  {
+   "start_ms": 980720,
+   "end_ms": 982720,
+   "text": "Oh, okay"
+  },
+  {
+   "start_ms": 982720,
+   "end_ms": 986720,
+   "text": "That's how Uncle learned to bid online without paying shipping fees"
+  },
+  {
+   "start_ms": 989720,
+   "end_ms": 990720,
+   "text": "Thanks"
+  },
+  {
+   "start_ms": 991720,
+   "end_ms": 994720,
+   "text": "I would have gone to pick that up for you"
+  },
+  {
+   "start_ms": 994720,
+   "end_ms": 996720,
+   "text": "It was free, I have Amazon Prime"
+  },
+  {
+   "start_ms": 996720,
+   "end_ms": 998720,
+   "text": "Is there a box cutter?"
+  },
+  {
+   "start_ms": 1000720,
+   "end_ms": 1001720,
+   "text": "Here"
+  },
+  {
+   "start_ms": 1001720,
+   "end_ms": 1002720,
+   "text": "Thank you"
+  },
+  {
+   "start_ms": 1005720,
+   "end_ms": 1006720,
+   "text": "Where did this come from?"
+  },
+  {
+   "start_ms": 1006720,
+   "end_ms": 1008720,
+   "text": "A storage spell"
+  },
+  {
+   "start_ms": 1008720,
+   "end_ms": 1011720,
+   "text": "By the way, that thing can kill dragons, so be careful"
+  },
+  {
+   "start_ms": 1011720,
+   "end_ms": 1013720,
+   "text": "That's so cool"
+  },
+  {
+   "start_ms": 1013720,
+   "end_ms": 1016720,
+   "text": "Did you bring anything else back with you?"
+  },
+  {
+   "start_ms": 1016720,
+   "end_ms": 1018720,
+   "text": "I don't know why"
+  },
+  {
+   "start_ms": 1019720,
+   "end_ms": 1021720,
+   "text": "Like a magic sword"
+  },
+  {
+   "start_ms": 1023720,
+   "end_ms": 1024720,
+   "text": "Why do you pause it?"
+  },
+  {
+   "start_ms": 1024720,
+   "end_ms": 1026720,
+   "text": "I also have precious metals"
+  },
+  {
+   "start_ms": 1026720,
+   "end_ms": 1027720,
+   "text": "What?"
+  },
+  {
+   "start_ms": 1027720,
+   "end_ms": 1031720,
+   "text": "The stone is a mermaid tear crystallized by magic"
+  },
+  {
+   "start_ms": 1031720,
+   "end_ms": 1033720,
+   "text": "And the band was carved from rainbow coral"
+  },
+  {
+   "start_ms": 1033720,
+   "end_ms": 1036720,
+   "text": "In the other world, you could buy a castle with this"
+  },
+  {
+   "start_ms": 1036720,
+   "end_ms": 1037720,
+   "text": "Sell them, sell them all!"
+  },
+  {
+   "start_ms": 1038720,
+   "end_ms": 1040720,
+   "text": "50 yen"
+  },
+  {
+   "start_ms": 1041720,
+   "end_ms": 1043720,
+   "text": "I took them to a pawn shop"
+  },
+  {
+   "start_ms": 1043720,
+   "end_ms": 1045720,
+   "text": "And they told me 50 yen"
+  },
+  {
+   "start_ms": 1045720,
+   "end_ms": 1046720,
+   "text": "It's too rare"
+  },
+  {
+   "start_ms": 1048720,
+   "end_ms": 1051720,
+   "text": "We're not getting as many views as I thought"
+  },
+  {
+   "start_ms": 1051720,
+   "end_ms": 1053720,
+   "text": "I need a new idea"
+  },
+  {
+   "start_ms": 1053720,
+   "end_ms": 1056720,
+   "text": "Uncle, so I'm guessing you had this"
+  },
+  {
+   "start_ms": 1056720,
+   "end_ms": 1059720,
+   "text": "Because you were going to give it to someone?"
+  },
+  {
+   "start_ms": 1059720,
+   "end_ms": 1060720,
+   "text": "No"
+  },
+  {
+   "start_ms": 1060720,
+   "end_ms": 1062720,
+   "text": "It's just a commemorative trophy"
+  },
+  {
+   "start_ms": 1062720,
+   "end_ms": 1066720,
+   "text": "You have to beat a pretty hard dungeon to get one of them, though"
+  },
+  {
+   "start_ms": 1066720,
+   "end_ms": 1067720,
+   "text": "I see"
+  },
+  {
+   "start_ms": 1069720,
+   "end_ms": 1071720,
+   "text": "You want to talk about love?"
+  },
+  {
+   "start_ms": 1071720,
+   "end_ms": 1072720,
+   "text": "No"
+  },
+  {
+   "start_ms": 1072720,
+   "end_ms": 1075720,
+   "text": "I doubt you ever had a romance in the other world"
+  },
+  {
+   "start_ms": 1075720,
+   "end_ms": 1076720,
+   "text": "No thanks"
+  },
+  {
+   "start_ms": 1076720,
+   "end_ms": 1077720,
+   "text": "Yes, I did"
+  },
+  {
+   "start_ms": 1077720,
+   "end_ms": 1079720,
+   "text": "But I've been alive over 30 years"
+  },
+  {
+   "start_ms": 1079720,
+   "end_ms": 1081720,
+   "text": "I've gotten plenty of action"
+  },
+  {
+   "start_ms": 1083720,
+   "end_ms": 1086720,
+   "text": "My first love was in elementary school"
+  },
+  {
+   "start_ms": 1086720,
+   "end_ms": 1087720,
+   "text": "Who was she?"
+  },
+  {
+   "start_ms": 1087720,
+   "end_ms": 1089720,
+   "text": "Sonic and Tails"
+  },
+  {
+   "start_ms": 1089720,
+   "end_ms": 1090720,
+   "text": "What?"
+  },
+  {
+   "start_ms": 1091720,
+   "end_ms": 1093720,
+   "text": "I don't know"
+  },
+  {
+   "start_ms": 1093720,
+   "end_ms": 1095720,
+   "text": "I don't know"
+  },
+  {
+   "start_ms": 1095720,
+   "end_ms": 1097720,
+   "text": "What?"
+  },
+  {
+   "start_ms": 1105720,
+   "end_ms": 1108720,
+   "text": "I'd go to the toy store every afternoon"
+  },
+  {
+   "start_ms": 1108720,
+   "end_ms": 1110720,
+   "text": "To watch the video demo play"
+  },
+  {
+   "start_ms": 1112720,
+   "end_ms": 1114720,
+   "text": "That title screen was so cute"
+  },
+  {
+   "start_ms": 1114720,
+   "end_ms": 1116720,
+   "text": "I never got tired of it"
+  },
+  {
+   "start_ms": 1116720,
+   "end_ms": 1119720,
+   "text": "Do you have people stories?"
+  },
+  {
+   "start_ms": 1119720,
+   "end_ms": 1120720,
+   "text": "Oh yeah"
+  },
+  {
+   "start_ms": 1121720,
+   "end_ms": 1124720,
+   "text": "There was this girl named Kaibinanase"
+  },
+  {
+   "start_ms": 1125720,
+   "end_ms": 1127720,
+   "text": "She was killed by water"
+  },
+  {
+   "start_ms": 1127720,
+   "end_ms": 1130720,
+   "text": "Then her brain was transferred into an evil cyborg body"
+  },
+  {
+   "start_ms": 1130720,
+   "end_ms": 1133720,
+   "text": "She attacked me after I hunted down the Seven Force"
+  },
+  {
+   "start_ms": 1133720,
+   "end_ms": 1135720,
+   "text": "She's the boss of level three"
+  },
+  {
+   "start_ms": 1135720,
+   "end_ms": 1136720,
+   "text": "And takes on five"
+  },
+  {
+   "start_ms": 1136720,
+   "end_ms": 1139720,
+   "text": "This man had no life outside of games"
+  },
+  {
+   "start_ms": 1140720,
+   "end_ms": 1142720,
+   "text": "Were there any nice girls in the other world?"
+  },
+  {
+   "start_ms": 1142720,
+   "end_ms": 1143720,
+   "text": "No"
+  },
+  {
+   "start_ms": 1143720,
+   "end_ms": 1144720,
+   "text": "Sure"
+  },
+  {
+   "start_ms": 1144720,
+   "end_ms": 1145720,
+   "text": "Really?"
+  },
+  {
+   "start_ms": 1146720,
+   "end_ms": 1147720,
+   "text": "Icarus"
+  },
+  {
+   "start_ms": 1147720,
+   "end_ms": 1148720,
+   "text": "I'll run"
+  },
+  {
+   "start_ms": 1155720,
+   "end_ms": 1156720,
+   "text": "Icarus"
+  },
+  {
+   "start_ms": 1169720,
+   "end_ms": 1171720,
+   "text": "Thank you very much"
+  },
+  {
+   "start_ms": 1185720,
+   "end_ms": 1187720,
+   "text": "I"
+  },
+  {
+   "start_ms": 1201720,
+   "end_ms": 1204720,
+   "text": "I managed to save her from that awful monster"
+  },
+  {
+   "start_ms": 1205720,
+   "end_ms": 1209720,
+   "text": "Looks more like she's sacrificing herself to protect her brothers"
+  },
+  {
+   "start_ms": 1209720,
+   "end_ms": 1211720,
+   "text": "Pretty cool, right?"
+  },
+  {
+   "start_ms": 1211720,
+   "end_ms": 1213720,
+   "text": "I think we got ambushed by goblins"
+  },
+  {
+   "start_ms": 1213720,
+   "end_ms": 1215720,
+   "text": "Or something soon after this"
+  },
+  {
+   "start_ms": 1215720,
+   "end_ms": 1217720,
+   "text": "Well, I fell off a cliff"
+  },
+  {
+   "start_ms": 1217720,
+   "end_ms": 1218720,
+   "text": "Never saw her again"
+  },
+  {
+   "start_ms": 1218720,
+   "end_ms": 1220720,
+   "text": "That must have been terrible"
+  },
+  {
+   "start_ms": 1222720,
+   "end_ms": 1223720,
+   "text": "Huh?"
+  },
+  {
+   "start_ms": 1223720,
+   "end_ms": 1227720,
+   "text": "Those kids are looking a little suspicious back there"
+  },
+  {
+   "start_ms": 1227720,
+   "end_ms": 1229720,
+   "text": "I should look at what attacked me"
+  },
+  {
+   "start_ms": 1229720,
+   "end_ms": 1231720,
+   "text": "I'm sure it was a goblin"
+  },
+  {
+   "start_ms": 1231720,
+   "end_ms": 1232720,
+   "text": "Yeah?"
+  },
+  {
+   "start_ms": 1232720,
+   "end_ms": 1234720,
+   "text": "Oh yeah, definitely"
+  },
+  {
+   "start_ms": 1235720,
+   "end_ms": 1237720,
+   "text": "Whatever it was almost killed me"
+  },
+  {
+   "start_ms": 1237720,
+   "end_ms": 1239720,
+   "text": "And that awful woman showed up"
+  },
+  {
+   "start_ms": 1239720,
+   "end_ms": 1240720,
+   "text": "Really?"
+  },
+  {
+   "start_ms": 1240720,
+   "end_ms": 1242720,
+   "text": "I hate to admit it, but she saved me"
+  },
+  {
+   "start_ms": 1243720,
+   "end_ms": 1245720,
+   "text": "I"
+  },
+  {
+   "start_ms": 1253720,
+   "end_ms": 1255720,
+   "text": "But why?"
+  },
+  {
+   "start_ms": 1255720,
+   "end_ms": 1257720,
+   "text": "Why save me?"
+  },
+  {
+   "start_ms": 1257720,
+   "end_ms": 1259720,
+   "text": "I did you a favor"
+  },
+  {
+   "start_ms": 1259720,
+   "end_ms": 1260720,
+   "text": "You're in my debt"
+  },
+  {
+   "start_ms": 1260720,
+   "end_ms": 1263720,
+   "text": "Now you'll spend the rest of your life trying to repay me"
+  },
+  {
+   "start_ms": 1265720,
+   "end_ms": 1267720,
+   "text": "The rest of my life"
+  },
+  {
+   "start_ms": 1268720,
+   "end_ms": 1269720,
+   "text": "I"
+  },
+  {
+   "start_ms": 1269720,
+   "end_ms": 1270720,
+   "text": "I"
+  },
+  {
+   "start_ms": 1270720,
+   "end_ms": 1272720,
+   "text": "I didn't mean it like that"
+  },
+  {
+   "start_ms": 1272720,
+   "end_ms": 1274720,
+   "text": "It's not like we're going to be together forever"
+  },
+  {
+   "start_ms": 1277720,
+   "end_ms": 1278720,
+   "text": "Stop it"
+  },
+  {
+   "start_ms": 1278720,
+   "end_ms": 1279720,
+   "text": "Stay right there"
+  },
+  {
+   "start_ms": 1279720,
+   "end_ms": 1281720,
+   "text": "I don't have much to pay you in"
+  },
+  {
+   "start_ms": 1281720,
+   "end_ms": 1283720,
+   "text": "What about this?"
+  },
+  {
+   "start_ms": 1287720,
+   "end_ms": 1288720,
+   "text": "It's a cosmic ring"
+  },
+  {
+   "start_ms": 1288720,
+   "end_ms": 1290720,
+   "text": "One of only seven in the whole world"
+  },
+  {
+   "start_ms": 1291720,
+   "end_ms": 1292720,
+   "text": "Hey, stop"
+  },
+  {
+   "start_ms": 1292720,
+   "end_ms": 1293720,
+   "text": "What are you doing?"
+  },
+  {
+   "start_ms": 1298720,
+   "end_ms": 1300720,
+   "text": "It should fit"
+  },
+  {
+   "start_ms": 1301720,
+   "end_ms": 1302720,
+   "text": "Wait a second"
+  },
+  {
+   "start_ms": 1303720,
+   "end_ms": 1305720,
+   "text": "This is too fast"
+  },
+  {
+   "start_ms": 1305720,
+   "end_ms": 1306720,
+   "text": "You don't want it"
+  },
+  {
+   "start_ms": 1306720,
+   "end_ms": 1307720,
+   "text": "What?"
+  },
+  {
+   "start_ms": 1313720,
+   "end_ms": 1314720,
+   "text": "I do"
+  },
+  {
+   "start_ms": 1320720,
+   "end_ms": 1322720,
+   "text": "Did he just propose to her?"
+  },
+  {
+   "start_ms": 1323720,
+   "end_ms": 1324720,
+   "text": "Is that allowed?"
+  },
+  {
+   "start_ms": 1324720,
+   "end_ms": 1325720,
+   "text": "From her reaction"
+  },
+  {
+   "start_ms": 1325720,
+   "end_ms": 1329720,
+   "text": "It looks like they have the same marriage customs as us in the other world"
+  },
+  {
+   "start_ms": 1329720,
+   "end_ms": 1331720,
+   "text": "At least it seems so"
+  },
+  {
+   "start_ms": 1331720,
+   "end_ms": 1332720,
+   "text": "Of course I did"
+  },
+  {
+   "start_ms": 1334720,
+   "end_ms": 1338720,
+   "text": "I even got the ring appraised for her in the next town"
+  },
+  {
+   "start_ms": 1338720,
+   "end_ms": 1340720,
+   "text": "Oh come on, Uncle"
+  },
+  {
+   "start_ms": 1345720,
+   "end_ms": 1349720,
+   "text": "Oh no, is this the town you said you managed to lose her in?"
+  },
+  {
+   "start_ms": 1349720,
+   "end_ms": 1351720,
+   "text": "No, she hung around after this"
+  },
+  {
+   "start_ms": 1351720,
+   "end_ms": 1354720,
+   "text": "You know, I think she wanted my money"
+  },
+  {
+   "start_ms": 1354720,
+   "end_ms": 1356720,
+   "text": "I put it all in the bank"
+  },
+  {
+   "start_ms": 1356720,
+   "end_ms": 1358720,
+   "text": "Where are you going next, Tom?"
+  },
+  {
+   "start_ms": 1358720,
+   "end_ms": 1359720,
+   "text": "You're resting here?"
+  },
+  {
+   "start_ms": 1359720,
+   "end_ms": 1361720,
+   "text": "What a coincidence, so am I"
+  },
+  {
+   "start_ms": 1361720,
+   "end_ms": 1363720,
+   "text": "She's persistent"
+  },
+  {
+   "start_ms": 1364720,
+   "end_ms": 1369720,
+   "text": "Anyway, these rare items are all shockingly easy to use"
+  },
+  {
+   "start_ms": 1369720,
+   "end_ms": 1372720,
+   "text": "And you could put that dagger in here too"
+  },
+  {
+   "start_ms": 1372720,
+   "end_ms": 1373720,
+   "text": "Sure"
+  },
+  {
+   "start_ms": 1385720,
+   "end_ms": 1389720,
+   "text": "Uncle's brand new video broke over two million views"
+  },
+  {
+   "start_ms": 1407720,
+   "end_ms": 1409720,
+   "text": "Fall 2017"
+  },
+  {
+   "start_ms": 1409720,
+   "end_ms": 1415720,
+   "text": "My life with my uncle just got a whole lot more interesting"
+  }
+ ],
+ "meta": {
+  "audio_s": 1422.0,
+  "ok": true,
+  "error": null,
+  "infer_s": 176.7,
+  "rtf": 0.124,
+  "peak_ram_mb": 2822,
+  "n_segments": 357
+ }
+}

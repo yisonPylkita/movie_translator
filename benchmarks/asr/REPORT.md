@@ -128,7 +128,11 @@ would catch these.
    backends.
 2. **Fallback: mlx-whisper large-v3.** For non-macOS-26 / when Apple is
    unavailable. Metal-accelerated, accurate on both languages, one pip dep + an
-   HF model. Use large-v3 (small is noticeably worse on JA).
+   HF model. Use large-v3 (small is noticeably worse on JA). **Must run VAD or
+   OP/ED trimming in front of it** — bare Whisper hallucinates "thanks for
+   watching" on the ED (see full-episode results). WhisperX bundles this VAD for
+   English but breaks on Japanese alignment, so for JA use mlx + a standalone VAD
+   (e.g. silero) rather than WhisperX.
 3. **Optional EN timing polish:** WhisperX-style wav2vec2 forced alignment gives
    dramatically better English timestamps (55 ms). Only worth it if subtitle
    timing quality is a priority, EN-only, and never for JA.
@@ -138,10 +142,41 @@ second.
 
 ## Full-episode (drift / 24-min RTF) & end-to-end EN→PL
 
-<!-- FILL: pending the full-episode chain (mlx large-v3 en+ja, faster small,
-whisperx en) and the EN-dub→PL translation chrF vs the pl_allegro track.
-Purpose: confirm no long-audio hallucination/looping and that RTF holds at
-length; quantify how much ASR error survives translation. -->
+Ran the full 24-min episode (1422 s) to test long-audio behavior — this is where
+the recommendation was confirmed and where Whisper showed its one real weakness.
+
+| Engine / model / lang | RTF @24 min | segments | tail behavior |
+| --- | --- | --- | --- |
+| apple-speech EN | **0.010** | 408 | clean — no hallucination |
+| apple-speech JA | **0.006** | 122 (coarse) | clean — no hallucination |
+| mlx-whisper large-v3 EN | 0.82 | 1021 (over-segmented) | trails to empty/"you" |
+| mlx-whisper large-v3 JA | 0.40 | 449 | **hallucinates** "ご視聴ありがとうございました" looped past audio end (1432 s > 1422 s) |
+| faster-whisper small EN | 0.12 | 357 | clean |
+| faster-whisper small JA | 0.21 | 496 | clean |
+| whisperx large-v3 EN | 0.47 | 333 | clean (VAD) — timing 619 ms |
+
+**The key long-audio finding:** Whisper large-v3 **hallucinates on the ED's
+music/silence**, emitting the training-artifact phrase "thanks for watching"
+(ご視聴ありがとうございました) on a loop with a timestamp past the end of the audio.
+This is a well-known Whisper failure mode. Two engines avoid it: **WhisperX**
+(VAD gates out non-speech) and **Apple SpeechAnalyzer** (native endpointing —
+clean tails on both languages). mlx large-v3 also over-segments English (1021
+fragments). **Production must run VAD/OP-ED trimming in front of any Whisper
+backend; Apple needs none.**
+
+Apple at full length is extraordinary: a 24-min episode in **9–14 s** (RTF
+0.006–0.01), no drift, on-device.
+
+**End-to-end EN-dub → PL** (mlx large-v3 EN transcript → production Allegro
+EN→PL translator → chrF vs the real `pl_allegro` track): **chrF 56.7**, fluent
+Polish ("Mój wujek został potrącony przez ciężarówkę, gdy miał zaledwie 17 lat").
+This is confounded by dub≠sub wording (the transcript is of the *dub*, the
+reference PL came from the *sub*), so it's a floor, not a degradation measure —
+but it confirms ASR-sourced subtitles translate into clean, usable Polish.
+
+**Net effect on the recommendation:** Apple SpeechAnalyzer's native endpointing
+(no hallucination, no VAD plumbing, RTF ~0.01) widens its lead. The mlx fallback
+needs VAD/OP-ED trimming to be production-safe on full episodes.
 
 ## Reproduce
 

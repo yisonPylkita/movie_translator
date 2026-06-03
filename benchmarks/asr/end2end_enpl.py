@@ -25,6 +25,7 @@ def main() -> int:
     texts = [s['text'] for s in d['segments'] if s['text'].strip()]
 
     tr = SubtitleTranslator(model_key='allegro', device='mps', batch_size=16)
+    tr.load_model()
     pl = tr.translate_texts(texts)
 
     out.write_text(
