@@ -10,15 +10,18 @@ from .frame_extractor import extract_subtitle_region_frames
 from .vision_ocr import recognize_text_with_boxes
 
 # ── Configurable constants ───────────────────────────────────────────────────
-# fps + change-threshold tuned via scripts/ocr_experiment.py on Isekai Ojisan
-# ep5: a high threshold (was 15) let a static on-screen sign mask the smaller
-# subtitle changes underneath, so real lines were never OCR'd. 6fps + a low
-# threshold (4) recovered them (coverage 10/15 -> 14/15) at the cost of OCR-ing
-# more frames (the merge step dedups the extra near-identical frames).
+# Tuned via scripts/ocr_golden_analysis.py against a "golden" sample (every
+# frame OCR'd at 12fps) on Isekai Ojisan ep5. The OLD change metric — *mean*
+# absolute pixel diff over the whole crop — drowns short lines: a 1-2 word
+# subtitle changes too few pixels to move the mean, so no transition fired and
+# the line was never OCR'd. Switching to the FRACTION of significantly-changed
+# pixels catches them (text lights up enough pixels regardless of the mean):
+# golden coverage went from 4 missing -> 0 missing.
 OCR_EXTRACT_FPS = 6
 OCR_SCALE_WIDTH = 1280  # it is 720p as - 1280w x720h
 OCR_CROP_RATIO = 0.25  # bottom 25% of frame
-OCR_CHANGE_THRESHOLD = 4.0  # mean absolute pixel diff to detect a change
+OCR_PIXEL_DELTA = 25  # per-pixel |Δ| (0-255) that counts as "changed"
+OCR_CHANGE_FRACTION = 0.006  # fraction of changed pixels that flags a transition
 OCR_VARIANCE_THRESHOLD = 200.0  # pixel variance threshold for "has text"
 
 
@@ -70,9 +73,13 @@ def _detect_transition_frames(
     for i in range(1, len(frames)):
         path, ts = frames[i]
         curr = load_gray(path)
-        diff = np.mean(np.abs(curr.astype(np.int16) - prev.astype(np.int16)))
+        # Fraction of pixels that changed appreciably — robust for short lines
+        # (a few words still light up enough pixels) where a mean diff would be
+        # diluted to near-zero by the unchanged background.
+        delta = np.abs(curr.astype(np.int16) - prev.astype(np.int16))
+        changed_fraction = float(np.mean(delta > OCR_PIXEL_DELTA))
 
-        if diff > OCR_CHANGE_THRESHOLD:
+        if changed_fraction > OCR_CHANGE_FRACTION:
             curr_has_text = float(np.var(curr)) > OCR_VARIANCE_THRESHOLD
             if curr_has_text:
                 transition_frames.append((path, ts))
