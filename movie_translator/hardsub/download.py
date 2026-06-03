@@ -124,6 +124,13 @@ def _build_ydl_opts(
         # Strip the caller's ext; yt-dlp fills in the real container.
         stem = str(Path(out_path).with_suffix(''))
         opts['outtmpl'] = f'{stem}.%(ext)s'
+        # Land a real, playable container. Merging separate video+audio writes
+        # mkv; the remux PP additionally rescues single-stream HLS sources,
+        # which yt-dlp otherwise leaves as MPEG-TS bytes under a bogus `.m3u8`
+        # extension that most players refuse to open. mkv is a stream-copy
+        # (no re-encode) and tolerates whatever codecs the source carries.
+        opts['merge_output_format'] = 'mkv'
+        opts['postprocessors'] = [{'key': 'FFmpegVideoRemuxer', 'preferedformat': 'mkv'}]
     else:
         opts['format'] = _format_selector(min_height)
         opts['outtmpl'] = out_path
