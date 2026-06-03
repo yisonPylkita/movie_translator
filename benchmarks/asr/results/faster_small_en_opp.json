@@ -1,0 +1,47 @@
+{
+ "engine": "faster-whisper",
+ "model": "small",
+ "lang": "en",
+ "wav": "en_opp.wav",
+ "segments": [
+  {
+   "start_ms": 0,
+   "end_ms": 5840,
+   "text": "We knew the world would not be the same."
+  },
+  {
+   "start_ms": 5840,
+   "end_ms": 17040,
+   "text": "Few people laughed, few people cried, most people were silent."
+  },
+  {
+   "start_ms": 17040,
+   "end_ms": 29960,
+   "text": "I remembered the line from the Hindu scripture, the Bhagavad Gita, Vishnu was trying to persuade"
+  },
+  {
+   "start_ms": 29960,
+   "end_ms": 42080,
+   "text": "the prince that he should do his duty and to impress him, takes on his multi-armed form and"
+  },
+  {
+   "start_ms": 42080,
+   "end_ms": 47160,
+   "text": "says, now I am become death, the destroyer of worlds."
+  },
+  {
+   "start_ms": 47160,
+   "end_ms": 52680,
+   "text": "I suppose we all thought that one way or another."
+  }
+ ],
+ "meta": {
+  "audio_s": 53.3,
+  "ok": true,
+  "error": null,
+  "infer_s": 5.2,
+  "rtf": 0.098,
+  "peak_ram_mb": 1112,
+  "n_segments": 6
+ }
+}
