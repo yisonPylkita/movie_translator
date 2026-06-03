@@ -47,7 +47,6 @@ pub fn run(
     let work = ctx.work_dir.join("hardsub");
     std::fs::create_dir_all(&work)?;
     let video = work.join(format!("ep{episode}.mp4"));
-    let referer = format!("https://ogladajanime.pl/anime/{}/{}", plan.slug, episode);
 
     tracing::info!(
         "hardsub-ocr: episode {episode} -> {} {} ({})",
@@ -56,8 +55,11 @@ pub fn run(
         player.embed_url
     );
 
-    // 1. Download the lowest legible copy (network/CPU — not a GPU job).
-    if let Err(e) = mt_ml::hardsub_download(&player.embed_url, &video, MIN_HEIGHT, Some(&referer)) {
+    // 1. Download the lowest legible copy (network/CPU — not a GPU job). Pass NO
+    // Referer: these are yt-dlp extractor hosts (cda/vk/mega/…) that set their
+    // own headers; an ogladajanime Referer leaks onto cda's internal API calls
+    // and breaks extraction ("No video formats found!").
+    if let Err(e) = mt_ml::hardsub_download(&player.embed_url, &video, MIN_HEIGHT, None) {
         tracing::warn!("hardsub-ocr: download failed for episode {episode}: {e}");
         return Ok(ctx);
     }

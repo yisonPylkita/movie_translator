@@ -182,10 +182,13 @@ pub fn default_downloads_dir() -> PathBuf {
 }
 
 fn is_resolver_json(name: &str, slug: Option<&str>) -> bool {
-    // The userscript downloads `oga-<slug>-*.players.json`. In-flight browser
-    // partials are `*.crdownload`/`*.part`/`*.download`, which don't match the
-    // final suffix — so matching the final name already excludes partials.
-    if !(name.starts_with("oga-") && name.ends_with(".players.json")) {
+    // The userscript downloads `oga-<slug>-*.players.json`. When the browser
+    // hits a duplicate name it inserts ` (N)` BEFORE `.json` (e.g.
+    // `oga-...-all.players (4).json`), so we match on `.players` + `.json`
+    // rather than a literal `.players.json` suffix. In-flight partials end in
+    // `.crdownload`/`.part`/`.download` (not `.json`), so requiring a `.json`
+    // tail already excludes them.
+    if !(name.starts_with("oga-") && name.contains(".players") && name.ends_with(".json")) {
         return false;
     }
     match slug {
@@ -321,6 +324,11 @@ mod tests {
         assert!(is_resolver_json("oga-isekai-ojisan-all.players.json", None));
         assert!(is_resolver_json(
             "oga-isekai-ojisan-all.players.json",
+            Some("isekai-ojisan")
+        ));
+        // browser duplicate-name suffix: ` (N)` is inserted before `.json`
+        assert!(is_resolver_json(
+            "oga-isekai-ojisan-all.players (4).json",
             Some("isekai-ojisan")
         ));
         // in-flight partials never match the final suffix
