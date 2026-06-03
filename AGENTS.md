@@ -47,8 +47,12 @@ translation). Both wrap `cargo run --release`. Key flags: `--dry-run`
 `--workers N --batch-size N --device {cpu,mps,cuda}`, `--inpaint`
 (remove burned-in subs — slow), `--in-place` (overwrite originals —
 destructive, NOT compatible with `--inpaint`), `--keep-artifacts`
-(leave intermediates in `.translate_temp/`). Real runs need GPU + model
-files; for iteration prefer `--dry-run` or a tiny synthetic clip.
+(leave intermediates in `.translate_temp/`), `--hardsub-ocr` (source a Polish
+track by OCRing burned-in subs from ogladajanime.pl — opens the browser, you
+run `scripts/ogladajanime_resolver.user.js`, it picks up the JSON from
+`~/Downloads`; macOS-only), `--force` (re-process files that already have
+Polish). Real runs need GPU + model files; for iteration prefer `--dry-run` or
+a tiny synthetic clip.
 
 ### Build / set up a fresh checkout
 

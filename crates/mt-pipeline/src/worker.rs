@@ -67,6 +67,12 @@ enum Job {
         ocr_results: Vec<OCRResult>,
         reply: oneshot::Sender<Result<PathBuf>>,
     },
+    HardsubOcrClean {
+        video: PathBuf,
+        out_dir: PathBuf,
+        language: String,
+        reply: oneshot::Sender<Result<Option<PathBuf>>>,
+    },
 }
 
 /// A serialised GPU worker backed by a single tokio task.
@@ -189,6 +195,14 @@ fn run_job(executor: &dyn GpuExecutor, job: Job) {
             reply,
         } => {
             let _ = reply.send(executor.inpaint(&video, &output, &device, &backend, &ocr_results));
+        }
+        Job::HardsubOcrClean {
+            video,
+            out_dir,
+            language,
+            reply,
+        } => {
+            let _ = reply.send(executor.hardsub_ocr_clean(&video, &out_dir, &language));
         }
     }
 }
@@ -350,6 +364,22 @@ impl GpuExecutor for GpuWorkerHandle {
         })?;
         block_on_reply(rx)
     }
+
+    fn hardsub_ocr_clean(
+        &self,
+        video: &Path,
+        out_dir: &Path,
+        language: &str,
+    ) -> Result<Option<PathBuf>> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Job::HardsubOcrClean {
+            video: video.to_path_buf(),
+            out_dir: out_dir.to_path_buf(),
+            language: language.to_string(),
+            reply,
+        })?;
+        block_on_reply(rx)
+    }
 }
 
 /// A [`GpuExecutor`] that records the maximum observed concurrency.
@@ -430,6 +460,10 @@ impl GpuExecutor for ConcurrencyProbe {
     ) -> Result<PathBuf> {
         self.enter();
         Ok(out.to_path_buf())
+    }
+    fn hardsub_ocr_clean(&self, _v: &Path, _o: &Path, _l: &str) -> Result<Option<PathBuf>> {
+        self.enter();
+        Ok(None)
     }
 }
 
@@ -536,6 +570,9 @@ mod tests {
                 _o: &[OCRResult],
             ) -> Result<PathBuf> {
                 Ok(out.to_path_buf())
+            }
+            fn hardsub_ocr_clean(&self, _v: &Path, _o: &Path, _l: &str) -> Result<Option<PathBuf>> {
+                unreachable!()
             }
         }
 

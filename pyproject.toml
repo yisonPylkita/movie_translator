@@ -39,6 +39,7 @@ dependencies = [
     "guessit>=3.8",
     "aniparse>=2.0",
     "defusedxml>=0.7",
+    "yt-dlp>=2026.3.17",
 ]
 
 [build-system]

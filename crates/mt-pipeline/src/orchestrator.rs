@@ -16,9 +16,11 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use mt_core::{PipelineConfig, PipelineContext};
 use mt_discovery::create_work_dir;
+use mt_fetch::ogladajanime::{self, Discovery, HardsubPlan};
 use mt_media::SubtitleExtractor;
 use tokio::sync::Semaphore;
 
@@ -72,6 +74,7 @@ pub async fn process_file(
         executor,
         vision_probe,
         ProgressSender::disabled(),
+        None,
     )
     .await
         == FileOutcome::Success
@@ -98,6 +101,7 @@ pub async fn process_file_with_progress(
     executor: GpuWorkerHandle,
     vision_probe: VisionOcrProbe,
     progress: ProgressSender,
+    hardsub_plan: Option<Arc<HardsubPlan>>,
 ) -> FileOutcome {
     match process_file_inner(
         video_path.clone(),
@@ -106,6 +110,7 @@ pub async fn process_file_with_progress(
         executor,
         vision_probe,
         progress,
+        hardsub_plan,
     )
     .await
     {
@@ -146,6 +151,7 @@ async fn process_file_inner(
     executor: GpuWorkerHandle,
     vision_probe: VisionOcrProbe,
     progress: ProgressSender,
+    hardsub_plan: Option<Arc<HardsubPlan>>,
 ) -> Result<()> {
     let mut ctx = PipelineContext::new(video_path.clone(), work_dir, config);
 
@@ -190,6 +196,17 @@ async fn process_file_inner(
             "No dialogue lines extracted for {}",
             video_path.display()
         )));
+    }
+
+    // Stage 4.5 — Hardsub OCR (gated by --hardsub-ocr; only when the interactive
+    // prep produced a plan with this episode). Runs here so the English source
+    // exists as the alignment reference. Downloads off-GPU, OCRs through the
+    // worker, aligns to the reference, and injects a fetched Polish track that
+    // create_tracks → mux turn into an output track. Non-fatal on failure.
+    if let Some(plan) = hardsub_plan.clone() {
+        emit_stage(Stage::HardsubOcr);
+        let exec = executor.clone();
+        ctx = run_blocking(move || stages::hardsub_ocr::run(ctx, &exec, &plan)).await?;
     }
 
     // Stage 5 — Translate (font check + GPU translation).
@@ -310,6 +327,16 @@ async fn run_all_full(
         files: video_files.clone(),
     });
 
+    // --hardsub-ocr: run the once-per-run interactive prep (discover the anime,
+    // open the browser, wait for the resolver userscript's JSON) before any
+    // per-file work. A failure here is non-fatal — the run continues without
+    // the OCR track.
+    let hardsub_plan = if config.enable_hardsub_ocr {
+        prepare_hardsub_plan(video_files.first(), &progress).await
+    } else {
+        None
+    };
+
     let worker = GpuWorker::spawn();
     let result = run_all_with_executor(
         video_files,
@@ -319,10 +346,127 @@ async fn run_all_full(
         &worker,
         workers,
         progress,
+        hardsub_plan,
     )
     .await;
     worker.shutdown().await;
     result
+}
+
+/// How long to wait for the resolver userscript's JSON to land in Downloads.
+const HARDSUB_WAIT_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+
+/// Once-per-run interactive prep for `--hardsub-ocr`: identify the anime from
+/// the first file, discover it on ogladajanime, open the browser there, and
+/// wait for the resolver userscript's JSON in `~/Downloads`. Returns the parsed
+/// plan, or `None` if anything fails (the run then proceeds without OCR).
+async fn prepare_hardsub_plan(
+    first_file: Option<&PathBuf>,
+    progress: &ProgressSender,
+) -> Option<Arc<HardsubPlan>> {
+    let first_file = first_file?.clone();
+    let progress = progress.clone();
+    let plan = tokio::task::spawn_blocking(move || {
+        let title = hardsub_title(&first_file);
+        if title.is_empty() {
+            tracing::warn!("hardsub-ocr: could not derive a title from {first_file:?}");
+            return None;
+        }
+        log_hardsub(
+            &progress,
+            format!("discovering '{title}' on ogladajanime.pl…"),
+        );
+        let (slug, url) = match ogladajanime::discover(&title) {
+            Discovery::Found { slug, url } => {
+                log_hardsub(&progress, format!("found anime page: {url}"));
+                (Some(slug), url)
+            }
+            Discovery::Search { url } => {
+                log_hardsub(
+                    &progress,
+                    format!("no exact match — opening search; pick the anime: {url}"),
+                );
+                (None, url)
+            }
+        };
+
+        let since = SystemTime::now();
+        if let Err(e) = ogladajanime::open_in_browser(&url) {
+            log_hardsub(
+                &progress,
+                format!("could not open browser ({e}); open {url} manually"),
+            );
+        }
+        let downloads = ogladajanime::default_downloads_dir();
+        log_hardsub(
+            &progress,
+            format!(
+                "run the player-resolver userscript (scripts/ogladajanime_resolver.user.js) \
+                 in your browser — waiting for its JSON in {}…",
+                downloads.display()
+            ),
+        );
+        let json = match ogladajanime::wait_for_resolver_json(
+            slug.as_deref(),
+            since,
+            &downloads,
+            HARDSUB_WAIT_TIMEOUT,
+            Duration::from_secs(1),
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                log_hardsub(&progress, format!("hardsub-ocr aborted: {e}"));
+                return None;
+            }
+        };
+        match ogladajanime::parse_plan(&json, slug.as_deref().unwrap_or("")) {
+            Ok(plan) => {
+                log_hardsub(
+                    &progress,
+                    format!(
+                        "loaded {} episode(s) from {}",
+                        plan.episode_count(),
+                        json.display()
+                    ),
+                );
+                Some(plan)
+            }
+            Err(e) => {
+                log_hardsub(&progress, format!("could not parse resolver JSON: {e}"));
+                None
+            }
+        }
+    })
+    .await
+    .ok()
+    .flatten();
+    plan.map(Arc::new)
+}
+
+/// Derive an anime title from a video path via the filename parser, falling
+/// back to the file stem.
+fn hardsub_title(path: &Path) -> String {
+    let filename = path.file_name().map(|n| n.to_string_lossy().to_string());
+    if let Some(name) = filename.as_deref() {
+        if let Ok(parsed) = mt_ml::backend::parse_filename(name, None) {
+            if let Some(title) = parsed.title.filter(|t| !t.is_empty()) {
+                return title;
+            }
+        }
+    }
+    path.file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
+
+/// Emit a hardsub prep status line both to the TUI (as a Log event) and tracing.
+fn log_hardsub(progress: &ProgressSender, message: String) {
+    tracing::info!("hardsub-ocr: {message}");
+    progress.send(ProgressEvent::Log {
+        level: "info".to_string(),
+        target: "hardsub-ocr".to_string(),
+        message,
+    });
 }
 
 /// Shared implementation that takes an already-spawned worker, so tests can
@@ -336,6 +480,7 @@ async fn run_all_with_executor(
     worker: &GpuWorker,
     workers: u32,
     progress: ProgressSender,
+    hardsub_plan: Option<Arc<HardsubPlan>>,
 ) -> Result<Vec<(PathBuf, FileStatus)>> {
     let semaphore = Arc::new(Semaphore::new(workers.max(1) as usize));
     let handle = worker.handle();
@@ -353,6 +498,7 @@ async fn run_all_with_executor(
         let task_idx = idx;
         let task_path = video_path.clone();
         let progress = progress.clone();
+        let hardsub_plan = hardsub_plan.clone();
 
         let handle = tokio::spawn(async move {
             // Hold a permit for the file's whole lifetime.
@@ -400,7 +546,7 @@ async fn run_all_with_executor(
                 }
             };
 
-            if has_polish {
+            if has_polish && !config.force {
                 progress.send(ProgressEvent::FileFinished {
                     path: video_path.clone(),
                     status: FinishStatus::Skipped,
@@ -431,6 +577,7 @@ async fn run_all_with_executor(
                 executor,
                 vision_probe,
                 progress.clone(),
+                hardsub_plan,
             )
             .await;
 

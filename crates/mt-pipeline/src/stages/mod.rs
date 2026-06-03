@@ -10,6 +10,7 @@ pub mod create_tracks;
 pub mod extract_english;
 pub mod extract_ref;
 pub mod fetch;
+pub mod hardsub_ocr;
 pub mod identify;
 pub mod mux;
 pub mod translate;

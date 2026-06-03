@@ -324,6 +324,9 @@ mod tests {
             std::fs::write(out, b"inpainted").unwrap();
             Ok(out.to_path_buf())
         }
+        fn hardsub_ocr_clean(&self, _v: &Path, _o: &Path, _l: &str) -> Result<Option<PathBuf>> {
+            unreachable!()
+        }
     }
 
     // ── Fake MuxOps recording calls and simulating output ─────────────────

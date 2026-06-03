@@ -66,6 +66,16 @@ pub struct TranslateArgs {
     #[arg(long = "external-subs")]
     pub external_subs: Option<String>,
 
+    /// Source Polish subtitles by OCRing burned-in subs from ogladajanime.pl.
+    /// Opens your browser at the matched anime; you run the resolver userscript
+    /// and the run picks up its JSON from ~/Downloads. macOS-only (Vision OCR).
+    #[arg(long = "hardsub-ocr", default_value_t = false)]
+    pub hardsub_ocr: bool,
+
+    /// Re-process files that already have Polish subtitles (normally skipped).
+    #[arg(long, default_value_t = false)]
+    pub force: bool,
+
     #[arg(long, short = 'v', default_value_t = false)]
     pub verbose: bool,
 
@@ -108,6 +118,8 @@ impl TranslateArgs {
             workers: self.workers,
             external_subs_dir: self.external_subs.as_ref().map(PathBuf::from),
             keep_artifacts: self.keep_artifacts,
+            enable_hardsub_ocr: self.hardsub_ocr,
+            force: self.force,
         }
     }
 }

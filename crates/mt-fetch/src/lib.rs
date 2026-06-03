@@ -3,6 +3,7 @@
 pub mod align;
 pub mod align_ilass;
 pub mod fetcher;
+pub mod ogladajanime;
 pub mod providers;
 pub mod rate_limiter;
 pub mod retry;

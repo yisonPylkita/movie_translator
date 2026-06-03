@@ -44,6 +44,8 @@ struct Modules {
     inpainting: Py<PyAny>,
     /// `movie_translator.identifier.parser` — `parse_filename`.
     parser: Py<PyAny>,
+    /// `movie_translator.hardsub` — `download_episode` + `ocr_and_clean`.
+    hardsub: Py<PyAny>,
 }
 
 /// Shared, lazily-loaded module handles, accessed via [`with_modules`].
@@ -88,6 +90,7 @@ where
     let ocr = py_import(py, "movie_translator.ocr")?;
     let inpainting = py_import(py, "movie_translator.inpainting")?;
     let parser = py_import(py, "movie_translator.identifier.parser")?;
+    let hardsub = py_import(py, "movie_translator.hardsub")?;
     let m = Modules {
         types,
         translation,
@@ -95,6 +98,7 @@ where
         ocr,
         inpainting,
         parser,
+        hardsub,
     };
 
     let mut guard = cell.lock().expect("modules mutex poisoned");
@@ -117,6 +121,7 @@ impl Modules {
             ocr: self.ocr.clone_ref(py),
             inpainting: self.inpainting.clone_ref(py),
             parser: self.parser.clone_ref(py),
+            hardsub: self.hardsub.clone_ref(py),
         }
     }
 }
@@ -702,6 +707,67 @@ pub fn ocr_burned_in(
                 srt_path: PathBuf::from(srt_path),
                 ocr_results: results,
             })
+        })
+    })
+}
+
+/// Download the lowest OCR-legible copy of a player embed URL via yt-dlp
+/// (`movie_translator.hardsub.download_episode`). Network/CPU only — NOT a GPU
+/// job, so call it from a `spawn_blocking` thread, not the GPU worker.
+pub fn hardsub_download(
+    embed_url: &str,
+    out_path: &Path,
+    min_height: u32,
+    referer: Option<&str>,
+) -> Result<PathBuf> {
+    Python::attach(|py| {
+        with_modules(py, |py, m| {
+            let hardsub_bound = m.hardsub.bind(py);
+            let func = hardsub_bound.getattr("download_episode").map_err(py_err)?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs.set_item("embed_url", embed_url).map_err(py_err)?;
+            kwargs
+                .set_item("out_path", out_path.to_string_lossy().as_ref())
+                .map_err(py_err)?;
+            kwargs.set_item("min_height", min_height).map_err(py_err)?;
+            match referer {
+                Some(r) => kwargs.set_item("referer", r).map_err(py_err)?,
+                None => kwargs.set_item("referer", py.None()).map_err(py_err)?,
+            }
+            let result = func
+                .call(PyTuple::empty(py), Some(&kwargs))
+                .map_err(py_err)?;
+            let s: String = result.str().map_err(py_err)?.extract().map_err(py_err)?;
+            Ok(PathBuf::from(s))
+        })
+    })
+}
+
+/// OCR burned-in subs from a downloaded video and clean them into a `.srt`
+/// (`movie_translator.hardsub.ocr_and_clean`). This is the GPU/Vision step —
+/// route it through the serialised GPU worker. Returns `None` when OCR yields
+/// no usable lines (the caller skips this episode).
+pub fn hardsub_ocr_clean(video: &Path, out_dir: &Path, language: &str) -> Result<Option<PathBuf>> {
+    Python::attach(|py| {
+        with_modules(py, |py, m| {
+            let hardsub_bound = m.hardsub.bind(py);
+            let func = hardsub_bound.getattr("ocr_and_clean").map_err(py_err)?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs
+                .set_item("video_path", video.to_string_lossy().as_ref())
+                .map_err(py_err)?;
+            kwargs
+                .set_item("out_dir", out_dir.to_string_lossy().as_ref())
+                .map_err(py_err)?;
+            kwargs.set_item("language", language).map_err(py_err)?;
+            let result = func
+                .call(PyTuple::empty(py), Some(&kwargs))
+                .map_err(py_err)?;
+            let s: String = result.str().map_err(py_err)?.extract().map_err(py_err)?;
+            if s.is_empty() {
+                return Ok(None);
+            }
+            Ok(Some(PathBuf::from(s)))
         })
     })
 }
