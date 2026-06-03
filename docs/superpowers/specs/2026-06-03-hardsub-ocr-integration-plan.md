@@ -40,9 +40,9 @@ movie-translator run <video-or-dir> --hardsub-ocr
 3. **Open the browser** at `https://ogladajanime.pl/anime/<slug>` (macOS
    `open`, Linux `xdg-open`). Print a one-line instruction: "Run the resolver
    userscript (⏬ All / ▶ This episode), then press Enter."
-4. **Wait for the signal**: interactive prompt (Enter / a small TUI menu).
-   On confirm, find the **newest** `~/Downloads/oga-<slug>-*.players.json`
-   (filtered by slug and `mtime` after the browser opened) and parse it.
+4. **Wait for the signal — auto-watch `~/Downloads`** for a new
+   `oga-<slug>-*.players.json` (no Enter needed). Must guard against picking up
+   a download still in flight — see "Detecting a fully-downloaded file" below.
 5. **Per episode** in the JSON: pick the best PL player (CDA preferred) →
    yt-dlp download the lowest legible track → Vision OCR → clean (merge jitter
    + drop garbage) → **align to the local episode's English reference** →
@@ -81,6 +81,28 @@ us drop residual OP/ED/sign garbage that falls outside English dialogue windows.
   doesn't loop provider calls). The download step hits the video hosts (cda
   etc.) via yt-dlp — already rate-limited per file.
 
+## Detecting a fully-downloaded file (the watch signal)
+
+Watching `~/Downloads` is the trigger, but we must not read a half-written
+file. Layered guards, all required:
+
+1. **Ignore in-flight partials.** Browsers download to a temp name and rename
+   to the final name only on completion — Chrome `*.crdownload`, Firefox
+   `*.part`, Safari `*.download`. So we only ever consider files matching
+   `oga-<slug>-*.players.json` (the final name); a partial simply isn't
+   matched yet. This is the primary, near-sufficient signal (rename is atomic).
+2. **Freshness.** Only accept files whose `mtime` is **after** the browser was
+   opened, so a stale JSON from a previous run is never picked up.
+3. **Size stability.** Require the file size to be unchanged across two polls
+   (~500 ms apart) before reading — belt-and-suspenders against odd writers.
+4. **Valid + complete JSON.** Final check: `json.loads` succeeds **and** the
+   parsed object has the expected shape (`episodes: [...]` with `resolved`
+   entries). A truncated write fails to parse, so this rejects partials the
+   other guards somehow missed; retry on failure.
+
+Poll ~1 s. Overall timeout (e.g. 10 min) with a clear "still waiting…" line and
+Ctrl-C to bail. Pick the **newest** matching file if several appear.
+
 ## Episode ↔ local-file mapping
 
 The userscript JSON keys episodes by number (`episode`). Match each to the
@@ -89,10 +111,10 @@ processes all matched episodes; on a single file, just that episode.
 
 ## Open decisions
 
-1. **Signal mechanism**: plain `Enter` prompt vs a small ratatui menu vs
-   auto-watching `~/Downloads` for a new matching file. Leaning: interactive
-   confirm **plus** "newest matching file in Downloads" pickup (user's stated
-   preference).
+1. **Signal mechanism**: ~~decided~~ — **auto-watch `~/Downloads`** for the
+   new matching JSON (no manual Enter), with the layered fully-downloaded
+   detection above (ignore `*.crdownload`/`*.part`/`*.download`, fresh mtime,
+   stable size, valid+complete JSON).
 2. **When to trigger**: always when the flag is set, or only as a fallback
    after providers find no Polish subs? Leaning: explicit (flag set ⇒ run it),
    independent of provider results, since it's opt-in.
