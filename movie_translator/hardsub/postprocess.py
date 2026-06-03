@@ -13,8 +13,8 @@ the per-frame OCR text (text + timestamp) into clean lines:
     does not) — this is anime-agnostic, so it handles OP/ED/sign junk wherever
     it appears without hardcoding per-series timings.
 
-Graduated verbatim from the `scripts/hardsub_poc/postprocess.py` PoC (logic
-unchanged) so the main pipeline's OCR stage stays untouched.
+Kept separate from the shared `movie_translator.ocr` stage so the main
+pipeline's burned-in OCR behaviour stays untouched.
 """
 
 from __future__ import annotations

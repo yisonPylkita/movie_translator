@@ -6,10 +6,9 @@ quality — so we deliberately grab the smallest format whose height is still
 ``format_sort=['+size','+res']`` (ascending) in the yt-dlp opts, which is what
 actually makes the selection prefer the SMALLEST qualifying candidate.
 
-Graduated from the `scripts/hardsub_poc/download.py` PoC. Only the embed/page
-path (yt-dlp format negotiation) is needed in the main pipeline — URL
-resolution to a player embed happens upstream, so `download_episode` always
-hands the embed URL to yt-dlp.
+URL resolution to a player embed happens upstream (the browser userscript), so
+`download_episode` always hands a ready embed URL to yt-dlp for format
+negotiation.
 """
 
 from __future__ import annotations

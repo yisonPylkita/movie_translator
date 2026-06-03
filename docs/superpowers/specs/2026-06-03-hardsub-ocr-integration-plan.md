@@ -1,21 +1,28 @@
 # Hardsub-OCR integration plan
 
-**Status: IMPLEMENTED** (behind `--hardsub-ocr`). Builds on the proof-of-concept
-in `scripts/hardsub_poc/` (design: `2026-06-03-hardsub-ocr-poc-design.md`).
+**Status: IMPLEMENTED & FINALIZED** (behind `--hardsub-ocr`). The standalone
+PoC under `scripts/hardsub_poc/` has been consolidated into the app and removed;
+the original reverse-engineering record is `2026-06-03-hardsub-ocr-poc-design.md`.
 
-What shipped vs. this plan:
-- Python ML graduated to `movie_translator/hardsub/` (`download_episode`,
-  `ocr_and_clean`), exposed via `crates/mt-ml` (`hardsub_download`,
-  `hardsub_ocr_clean`).
-- Discovery + open-browser + watch-`~/Downloads` + JSON parse + best-player
-  selection live in `crates/mt-fetch/src/ogladajanime.rs`.
+Final layout:
+- Python ML in `movie_translator/hardsub/` (`download_episode`, `ocr_and_clean`),
+  exposed via `crates/mt-ml` (`hardsub_download`, `hardsub_ocr_clean`).
+- OCR quality lives in the shared `movie_translator/ocr` stage: sign-text filter
+  + changed-pixel-fraction transition metric (tuned via the golden-sample
+  harness `scripts/ocr_golden_analysis.py`; ablation `scripts/ocr_experiment.py`).
+- Discovery + open-browser + watch-`~/Downloads` + JSON parse + best/fallback
+  player selection in `crates/mt-fetch/src/ogladajanime.rs`.
 - A `GpuExecutor::hardsub_ocr_clean` worker job (OCR stays serialised on the GPU
-  worker); download runs off-GPU.
+  worker); download runs off-GPU, with multi-mirror fallback (cda→vk→…).
 - Orchestration: a once-per-run interactive prep in `run_all_full`
   (`prepare_hardsub_plan`) and a per-file `stages::hardsub_ocr` (Stage 4.5,
   after `extract_english` so the English alignment reference exists), which
   ilass-aligns the OCR'd Polish and injects it as a fetched `pol` track that
   `create_tracks` → `mux` already handle.
+- The browser userscript is the only standalone asset:
+  `scripts/ogladajanime_resolver.user.js` (the CLI names it in its wait prompt).
+- `--force` re-processes files that already have Polish (for re-runs after an
+  OCR change).
 - **Known limitation (v1):** the OCR track is produced only for files that have
   an English source (used as the alignment reference) and thus go through the
   normal flow; files with no English at all still skip. Lifting that needs the
@@ -75,7 +82,7 @@ movie-translator run <video-or-dir> --hardsub-ocr
 | `--hardsub-ocr` flag, discovery, browser-open, Downloads-watch, interactive wait, orchestration | **Rust** | new `crates/mt-fetch/src/ogladajanime.rs` + a `mt-pipeline` stage + `mt-cli` flag |
 | Download (yt-dlp) + OCR + clean (merge/garbage-filter) | **Python** | graduate `scripts/hardsub_poc/{download,postprocess}.py` into `movie_translator/hardsub/`, reuse `movie_translator/ocr`, expose via `crates/mt-ml` |
 | Alignment to the local timeline | **reuse Rust `mt-fetch`** | drop the PoC's `align.py` duplicate — call the existing ilass (`align_ilass.rs`) + xcorr fallback against the local English reference |
-| The userscript | tracked asset | `scripts/hardsub_poc/ogladajanime_resolver.user.js`; CLI prints its path / install hint |
+| The userscript | tracked asset | `scripts/ogladajanime_resolver.user.js`; CLI names it in the wait prompt |
 
 The English reference already exists in the pipeline: the normal flow extracts
 the local video's English track (soft-sub or English-hardsub OCR). The

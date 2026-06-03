@@ -1,7 +1,7 @@
-"""Hardsub-OCR integration: download a hardsubbed stream and OCR its baked-in subs.
+"""Hardsub-OCR: download a hardsubbed stream and OCR its baked-in subs.
 
-Graduated from the `scripts/hardsub_poc/` proof of concept. Exposes exactly two
-entry points consumed by the Rust PyO3 bridge:
+Exposes exactly two entry points consumed by the Rust PyO3 bridge
+(`crates/mt-ml`) for the `--hardsub-ocr` pipeline path:
 
   * :func:`download_episode` — fetch the lowest OCR-legible copy of a player
     embed URL via yt-dlp.

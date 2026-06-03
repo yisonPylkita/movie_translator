@@ -401,7 +401,8 @@ async fn prepare_hardsub_plan(
         log_hardsub(
             &progress,
             format!(
-                "run the resolver userscript in your browser — waiting for its JSON in {}…",
+                "run the player-resolver userscript (scripts/ogladajanime_resolver.user.js) \
+                 in your browser — waiting for its JSON in {}…",
                 downloads.display()
             ),
         );
