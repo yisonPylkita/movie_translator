@@ -47,3 +47,8 @@ benchmarks/onepiece/
 
 # Rust build artifacts
 target/
+
+# ASR PoC: isolated per-engine venvs + extracted audio (large/derived)
+benchmarks/asr/envs/
+benchmarks/asr/audio/
+benchmarks/asr/**/__pycache__/
