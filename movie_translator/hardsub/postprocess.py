@@ -27,7 +27,10 @@ from difflib import SequenceMatcher
 # persisted long enough to be a real subtitle rather than OCR flicker.
 SIMILARITY = 0.80  # >= this ratio (normalized) => same subtitle, merge
 TAIL_MS = 800  # how long the last line lingers past its last frame
-MIN_DURATION_MS = 500  # drop lines shorter than this (transient garbage)
+# 200ms: with the OCR sign-filter + lower change-threshold, short real lines
+# (e.g. "Co?", "Znalazłem") are common and should survive; sign garbage is
+# already removed upstream, so the floor can be low.
+MIN_DURATION_MS = 200  # drop lines shorter than this (transient garbage)
 MIN_LETTERS = 3  # drop lines with fewer real letters
 MIN_ALPHA_RATIO = 0.5  # drop lines that are mostly symbols/punctuation
 

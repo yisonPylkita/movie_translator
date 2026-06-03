@@ -10,11 +10,30 @@ from .frame_extractor import extract_subtitle_region_frames
 from .vision_ocr import recognize_text_with_boxes
 
 # ── Configurable constants ───────────────────────────────────────────────────
-OCR_EXTRACT_FPS = 3
+# fps + change-threshold tuned via scripts/ocr_experiment.py on Isekai Ojisan
+# ep5: a high threshold (was 15) let a static on-screen sign mask the smaller
+# subtitle changes underneath, so real lines were never OCR'd. 6fps + a low
+# threshold (4) recovered them (coverage 10/15 -> 14/15) at the cost of OCR-ing
+# more frames (the merge step dedups the extra near-identical frames).
+OCR_EXTRACT_FPS = 6
 OCR_SCALE_WIDTH = 1280  # it is 720p as - 1280w x720h
 OCR_CROP_RATIO = 0.25  # bottom 25% of frame
-OCR_CHANGE_THRESHOLD = 15.0  # mean absolute pixel diff to detect a change
+OCR_CHANGE_THRESHOLD = 4.0  # mean absolute pixel diff to detect a change
 OCR_VARIANCE_THRESHOLD = 200.0  # pixel variance threshold for "has text"
+
+
+def _is_sign_text(text: str) -> bool:
+    """True for an on-screen sign/logo line (e.g. ``CALENDAR``) — a single
+    all-caps token with no spaces. Real dialogue is multi-word/lowercase, so
+    this drops sign text that sits inside the subtitle crop without touching
+    real lines."""
+    stripped = text.strip()
+    if not stripped or ' ' in stripped:
+        return False
+    letters = [c for c in stripped if c.isalpha()]
+    if len(letters) < 3:
+        return False
+    return sum(c.isupper() for c in letters) / len(letters) >= 0.8
 
 
 def _map_box_to_full_frame(box: BoundingBox, crop_ratio: float) -> BoundingBox:
@@ -148,6 +167,9 @@ def extract_burned_in_subtitles(
 
         for i, (frame_path, timestamp_ms) in enumerate(transition_frames):
             text_boxes = recognize_text_with_boxes(frame_path, language=language)
+            # Drop on-screen sign/logo boxes (e.g. CALENDAR) that fall inside
+            # the subtitle crop, keeping only real dialogue text.
+            text_boxes = [(t, b) for (t, b) in text_boxes if not _is_sign_text(t)]
             text = '\n'.join(t for t, _ in text_boxes).strip()
             frame_texts.append((timestamp_ms, text))
 
