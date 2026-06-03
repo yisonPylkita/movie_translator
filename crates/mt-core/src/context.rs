@@ -26,6 +26,10 @@ pub struct PipelineConfig {
     /// Keep per-file work/`.translate_temp` directories after a successful run
     /// instead of deleting them. Failures always keep artifacts for debugging.
     pub keep_artifacts: bool,
+    /// Source Polish subtitles by OCRing burned-in subs from ogladajanime.pl.
+    /// Triggers an interactive discovery step (open browser, watch ~/Downloads
+    /// for the resolver userscript's JSON) once per run. macOS-only.
+    pub enable_hardsub_ocr: bool,
 }
 
 impl Default for PipelineConfig {
@@ -42,6 +46,7 @@ impl Default for PipelineConfig {
             workers: 4,
             external_subs_dir: None,
             keep_artifacts: false,
+            enable_hardsub_ocr: false,
         }
     }
 }
@@ -157,6 +162,7 @@ mod tests {
         assert_eq!(cfg.workers, 4);
         assert!(cfg.external_subs_dir.is_none());
         assert!(!cfg.keep_artifacts);
+        assert!(!cfg.enable_hardsub_ocr);
     }
 
     #[test]

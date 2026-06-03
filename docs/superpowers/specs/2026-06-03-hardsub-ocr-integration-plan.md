@@ -1,7 +1,25 @@
 # Hardsub-OCR integration plan
 
-**Status:** plan (not implemented). Builds on the proof-of-concept in
-`scripts/hardsub_poc/` (design: `2026-06-03-hardsub-ocr-poc-design.md`).
+**Status: IMPLEMENTED** (behind `--hardsub-ocr`). Builds on the proof-of-concept
+in `scripts/hardsub_poc/` (design: `2026-06-03-hardsub-ocr-poc-design.md`).
+
+What shipped vs. this plan:
+- Python ML graduated to `movie_translator/hardsub/` (`download_episode`,
+  `ocr_and_clean`), exposed via `crates/mt-ml` (`hardsub_download`,
+  `hardsub_ocr_clean`).
+- Discovery + open-browser + watch-`~/Downloads` + JSON parse + best-player
+  selection live in `crates/mt-fetch/src/ogladajanime.rs`.
+- A `GpuExecutor::hardsub_ocr_clean` worker job (OCR stays serialised on the GPU
+  worker); download runs off-GPU.
+- Orchestration: a once-per-run interactive prep in `run_all_full`
+  (`prepare_hardsub_plan`) and a per-file `stages::hardsub_ocr` (Stage 4.5,
+  after `extract_english` so the English alignment reference exists), which
+  ilass-aligns the OCR'd Polish and injects it as a fetched `pol` track that
+  `create_tracks` → `mux` already handle.
+- **Known limitation (v1):** the OCR track is produced only for files that have
+  an English source (used as the alignment reference) and thus go through the
+  normal flow; files with no English at all still skip. Lifting that needs the
+  translate/font-check path to run without an English source.
 
 ## Goal
 

@@ -957,6 +957,7 @@ dependencies = [
     { name = "static-ffmpeg" },
     { name = "torch" },
     { name = "transformers" },
+    { name = "yt-dlp" },
 ]
 
 [package.dev-dependencies]
@@ -969,9 +970,6 @@ dev = [
     { name = "pytest-xdist" },
     { name = "ruff" },
     { name = "ty" },
-]
-poc = [
-    { name = "yt-dlp" },
 ]
 
 [package.metadata]
@@ -993,6 +991,7 @@ requires-dist = [
     { name = "static-ffmpeg", specifier = "~=2.7" },
     { name = "torch", specifier = "~=2.7" },
     { name = "transformers", specifier = ">=5.0.0rc3" },
+    { name = "yt-dlp", specifier = ">=2026.3.17" },
 ]
 
 [package.metadata.requires-dev]
@@ -1004,7 +1003,6 @@ dev = [
     { name = "ruff", specifier = ">=0.14" },
     { name = "ty" },
 ]
-poc = [{ name = "yt-dlp", specifier = ">=2026.3.17" }]
 
 [[package]]
 name = "mpmath"

@@ -46,6 +46,15 @@ pub trait GpuExecutor {
         backend: &str,
         ocr_results: &[OCRResult],
     ) -> Result<PathBuf>;
+
+    /// OCR burned-in subs from a downloaded hardsub video and clean them into a
+    /// `.srt` (mirrors [`mt_ml::hardsub_ocr_clean`]). `None` => no usable lines.
+    fn hardsub_ocr_clean(
+        &self,
+        video: &Path,
+        out_dir: &Path,
+        language: &str,
+    ) -> Result<Option<PathBuf>>;
 }
 
 /// A [`GpuExecutor`] that calls [`mt_ml`] inline (synchronous).
@@ -86,6 +95,15 @@ impl GpuExecutor for DirectGpuExecutor {
         ocr_results: &[OCRResult],
     ) -> Result<PathBuf> {
         mt_ml::inpaint(video, output, device, backend, ocr_results).map_err(PipelineError::from)
+    }
+
+    fn hardsub_ocr_clean(
+        &self,
+        video: &Path,
+        out_dir: &Path,
+        language: &str,
+    ) -> Result<Option<PathBuf>> {
+        mt_ml::hardsub_ocr_clean(video, out_dir, language).map_err(PipelineError::from)
     }
 }
 
@@ -227,6 +245,10 @@ mod tests {
         ) -> Result<PathBuf> {
             self.calls.borrow_mut().push("inpaint".into());
             Ok(out.to_path_buf())
+        }
+        fn hardsub_ocr_clean(&self, _v: &Path, _o: &Path, _l: &str) -> Result<Option<PathBuf>> {
+            self.calls.borrow_mut().push("hardsub_ocr_clean".into());
+            Ok(None)
         }
     }
 

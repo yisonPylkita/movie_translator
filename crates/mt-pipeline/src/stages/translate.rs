@@ -196,6 +196,9 @@ mod tests {
         ) -> Result<PathBuf> {
             Ok(out.to_path_buf())
         }
+        fn hardsub_ocr_clean(&self, _v: &Path, _o: &Path, _l: &str) -> Result<Option<PathBuf>> {
+            unreachable!()
+        }
     }
 
     fn ctx(tmp: &Path, extra_models: Vec<String>) -> PipelineContext {
