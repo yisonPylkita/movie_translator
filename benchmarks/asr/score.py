@@ -27,9 +27,20 @@ REFS = HERE / 'refs'
 SEG_START_MS = 120_000
 SEG_END_MS = 300_000
 
+# The Judas "English (Original)" track is 94% non-dialogue (signs/typesetting,
+# OP/ED lyrics). Keep only dialogue so the reference reflects spoken lines.
+_NON_DIALOGUE = ('Signs', 'OP Lyrics', 'ED Lyrics')
+
+
+def _is_dialogue(style: str) -> bool:
+    return not any(style.startswith(p) for p in _NON_DIALOGUE)
+
 
 def load_ref(path: Path, variant: str) -> list[dict]:
-    segs = E.parse_ass_segments(path)
+    # Oppenheimer clean EN pair: an SRT (no styles, all dialogue), no windowing.
+    if variant == 'opp':
+        return E.parse_ass_segments(path)
+    segs = [s for s in E.parse_ass_segments(path) if _is_dialogue(s.get('style', ''))]
     if variant == 'full':
         return segs
     out = []
@@ -48,15 +59,18 @@ def load_ref(path: Path, variant: str) -> list[dict]:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument('--variant', choices=['seg', 'full'], default='seg')
+    ap.add_argument('--variant', choices=['seg', 'full', 'opp'], default='seg')
     args = ap.parse_args()
 
-    ref_en = load_ref(REFS / 'en_ref.ass', args.variant)
+    ref_path = REFS / ('opp_ref.srt' if args.variant == 'opp' else 'en_ref.ass')
+    ref_en = load_ref(ref_path, args.variant)
     ref_en_text = E.join_text(ref_en)
 
     rows = []
     ja_texts: dict[str, str] = {}
     for jf in sorted(RESULTS.glob(f'*_{args.variant}.json')):
+        if jf.name.startswith('scores'):  # don't ingest our own output
+            continue
         d = json.loads(jf.read_text())
         meta = d['meta']
         row = {

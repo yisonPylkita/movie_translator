@@ -92,6 +92,36 @@ def extract_subs(ep: Path) -> None:
         _run(['ffmpeg', '-y', '-i', str(ep), '-map', mapspec, '-c', codec, str(REFS / name)])
 
 
+# Clean English-audio + matching reference pair (vendor ilass sample). Unlike
+# the Isekai dub, this transcript matches the audio, so it gives an honest WER.
+OPP = HERE.parent.parent / 'vendor/ilass/ilass-cli/tests/samples/oppenheimer.mp4'
+OPP_REF = OPP.with_suffix('.ref.srt')
+
+
+def extract_oppenheimer() -> None:
+    if not OPP.is_file():
+        print(f'(oppenheimer sample missing, skipping clean-EN pair: {OPP})')
+        return
+    _run(
+        [
+            'ffmpeg',
+            '-y',
+            '-i',
+            str(OPP),
+            '-map',
+            '0:a:0',
+            '-ac',
+            '1',
+            '-ar',
+            '16000',
+            '-c:a',
+            'pcm_s16le',
+            str(AUDIO / 'en_opp.wav'),
+        ]
+    )
+    (REFS / 'opp_ref.srt').write_bytes(OPP_REF.read_bytes())
+
+
 def main() -> int:
     ep = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_EP
     if not ep.is_file():
@@ -101,6 +131,7 @@ def main() -> int:
     REFS.mkdir(exist_ok=True)
     extract_audio(ep)
     extract_subs(ep)
+    extract_oppenheimer()
     print('\nprepared:')
     for p in sorted(AUDIO.glob('*.wav')) + sorted(REFS.glob('*')):
         print(f'  {p.relative_to(HERE)}  ({p.stat().st_size // 1024} KiB)')

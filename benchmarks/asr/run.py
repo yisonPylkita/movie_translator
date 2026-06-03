@@ -46,7 +46,7 @@ def already_ok(out: Path) -> bool:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument('--variant', choices=['seg', 'full'], default='seg')
+    ap.add_argument('--variant', choices=['seg', 'full', 'opp'], default='seg')
     ap.add_argument('--engines', nargs='*', default=list(ENGINES))
     ap.add_argument('--langs', nargs='*', default=None)
     ap.add_argument('--models', nargs='*', default=None)

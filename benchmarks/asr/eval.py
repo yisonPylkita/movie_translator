@@ -71,7 +71,14 @@ def parse_ass_segments(path: Path) -> list[dict]:
     for ev in subs:
         if ev.is_comment or not ev.plaintext.strip():
             continue
-        out.append({'start_ms': int(ev.start), 'end_ms': int(ev.end), 'text': ev.plaintext})
+        out.append(
+            {
+                'start_ms': int(ev.start),
+                'end_ms': int(ev.end),
+                'text': ev.plaintext,
+                'style': getattr(ev, 'style', ''),
+            }
+        )
     return out
 
 
