@@ -92,22 +92,67 @@ def _format_selector(min_height: int) -> str:
     return f'bv*[height>={min_height}]+ba/b[height>={min_height}]/bv*+ba/b'
 
 
+def _build_ydl_opts(
+    out_path: str,
+    min_height: int,
+    best: bool,
+    referer: str | None,
+) -> dict:
+    """Build the yt-dlp options dict for either download mode.
+
+    Two modes, selected by `best`:
+
+    - `best=False` (OCR): smallest format >= `min_height`, paired with the
+      ascending `format_sort` that makes the >= floor resolve to the SMALLEST
+      qualifying track. Writes the exact `out_path` (caller supplies the ext).
+    - `best=True` (watch-it download): highest-quality video+audio (`bv*+ba/b`)
+      with no ascending sort, so yt-dlp's default prefers the best track. The
+      caller's suffix is dropped and yt-dlp picks the real container ext via
+      `%(ext)s` (a best-quality merge is typically `.mkv`).
+
+    When `referer` is given the media request carries it plus a desktop Chrome
+    User-Agent (some hosts 403 otherwise).
+    """
+    opts: dict = {
+        'quiet': True,
+        'no_warnings': True,
+        'noprogress': True,
+        'overwrites': True,
+    }
+    if best:
+        opts['format'] = 'bv*+ba/b'
+        # Strip the caller's ext; yt-dlp fills in the real container.
+        stem = str(Path(out_path).with_suffix(''))
+        opts['outtmpl'] = f'{stem}.%(ext)s'
+    else:
+        opts['format'] = _format_selector(min_height)
+        opts['outtmpl'] = out_path
+        # Ascending: smallest filesize first, then lowest resolution. This is
+        # what makes `bv*[height>=H]` resolve to the SMALLEST qualifying track
+        # (e.g. cda 480p ~248MB) instead of the largest.
+        opts['format_sort'] = ['+size', '+res']
+    if referer:
+        opts['http_headers'] = {'Referer': referer, 'User-Agent': _DESKTOP_UA}
+    return opts
+
+
 def download_episode(
     embed_url: str,
     out_path: str,
     min_height: int = DEFAULT_MIN_HEIGHT,
+    best: bool = False,
     referer: str | None = None,
 ) -> str:
-    """Download the lowest OCR-legible copy of the player embed URL to out_path.
+    """Download the player embed URL to `out_path`.
 
-    Hands `embed_url` to yt-dlp, which enumerates available formats and (paired
-    with the ascending size sort) picks the smallest height >= `min_height`,
-    falling back to the largest available. When `referer` is given the media
-    request carries it plus a desktop Chrome User-Agent (some hosts 403
-    otherwise).
+    `best=False` (default, OCR) grabs the smallest copy whose height is still
+    >= `min_height`; `best=True` grabs the highest-quality video+audio and lets
+    yt-dlp choose the container extension. See :func:`_build_ydl_opts`.
 
-    Returns the path written (== `out_path`). Raises :class:`HardsubError` on
-    any failure (yt-dlp error, empty/missing output).
+    Returns the path actually written. In OCR mode that is `out_path`; in best
+    mode the extension may differ from the one passed (yt-dlp picks it), so the
+    real written path is resolved from the output template. Raises
+    :class:`HardsubError` on any failure (yt-dlp error, empty/missing output).
     """
     # Imported lazily so callers that don't download don't pay yt-dlp's import
     # cost (and so the module imports cleanly without yt-dlp present).
@@ -116,23 +161,14 @@ def download_episode(
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    selector = _format_selector(min_height)
-    logger.info('yt-dlp download: %s -> %s (format=%r)', embed_url, out, selector)
-
-    ydl_opts: dict = {
-        'format': selector,
-        'outtmpl': str(out),
-        # Ascending: smallest filesize first, then lowest resolution. This is
-        # what makes `bv*[height>=H]` resolve to the SMALLEST qualifying track
-        # (e.g. cda 480p ~248MB) instead of the largest.
-        'format_sort': ['+size', '+res'],
-        'quiet': True,
-        'no_warnings': True,
-        'noprogress': True,
-        'overwrites': True,
-    }
-    if referer:
-        ydl_opts['http_headers'] = {'Referer': referer, 'User-Agent': _DESKTOP_UA}
+    ydl_opts = _build_ydl_opts(out_path, min_height, best, referer)
+    logger.info(
+        'yt-dlp download: %s -> %s (format=%r, best=%s)',
+        embed_url,
+        ydl_opts['outtmpl'],
+        ydl_opts['format'],
+        best,
+    )
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -140,8 +176,26 @@ def download_episode(
     except yt_dlp.utils.DownloadError as exc:
         raise HardsubError(f'yt-dlp download failed for {embed_url}: {exc}') from exc
 
-    if not out.exists() or out.stat().st_size == 0:
+    written = _resolve_written_path(out, best)
+    if written is None:
         raise HardsubError(f'yt-dlp produced no output for {embed_url}')
 
-    logger.info('yt-dlp download complete: %d bytes', out.stat().st_size)
-    return str(out)
+    logger.info('yt-dlp download complete: %d bytes', written.stat().st_size)
+    return str(written)
+
+
+def _resolve_written_path(out: Path, best: bool) -> Path | None:
+    """Find the non-empty file yt-dlp actually wrote, or None.
+
+    OCR mode writes the exact `out` path. Best mode templates the extension
+    (`%(ext)s`), so the real file shares `out`'s stem but may differ in ext —
+    pick the newest non-empty `<stem>.*` match.
+    """
+    if not best:
+        return out if out.exists() and out.stat().st_size > 0 else None
+    candidates = [
+        p for p in out.parent.glob(f'{out.stem}.*') if p.is_file() and p.stat().st_size > 0
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)

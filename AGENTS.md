@@ -54,6 +54,20 @@ run `scripts/ogladajanime_resolver.user.js`, it picks up the JSON from
 Polish). Real runs need GPU + model files; for iteration prefer `--dry-run` or
 a tiny synthetic clip.
 
+### Download an anime season (no translation)
+
+`just anime-dl "<anime name>" [--out DIR] [--timeout SECS] [--json PATH]`
+(wraps `cargo run --release --bin anime-dl`). Standalone binary, separate from
+`movie-translator`: it finds the anime on ogladajanime.pl, opens the browser,
+waits for the resolver userscript to drop its players JSON in `~/Downloads`,
+then downloads **every** episode at **best** available quality (no translation,
+no OCR). Reuses `mt_fetch::ogladajanime` (discover/open/poll/parse) and
+`mt_ml::hardsub_download(..., best=true, ...)`. `--json` skips the browser and
+parses an existing resolver JSON (cheap re-runs). Sequential, mirror-fallback
+per episode; resumes by skipping episodes already on disk. macOS-oriented
+(browser + userscript flow); the `--hardsub-ocr` translate flag is the
+OCR-into-the-pipeline cousin.
+
 ### Build / set up a fresh checkout
 
 `just setup` (deps + submodules + model + build; idempotent). On macOS
@@ -119,7 +133,7 @@ lint` is the whole-tree version.
 │   ├── mt-media/       FFmpeg extract/mux, font checks, file operations.
 │   ├── mt-ml/          PyO3 embedded-CPython bridge → the Python package. THE boundary.
 │   ├── mt-pipeline/    Orchestration: stages, GPU worker (serialised), progress events, proper nouns.
-│   └── mt-cli/         clap CLI + ratatui TUI consuming the ProgressEvent stream.
+│   └── mt-cli/         clap CLI + ratatui TUI. Two bins: movie-translator + anime-dl (season downloader).
 ├── movie_translator/               Python ML backend (importable package)
 │   ├── translation/    Allegro BiDi model + Apple Translation (swift bridge) + sentence merger.
 │   ├── ocr/            Vision OCR, PGS extractor, burned-in extractor, frame extractor.

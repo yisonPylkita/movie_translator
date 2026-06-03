@@ -718,6 +718,7 @@ pub fn hardsub_download(
     embed_url: &str,
     out_path: &Path,
     min_height: u32,
+    best: bool,
     referer: Option<&str>,
 ) -> Result<PathBuf> {
     Python::attach(|py| {
@@ -730,6 +731,7 @@ pub fn hardsub_download(
                 .set_item("out_path", out_path.to_string_lossy().as_ref())
                 .map_err(py_err)?;
             kwargs.set_item("min_height", min_height).map_err(py_err)?;
+            kwargs.set_item("best", best).map_err(py_err)?;
             match referer {
                 Some(r) => kwargs.set_item("referer", r).map_err(py_err)?,
                 None => kwargs.set_item("referer", py.None()).map_err(py_err)?,

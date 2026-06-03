@@ -8,14 +8,19 @@ use std::path::{Path, PathBuf};
 
 use mt_core::Result;
 
-/// Download the lowest OCR-legible copy of a player embed URL via yt-dlp.
+/// Download a player embed URL via yt-dlp.
+///
+/// `best = false` grabs the smallest copy whose height is still >= `min_height`
+/// (OCR-legible, small); `best = true` grabs the highest-quality video+audio
+/// and lets yt-dlp choose the container extension (the watch-it download path).
 pub fn hardsub_download(
     embed_url: &str,
     out_path: &Path,
     min_height: u32,
+    best: bool,
     referer: Option<&str>,
 ) -> Result<PathBuf> {
-    crate::backend::hardsub_download(embed_url, out_path, min_height, referer)
+    crate::backend::hardsub_download(embed_url, out_path, min_height, best, referer)
 }
 
 /// OCR burned-in subs from a downloaded video and clean them into a `.srt`.

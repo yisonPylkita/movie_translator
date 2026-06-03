@@ -42,7 +42,7 @@ model:
 # Build the release binary + the vendored ilass alignment engine.
 # Depends on `deps` so the venv exists before cargo links against libpython.
 build: deps
-    cargo build --release --bin movie-translator
+    cargo build --release --bin movie-translator --bin anime-dl
     cd vendor/ilass && cargo build --release
 
 # Remove all Rust build artifacts.
@@ -58,6 +58,10 @@ run input *args:
 # Extract subtitles (text + burned-in OCR), no translation: `just extract <file-or-dir>`.
 extract input *args:
     cargo run --release --quiet --bin movie-translator -- extract "{{ input }}" {{ args }}
+
+# Download a whole anime season from ogladajanime.pl: `just anime-dl "<name>" [flags]`.
+anime-dl name *args:
+    cargo run --release --quiet --bin anime-dl -- "{{ name }}" {{ args }}
 
 # ─── Tests + lint ──────────────────────────────────────────────────────────
 

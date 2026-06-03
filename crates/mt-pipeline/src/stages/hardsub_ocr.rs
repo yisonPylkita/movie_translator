@@ -63,7 +63,7 @@ pub fn run(
             player.quality.as_deref().unwrap_or("?"),
             player.embed_url
         );
-        match mt_ml::hardsub_download(&player.embed_url, &video, MIN_HEIGHT, None) {
+        match mt_ml::hardsub_download(&player.embed_url, &video, MIN_HEIGHT, false, None) {
             Ok(_) => {
                 downloaded = true;
                 break;
