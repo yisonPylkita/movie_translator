@@ -54,6 +54,13 @@ dev = ["ruff>=0.14", "pytest>=9.0", "pytest-xdist>=3.5", "pytest-asyncio>=0.24",
 # benchmarks/onepiece/strategies.py. Kept out of runtime + dev groups so
 # the production install stays lean.
 benchmarks = ["sacrebleu~=2.6"]
+# Hardsub-OCR PoC: yt-dlp downloads the resolved embed URL. URL resolution
+# happens in a real browser (userscript / mitmproxy capture), not headlessly
+# — the site's anti-debug rules out a CDP/Playwright scraper — so no
+# browser-automation or cookie-extraction deps are needed here.
+poc = [
+    "yt-dlp>=2026.3.17",
+]
 
 [tool.ruff]
 line-length = 100
