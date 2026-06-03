@@ -111,6 +111,23 @@ just run ~/Downloads/english_version --external-subs ~/Downloads/polish_version/
 
 The extract command outputs SRT files and a `manifest.json` that the translate command uses for matching by media identity (title + season + episode).
 
+### Download a season (`anime-dl`)
+
+Download a whole Polish-subbed anime season straight from ogladajanime.pl — no translation, just grab the episodes:
+
+```bash
+# Find the anime, open the browser, download every episode at best quality
+just anime-dl "Isekai Ojisan"
+
+# Custom output dir / longer wait for the userscript JSON
+just anime-dl "Isekai Ojisan" --out ~/Anime/isekai-ojisan --timeout 900
+
+# Skip the browser and reuse a resolver JSON you already have
+just anime-dl --json ~/Downloads/oga-isekai-ojisan-all.players.json
+```
+
+`anime-dl` opens the matched anime page in your browser; you run the resolver userscript (`scripts/ogladajanime_resolver.user.js`), which enumerates the whole season and downloads a players JSON to `~/Downloads`. `anime-dl` picks that up and downloads each episode (best mirror first, falling back on dead ones), skipping episodes already on disk. macOS-oriented (browser + userscript flow).
+
 ## How It Works
 
 ```
@@ -161,6 +178,7 @@ Every common task is a `just` recipe — run `just --list` to see them all.
 | `just build` | Rebuild the release binary + the vendored ilass engine |
 | `just run <input>` | Translate (default subcommand) |
 | `just extract <input>` | Extract subtitles only (no translation) |
+| `just anime-dl "<name>"` | Download a whole anime season from ogladajanime.pl |
 | `just test` | Run the Rust test suite |
 | `just py-test` | Run the Python ML-backend test suite |
 | `just check` | Clippy + fmt check + ruff (no modifications — mirrors CI) |

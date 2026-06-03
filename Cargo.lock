@@ -1350,6 +1350,7 @@ dependencies = [
  "crossterm",
  "mt-core",
  "mt-discovery",
+ "mt-fetch",
  "mt-media",
  "mt-ml",
  "mt-pipeline",

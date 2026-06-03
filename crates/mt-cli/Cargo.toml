@@ -8,6 +8,10 @@ license.workspace = true
 name = "movie-translator"
 path = "src/main.rs"
 
+[[bin]]
+name = "anime-dl"
+path = "src/bin/anime_dl.rs"
+
 [lib]
 name = "mt_cli"
 path = "src/lib.rs"
@@ -18,6 +22,7 @@ mt-pipeline = { path = "../mt-pipeline" }
 mt-discovery = { path = "../mt-discovery" }
 mt-media = { path = "../mt-media" }
 mt-ml = { path = "../mt-ml" }
+mt-fetch = { path = "../mt-fetch" }
 mt-subtitles = { path = "../mt-subtitles" }
 clap = { workspace = true }
 tokio = { workspace = true }

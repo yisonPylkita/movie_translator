@@ -50,3 +50,50 @@ def test_format_selector_embeds_min_height() -> None:
 
 def test_format_selector_uses_given_height() -> None:
     assert 'height>=720' in download_mod._format_selector(720)
+
+
+# --- _build_ydl_opts -----------------------------------------------------
+
+
+def test_build_opts_ocr_mode_smallest_legible() -> None:
+    """OCR mode (best=False): smallest >= floor, ascending sort, exact outtmpl."""
+    opts = download_mod._build_ydl_opts('/tmp/clip.mp4', min_height=480, best=False, referer=None)
+    assert opts['format'] == download_mod._format_selector(480)
+    # Ascending sort is what makes the >= floor resolve to the SMALLEST track.
+    assert opts['format_sort'] == ['+size', '+res']
+    # OCR mode writes the exact path it was given.
+    assert opts['outtmpl'] == '/tmp/clip.mp4'
+
+
+def test_build_opts_best_mode_highest_quality() -> None:
+    """Best mode: best video+audio, no ascending sort, ext templated by yt-dlp."""
+    opts = download_mod._build_ydl_opts('/tmp/show-E01.mkv', min_height=0, best=True, referer=None)
+    assert opts['format'] == 'bv*+ba/b'
+    # No ascending size sort -> yt-dlp's default prefers the BEST track.
+    assert 'format_sort' not in opts
+    # Caller's suffix is stripped; yt-dlp picks the real container ext.
+    assert opts['outtmpl'] == '/tmp/show-E01.%(ext)s'
+    # Land a real playable container: merged tracks go to mkv, and a remux PP
+    # rescues HLS sources that would otherwise keep a bogus `.m3u8` ext on
+    # what is actually MPEG-TS video.
+    assert opts['merge_output_format'] == 'mkv'
+    remuxers = [
+        pp for pp in opts.get('postprocessors', []) if pp.get('key') == 'FFmpegVideoRemuxer'
+    ]
+    assert remuxers, 'best mode must remux to a sane container'
+    assert remuxers[0]['preferedformat'] == 'mkv'
+
+
+def test_build_opts_ocr_mode_no_remux() -> None:
+    """OCR mode must NOT remux — it keeps its exact small output untouched."""
+    opts = download_mod._build_ydl_opts('/tmp/clip.mp4', min_height=480, best=False, referer=None)
+    assert 'merge_output_format' not in opts
+    assert 'postprocessors' not in opts
+
+
+def test_build_opts_referer_adds_headers() -> None:
+    opts = download_mod._build_ydl_opts(
+        '/tmp/clip.mp4', min_height=480, best=False, referer='https://oga.pl/'
+    )
+    assert opts['http_headers']['Referer'] == 'https://oga.pl/'
+    assert 'User-Agent' in opts['http_headers']
