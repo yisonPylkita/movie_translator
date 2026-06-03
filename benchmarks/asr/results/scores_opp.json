@@ -2,6 +2,21 @@
  "variant": "opp",
  "rows": [
   {
+   "engine": "apple-speech",
+   "model": "os",
+   "lang": "en",
+   "ok": true,
+   "rtf": 0.056,
+   "ram_mb": 18,
+   "n_seg": 7,
+   "error": null,
+   "timing_start_ms": 2176,
+   "timing_matched": 7,
+   "wer": 0.014,
+   "cer": 0.005,
+   "chrf": 98.6
+  },
+  {
    "engine": "faster-whisper",
    "model": "large-v3",
    "lang": "en",

@@ -2,6 +2,33 @@
  "variant": "seg",
  "rows": [
   {
+   "engine": "apple-speech",
+   "model": "os",
+   "lang": "en",
+   "ok": true,
+   "rtf": 0.025,
+   "ram_mb": 18,
+   "n_seg": 64,
+   "error": null,
+   "timing_start_ms": 868,
+   "timing_matched": 64,
+   "wer": 0.93,
+   "cer": 0.649,
+   "chrf": 42.7
+  },
+  {
+   "engine": "apple-speech",
+   "model": "os",
+   "lang": "ja",
+   "ok": true,
+   "rtf": 0.114,
+   "ram_mb": 18,
+   "n_seg": 16,
+   "error": null,
+   "timing_start_ms": 2611,
+   "timing_matched": 16
+  },
+  {
    "engine": "faster-whisper",
    "model": "large-v3",
    "lang": "en",
@@ -285,16 +312,17 @@
   }
  ],
  "ja_agreement_cer": {
-  "faster-whisper/large-v3": 0.262,
-  "faster-whisper/small": 0.228,
-  "kotoba-whisper/v2.0": 0.253,
-  "mlx-whisper/large-v3": 0.215,
-  "mlx-whisper/small": 0.632,
-  "openai-whisper/large-v3": 0.219,
-  "openai-whisper/small": 0.295,
-  "whisper.cpp/large-v3": 0.293,
-  "whisper.cpp/small": 0.402,
-  "whisperx/large-v3": 0.247,
-  "whisperx/small": 0.228
+  "apple-speech/os": 0.291,
+  "faster-whisper/large-v3": 0.27,
+  "faster-whisper/small": 0.232,
+  "kotoba-whisper/v2.0": 0.25,
+  "mlx-whisper/large-v3": 0.218,
+  "mlx-whisper/small": 0.65,
+  "openai-whisper/large-v3": 0.223,
+  "openai-whisper/small": 0.304,
+  "whisper.cpp/large-v3": 0.301,
+  "whisper.cpp/small": 0.415,
+  "whisperx/large-v3": 0.25,
+  "whisperx/small": 0.231
  }
 }

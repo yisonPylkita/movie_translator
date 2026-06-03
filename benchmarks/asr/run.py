@@ -26,6 +26,9 @@ ENGINES = {
     'whisperx': ('whisperx', 'whisperx_adapter.py', ['small', 'large-v3'], ['en', 'ja']),
     'whispercpp': ('whispercpp', 'whispercpp_adapter.py', ['small', 'large-v3'], ['en', 'ja']),
     'kotoba': ('kotoba', 'kotoba_adapter.py', ['v2.0'], ['ja']),
+    # Apple SpeechAnalyzer: on-device, OS owns the model; adapter needs only
+    # stdlib so it borrows the eval venv's python. Runs on ANE (not MPS).
+    'apple': ('eval', 'apple_adapter.py', ['os'], ['en', 'ja']),
 }
 
 
