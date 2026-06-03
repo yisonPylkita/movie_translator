@@ -545,7 +545,7 @@ async fn run_all_with_executor(
                 }
             };
 
-            if has_polish {
+            if has_polish && !config.force {
                 progress.send(ProgressEvent::FileFinished {
                     path: video_path.clone(),
                     status: FinishStatus::Skipped,

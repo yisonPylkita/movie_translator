@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ogladajanime player resolver
 // @namespace    movie-translator.hardsub
-// @version      2.5
+// @version      2.6
 // @description  Auto-resolve PL-hardsub player embed URLs across a whole anime — hands-off. Runs as page JS (no DevTools/CDP) so the site's anti-debug never fires; the real browser solves Turnstile per player. Walks every episode, resolves a curated set (one best player per translation group, CDA preferred), and downloads one combined JSON.
 // @match        https://ogladajanime.pl/anime/*
 // @run-at       document-idle
@@ -111,6 +111,10 @@
   };
   const heightOf = (e) => parseInt(String(e.quality || '').replace(/\D/g, ''), 10) || 0;
 
+  // Keep up to this many players per translation group, so the downloader has
+  // a fallback mirror when the best one is dead (e.g. a removed cda upload).
+  const PER_GROUP = 2;
+
   function curate(catalog) {
     const byGroup = {};
     for (const e of catalog) {
@@ -121,7 +125,14 @@
     const picks = [];
     for (const g of Object.keys(byGroup)) {
       byGroup[g].sort((a, b) => hostRank(a) - hostRank(b) || heightOf(b) - heightOf(a));
-      picks.push(byGroup[g][0]);
+      // Top-N distinct hosts per group (avoid N near-identical cda dupes).
+      const seenHosts = new Set();
+      for (const p of byGroup[g]) {
+        if (seenHosts.has(p.host)) continue;
+        seenHosts.add(p.host);
+        picks.push(p);
+        if (seenHosts.size >= PER_GROUP) break;
+      }
     }
     // Stable, CDA-first overall ordering for the output.
     picks.sort((a, b) => hostRank(a) - hostRank(b));

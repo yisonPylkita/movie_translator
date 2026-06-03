@@ -30,6 +30,9 @@ pub struct PipelineConfig {
     /// Triggers an interactive discovery step (open browser, watch ~/Downloads
     /// for the resolver userscript's JSON) once per run. macOS-only.
     pub enable_hardsub_ocr: bool,
+    /// Re-process files that already have Polish subtitles (the run normally
+    /// skips them). Useful to re-translate or add a new track to prior outputs.
+    pub force: bool,
 }
 
 impl Default for PipelineConfig {
@@ -47,6 +50,7 @@ impl Default for PipelineConfig {
             external_subs_dir: None,
             keep_artifacts: false,
             enable_hardsub_ocr: false,
+            force: false,
         }
     }
 }
@@ -163,6 +167,7 @@ mod tests {
         assert!(cfg.external_subs_dir.is_none());
         assert!(!cfg.keep_artifacts);
         assert!(!cfg.enable_hardsub_ocr);
+        assert!(!cfg.force);
     }
 
     #[test]

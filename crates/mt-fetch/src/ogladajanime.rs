@@ -65,6 +65,21 @@ impl HardsubPlan {
         best_pl_player(self.episodes.get(&episode)?)
     }
 
+    /// All PL-sub players for `episode`, ordered best-first (host preference,
+    /// then resolution). Used to fall back to the next mirror when a download
+    /// fails — a dead/410 cda link then drops to vk/mega/etc. automatically.
+    pub fn pl_players(&self, episode: i64) -> Vec<&ResolvedPlayer> {
+        let Some(players) = self.episodes.get(&episode) else {
+            return Vec::new();
+        };
+        let mut v: Vec<&ResolvedPlayer> = players
+            .iter()
+            .filter(|p| p.sub.as_deref() == Some("pl") && !p.embed_url.is_empty())
+            .collect();
+        v.sort_by_key(|p| (host_rank(p), -quality_height(p)));
+        v
+    }
+
     pub fn episode_count(&self) -> usize {
         self.episodes.len()
     }
@@ -374,6 +389,49 @@ mod tests {
         let best = best_pl_player(&players).unwrap();
         assert_eq!(best.host.as_deref(), Some("cda"));
         assert_eq!(best.sub.as_deref(), Some("pl"));
+    }
+
+    #[test]
+    fn pl_players_ordered_best_first_for_fallback() {
+        let mut episodes = HashMap::new();
+        episodes.insert(
+            4,
+            vec![
+                ResolvedPlayer {
+                    host: Some("vk".into()),
+                    sub: Some("pl".into()),
+                    quality: Some("1080p".into()),
+                    embed_url: "https://vk/4".into(),
+                    sub_group: Some("Mioro-Subs".into()),
+                },
+                ResolvedPlayer {
+                    host: Some("cda".into()),
+                    sub: Some("pl".into()),
+                    quality: Some("1080p".into()),
+                    embed_url: "https://cda/4".into(),
+                    sub_group: None,
+                },
+                ResolvedPlayer {
+                    host: Some("mp4upload".into()),
+                    sub: Some("en".into()),
+                    quality: Some("720p".into()),
+                    embed_url: "https://mp4/4".into(),
+                    sub_group: None,
+                },
+            ],
+        );
+        let plan = HardsubPlan {
+            slug: "x".into(),
+            episodes,
+        };
+        let order: Vec<_> = plan
+            .pl_players(4)
+            .iter()
+            .map(|p| p.host.clone().unwrap())
+            .collect();
+        // cda first (fallback target = vk next); en player excluded.
+        assert_eq!(order, vec!["cda", "vk"]);
+        assert!(plan.pl_players(99).is_empty());
     }
 
     #[test]

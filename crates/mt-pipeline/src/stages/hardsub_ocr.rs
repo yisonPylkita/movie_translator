@@ -39,28 +39,48 @@ pub fn run(
         tracing::info!("hardsub-ocr: no episode number identified; skipping");
         return Ok(ctx);
     };
-    let Some(player) = plan.best_player(episode as i64) else {
+    let players = plan.pl_players(episode as i64);
+    if players.is_empty() {
         tracing::info!("hardsub-ocr: no PL player resolved for episode {episode}; skipping");
         return Ok(ctx);
-    };
+    }
 
     let work = ctx.work_dir.join("hardsub");
     std::fs::create_dir_all(&work)?;
     let video = work.join(format!("ep{episode}.mp4"));
 
-    tracing::info!(
-        "hardsub-ocr: episode {episode} -> {} {} ({})",
-        player.host.as_deref().unwrap_or("?"),
-        player.quality.as_deref().unwrap_or("?"),
-        player.embed_url
-    );
-
-    // 1. Download the lowest legible copy (network/CPU — not a GPU job). Pass NO
-    // Referer: these are yt-dlp extractor hosts (cda/vk/mega/…) that set their
-    // own headers; an ogladajanime Referer leaks onto cda's internal API calls
-    // and breaks extraction ("No video formats found!").
-    if let Err(e) = mt_ml::hardsub_download(&player.embed_url, &video, MIN_HEIGHT, None) {
-        tracing::warn!("hardsub-ocr: download failed for episode {episode}: {e}");
+    // 1. Download the lowest legible copy, trying each mirror best-first until
+    // one resolves (network/CPU — not a GPU job). A dead/410 mirror (e.g. a cda
+    // upload that was removed) fails fast at extraction with no wasted bytes, so
+    // we drop to the next mirror (vk/mega/…). Pass NO Referer: these are yt-dlp
+    // extractor hosts that set their own headers; an ogladajanime Referer leaks
+    // onto cda's internal API calls and breaks extraction.
+    let mut downloaded = false;
+    for player in &players {
+        tracing::info!(
+            "hardsub-ocr: episode {episode} -> trying {} {} ({})",
+            player.host.as_deref().unwrap_or("?"),
+            player.quality.as_deref().unwrap_or("?"),
+            player.embed_url
+        );
+        match mt_ml::hardsub_download(&player.embed_url, &video, MIN_HEIGHT, None) {
+            Ok(_) => {
+                downloaded = true;
+                break;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "hardsub-ocr: {} mirror failed for episode {episode} ({e}); trying next",
+                    player.host.as_deref().unwrap_or("?")
+                );
+            }
+        }
+    }
+    if !downloaded {
+        tracing::warn!(
+            "hardsub-ocr: all {} mirror(s) failed for episode {episode}; skipping",
+            players.len()
+        );
         return Ok(ctx);
     }
 
