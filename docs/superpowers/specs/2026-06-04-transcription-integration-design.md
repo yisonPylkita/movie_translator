@@ -60,3 +60,17 @@ Strip subtitle tracks from one Isekai Ojisan episode (`-map 0:v -map 0:a -c
 copy -sn`) so the pipeline has no text source, then
 `just run <file> --no-fetch --transcribe` → EN dub audio → ASR → translate →
 Polish track muxed. Verify the output file carries the new PL track.
+
+## Known limitations (deliberate, post-review)
+
+- **`--transcribe` + fetch:** fetch runs before the transcribe stage, so with
+  `--transcribe` on a file with no subtitle text, `reference_path` is empty at
+  fetch time — fetched Polish candidates are kept unvalidated/unaligned (the
+  pre-existing no-reference behavior, now guaranteed under this flag). Future:
+  re-validate fetched subs against the ASR transcript after the transcribe
+  stage.
+- **Hardsubbed video without English audio:** `--transcribe` suppresses the
+  burned-in-OCR fallback; a release with burned-in English subs but JA-only
+  audio is skipped (`NoEnglishSource`) instead of OCR'd. Run without
+  `--transcribe` for such files. Future: fall back to burned-in OCR when ASR
+  finds no matching audio track.

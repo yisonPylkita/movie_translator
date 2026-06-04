@@ -11,12 +11,11 @@ bridge.
 from __future__ import annotations
 
 import json
-import platform
-import shutil
 import subprocess
 from pathlib import Path
 
 from ..logging import logger
+from ..swift_bridge import ensure_compiled, macos_at_least
 from ..types import DialogueLine
 
 _SWIFT_DIR = Path(__file__).parent / 'swift'
@@ -28,40 +27,23 @@ _LOCALES = {'en': 'en-US', 'ja': 'ja-JP'}
 
 def is_available() -> bool:
     """macOS 26+ with the bridge source present (compiler checked at build)."""
-    if platform.system() != 'Darwin':
-        return False
-    mac_ver = platform.mac_ver()[0]
-    try:
-        if int(mac_ver.split('.')[0]) < 26:
-            return False
-    except ValueError, IndexError:
-        return False
-    return _SWIFT_SOURCE.exists()
+    return macos_at_least(26) and _SWIFT_SOURCE.exists()
 
 
 def _ensure_binary() -> Path:
-    """Compile the Swift bridge if missing or the source is newer."""
-    if not _SWIFT_SOURCE.exists():
-        raise FileNotFoundError(f'Swift bridge source not found: {_SWIFT_SOURCE}')
-    needs_compile = (
-        not _SWIFT_BINARY.exists() or _SWIFT_SOURCE.stat().st_mtime > _SWIFT_BINARY.stat().st_mtime
-    )
-    if needs_compile:
-        logger.info('Compiling SpeechAnalyzer transcription bridge...')
-        swiftc = shutil.which('swiftc')
-        if swiftc is None:
-            raise FileNotFoundError(
-                'Swift compiler (swiftc) not found. Install Command Line Tools: xcode-select --install'
-            )
-        result = subprocess.run(
-            [swiftc, '-O', str(_SWIFT_SOURCE), '-o', str(_SWIFT_BINARY)],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f'Swift bridge compilation failed:\n{result.stderr[-1000:]}')
-    return _SWIFT_BINARY
+    return ensure_compiled(_SWIFT_SOURCE, _SWIFT_BINARY, timeout=120)
+
+
+def _parse_segments(payload: str) -> list[DialogueLine]:
+    """Bridge JSON -> DialogueLines. Drops empties and non-positive durations
+    (a result whose runs carry no audioTimeRange comes through as 0/0)."""
+    out: list[DialogueLine] = []
+    for s in json.loads(payload)['segments']:
+        text = s['text'].strip()
+        start_ms, end_ms = int(s['start_ms']), int(s['end_ms'])
+        if text and end_ms > start_ms:
+            out.append(DialogueLine(start_ms, end_ms, text))
+    return out
 
 
 def transcribe(wav: Path, language: str) -> list[DialogueLine]:
@@ -74,9 +56,4 @@ def transcribe(wav: Path, language: str) -> list[DialogueLine]:
     proc = subprocess.run([str(binary), str(wav), locale], capture_output=True, text=True)
     if proc.returncode != 0:
         raise RuntimeError(f'transcribe_bridge failed: {proc.stderr.strip()[-500:]}')
-    segments = json.loads(proc.stdout)['segments']
-    return [
-        DialogueLine(int(s['start_ms']), int(s['end_ms']), s['text'].strip())
-        for s in segments
-        if s['text'].strip()
-    ]
+    return _parse_segments(proc.stdout)

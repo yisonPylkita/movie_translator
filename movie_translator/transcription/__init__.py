@@ -17,7 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..logging import logger
-from ..types import DialogueLine
+from ..srt import write_srt
 from . import apple_backend, audio, postfilter, splitter, whisper_backend
 
 ENGINES = ('apple', 'whisper')
@@ -29,20 +29,6 @@ def is_available(engine: str) -> bool:
     if engine == 'whisper':
         return whisper_backend.is_available()
     return False
-
-
-def _write_srt(lines: list[DialogueLine], output_path: Path) -> None:
-    def ts(ms: int) -> str:
-        h, rem = divmod(ms, 3_600_000)
-        m, rem = divmod(rem, 60_000)
-        s, milli = divmod(rem, 1000)
-        return f'{h:02d}:{m:02d}:{s:02d},{milli:03d}'
-
-    blocks = [
-        f'{i}\n{ts(line.start_ms)} --> {ts(line.end_ms)}\n{line.text}\n'
-        for i, line in enumerate(lines, 1)
-    ]
-    output_path.write_text('\n'.join(blocks), encoding='utf-8')
 
 
 def transcribe_to_srt(
@@ -66,7 +52,6 @@ def transcribe_to_srt(
     output_dir.mkdir(parents=True, exist_ok=True)
     wav = output_dir / f'transcribe_{language}.wav'
     audio.extract_wav(video_path, stream, wav)
-    audio_ms = audio.wav_duration_ms(wav)
 
     try:
         if engine == 'apple':
@@ -74,7 +59,8 @@ def transcribe_to_srt(
             lines = splitter.split_segments(raw)
         else:
             raw = whisper_backend.transcribe(wav, language)
-            lines = postfilter.clean_segments(raw, audio_ms)
+            # Clamp against the real audio length (Whisper hallucinates past it).
+            lines = postfilter.clean_segments(raw, audio.wav_duration_ms(wav))
     finally:
         wav.unlink(missing_ok=True)
 
@@ -83,7 +69,7 @@ def transcribe_to_srt(
         return None
 
     srt_path = output_dir / f'transcribed_{language}.srt'
-    _write_srt(lines, srt_path)
+    write_srt(lines, srt_path)
     logger.info(f'{engine} transcription: {len(lines)} lines -> {srt_path.name}')
     return srt_path
 

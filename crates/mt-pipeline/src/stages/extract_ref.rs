@@ -94,13 +94,12 @@ pub fn run_with_probe(
         }
     }
 
-    // If no track found and Vision is available, defer burned-in OCR — unless
-    // --transcribe is on: the user said "source English from the audio", and
-    // OCRing a clean video's frames produces credit/typesetting junk that
-    // extract_english would adopt as the English source ahead of ASR.
+    // If no track found and Vision is available, defer burned-in OCR (see
+    // `PipelineConfig::burned_in_fallback_allowed` for why --transcribe
+    // suppresses this fallback).
     if ctx.reference_path.is_none()
         && ctx.pending_ocr.is_none()
-        && !ctx.config.enable_transcription
+        && ctx.config.burned_in_fallback_allowed()
         && vision_ocr_available()
     {
         ctx.pending_ocr = Some(PendingOcr {

@@ -182,10 +182,10 @@ class TestEnsureBinary:
             patch('movie_translator.translation.apple_backend._SWIFT_SOURCE', source),
             patch('movie_translator.translation.apple_backend._SWIFT_BINARY', binary),
             patch(
-                'movie_translator.translation.apple_backend.shutil.which',
+                'movie_translator.swift_bridge.shutil.which',
                 return_value='/usr/bin/swiftc',
             ),
-            patch('movie_translator.translation.apple_backend.subprocess.run') as mock_run,
+            patch('movie_translator.swift_bridge.subprocess.run') as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=0, stderr='')
             _ensure_binary()
@@ -205,7 +205,7 @@ class TestEnsureBinary:
         with (
             patch('movie_translator.translation.apple_backend._SWIFT_SOURCE', source),
             patch('movie_translator.translation.apple_backend._SWIFT_BINARY', binary),
-            patch('movie_translator.translation.apple_backend.subprocess.run') as mock_run,
+            patch('movie_translator.swift_bridge.subprocess.run') as mock_run,
         ):
             _ensure_binary()
             mock_run.assert_not_called()
@@ -224,7 +224,7 @@ class TestEnsureBinary:
         with (
             patch('movie_translator.translation.apple_backend._SWIFT_SOURCE', source),
             patch('movie_translator.translation.apple_backend._SWIFT_BINARY', binary),
-            patch('movie_translator.translation.apple_backend.shutil.which', return_value=None),
+            patch('movie_translator.swift_bridge.shutil.which', return_value=None),
         ):
             with pytest.raises(FileNotFoundError, match='swiftc.*not found'):
                 _ensure_binary()

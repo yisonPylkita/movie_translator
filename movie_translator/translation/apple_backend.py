@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import json
 import platform
-import shutil
 import subprocess
 import time
 from pathlib import Path
 
 from ..logging import logger
+from ..swift_bridge import ensure_compiled
 from ..types import ProgressCallback
 from .enhancements import (
     PLACEHOLDER_ONLY_RE,
@@ -26,6 +26,7 @@ from .sentence_merger import merge_for_translation, unmerge_translations
 _SWIFT_DIR = Path(__file__).parent / 'swift'
 _SWIFT_SOURCE = _SWIFT_DIR / 'translate_bridge.swift'
 _SWIFT_BINARY = _SWIFT_DIR / 'translate_bridge'
+
 
 class AppleTranslationError(RuntimeError):
     """Raised when Apple Translation fails."""
@@ -199,47 +200,12 @@ class AppleTranslationBackend:
 
 def _ensure_binary() -> Path:
     """Compile the Swift bridge binary if it doesn't exist or source is newer."""
-    if not _SWIFT_SOURCE.exists():
-        raise FileNotFoundError(
-            f'Swift bridge source not found: {_SWIFT_SOURCE}\n'
-            'Ensure the movie_translator package is installed correctly.'
-        )
-
-    needs_compile = (
-        not _SWIFT_BINARY.exists() or _SWIFT_SOURCE.stat().st_mtime > _SWIFT_BINARY.stat().st_mtime
+    return ensure_compiled(
+        _SWIFT_SOURCE,
+        _SWIFT_BINARY,
+        extra_args=('-parse-as-library', '-framework', 'Translation'),
+        timeout=60,
     )
-
-    if needs_compile:
-        logger.info('Compiling Apple Translation bridge...')
-        swiftc = shutil.which('swiftc')
-        if swiftc is None:
-            raise FileNotFoundError(
-                'Swift compiler (swiftc) not found. '
-                'Install Xcode or Command Line Tools: xcode-select --install'
-            )
-
-        result = subprocess.run(
-            [
-                swiftc,
-                '-parse-as-library',
-                '-O',
-                '-framework',
-                'Translation',
-                str(_SWIFT_SOURCE),
-                '-o',
-                str(_SWIFT_BINARY),
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-
-        if result.returncode != 0:
-            raise RuntimeError(f'Failed to compile Apple Translation bridge:\n{result.stderr}')
-
-        logger.info(f'Compiled: {_SWIFT_BINARY}')
-
-    return _SWIFT_BINARY
 
 
 def _call_swift_binary(binary: Path, texts: list[str], timeout: int = 120) -> list[str]:

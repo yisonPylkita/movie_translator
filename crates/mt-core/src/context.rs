@@ -136,6 +136,18 @@ pub struct PipelineContext {
     // part of this implementation.
 }
 
+impl PipelineConfig {
+    /// Whether burned-in (video-frame) OCR may run as the no-subtitle fallback.
+    ///
+    /// `--transcribe` supersedes it: the user chose the audio track as the
+    /// English source, and frame-OCR on clean video yields credit/typesetting
+    /// junk lines that would preempt ASR. PGS/image-track OCR is unaffected —
+    /// those are real subtitle tracks, not a fallback.
+    pub fn burned_in_fallback_allowed(&self) -> bool {
+        !self.enable_transcription
+    }
+}
+
 impl PipelineContext {
     /// Create a new context with the minimum required inputs.
     pub fn new(video_path: PathBuf, work_dir: PathBuf, config: PipelineConfig) -> Self {

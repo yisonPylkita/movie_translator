@@ -38,3 +38,21 @@ def test_split_segments_preserves_order_and_flattens():
     out = split_segments(segs)
     assert [s.text for s in out] == ['One.', 'Two.', 'Three.']
     assert out[2] == segs[1]
+
+
+def test_rounding_never_produces_negative_durations():
+    # Degenerate: many sentences over a tiny span. Accumulated rounding must
+    # not push any piece past the segment end or invert start/end.
+    seg = DialogueLine(0, 5, 'a. b. c. d. e. f. g. h.')
+    out = split_segment(seg)
+    for piece in out:
+        assert piece.start_ms <= piece.end_ms, piece
+        assert piece.end_ms <= 5
+    assert out[-1].end_ms == 5
+
+
+def test_punctuation_only_piece_not_emitted():
+    # ASR trail-off: a leading ellipsis must not become its own junk line.
+    seg = DialogueLine(0, 4000, '...Hello there. How are you?')
+    out = split_segment(seg)
+    assert [s.text for s in out] == ['...Hello there.', 'How are you?']

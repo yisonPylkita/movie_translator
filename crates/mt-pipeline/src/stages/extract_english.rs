@@ -47,13 +47,13 @@ pub fn run_with_probe(
     } else if let Some(reference) = ctx.reference_path.clone() {
         ctx.english_source = Some(reference);
     } else {
-        // Try embedded text track, defer OCR if needed. With --transcribe the
-        // user said "source English from the audio": skip burned-in OCR (on
-        // clean video it OCRs credits/typesetting into junk lines that would
-        // preempt ASR) and let the transcribe stage fill english_source.
+        // Try embedded text track, defer burned-in OCR if needed (see
+        // `PipelineConfig::burned_in_fallback_allowed` for why --transcribe
+        // suppresses the fallback and lets the transcribe stage fill
+        // english_source instead).
         ctx.english_source = extract_text_only(&ctx)?;
         if ctx.english_source.is_none()
-            && !ctx.config.enable_transcription
+            && ctx.config.burned_in_fallback_allowed()
             && !ctx.burned_in_probed
             && vision_ocr_available()
         {
