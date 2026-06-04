@@ -94,8 +94,15 @@ pub fn run_with_probe(
         }
     }
 
-    // If no track found and Vision is available, defer burned-in OCR.
-    if ctx.reference_path.is_none() && ctx.pending_ocr.is_none() && vision_ocr_available() {
+    // If no track found and Vision is available, defer burned-in OCR — unless
+    // --transcribe is on: the user said "source English from the audio", and
+    // OCRing a clean video's frames produces credit/typesetting junk that
+    // extract_english would adopt as the English source ahead of ASR.
+    if ctx.reference_path.is_none()
+        && ctx.pending_ocr.is_none()
+        && !ctx.config.enable_transcription
+        && vision_ocr_available()
+    {
         ctx.pending_ocr = Some(PendingOcr {
             r#type: "burned_in".to_string(),
             track_id: None,
@@ -146,6 +153,19 @@ mod tests {
         assert!(result.reference_path.is_none());
         assert!(result.original_english_track.is_none());
         assert!(result.pending_ocr.is_none());
+    }
+
+    #[test]
+    fn transcription_enabled_skips_burned_in_reference() {
+        // --transcribe sources English from the audio; OCRing a clean video's
+        // frames for a reference yields credit-text junk that would later be
+        // adopted as the English source. Skip it.
+        let dir = tempfile::tempdir().unwrap();
+        let mut c = ctx(dir.path());
+        c.config.enable_transcription = true;
+        let result = run_with_probe(c, || true).unwrap();
+        assert!(result.pending_ocr.is_none());
+        assert!(result.reference_path.is_none());
     }
 
     #[test]

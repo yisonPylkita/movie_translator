@@ -85,6 +85,10 @@ just run ~/Downloads/anime --workers 4 --batch-size 8 --device cpu
 # Remove burned-in subtitles from video frames via inpainting (slow)
 just run ~/Downloads/anime --inpaint
 
+# No subtitles anywhere? Transcribe the English dub audio and translate that
+just run ~/Downloads/anime --transcribe                              # Apple SpeechAnalyzer (macOS 26+)
+just run ~/Downloads/anime --transcribe --transcribe-engine whisper  # mlx-whisper large-v3
+
 # Disk-frugal mode: replace originals in place (not compatible with --inpaint)
 just run ~/Downloads/anime --in-place
 
