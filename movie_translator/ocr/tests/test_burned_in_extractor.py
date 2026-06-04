@@ -1,4 +1,5 @@
-from movie_translator.ocr.burned_in_extractor import _build_dialogue_lines_from_ocr, _write_srt
+from movie_translator.ocr.burned_in_extractor import _build_dialogue_lines_from_ocr
+from movie_translator.srt import write_srt
 from movie_translator.types import BoundingBox, DialogueLine
 
 
@@ -129,7 +130,7 @@ class TestWriteSrt:
         ]
         output = tmp_path / 'output.srt'
 
-        _write_srt(lines, output)
+        write_srt(lines, output)
 
         content = output.read_text()
         assert '1\n' in content

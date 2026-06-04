@@ -1,0 +1,347 @@
+{
+ "engine": "faster-whisper",
+ "model": "small",
+ "lang": "en",
+ "wav": "en_seg.wav",
+ "segments": [
+  {
+   "start_ms": 0,
+   "end_ms": 7000,
+   "text": "You're Takafumi, my sister's kid."
+  },
+  {
+   "start_ms": 7000,
+   "end_ms": 13000,
+   "text": "But where is everyone else?"
+  },
+  {
+   "start_ms": 13000,
+   "end_ms": 16000,
+   "text": "Well, our family had a huge falling out because of you."
+  },
+  {
+   "start_ms": 16000,
+   "end_ms": 19000,
+   "text": "What to do with you while you were in a coma?"
+  },
+  {
+   "start_ms": 19000,
+   "end_ms": 21000,
+   "text": "And let me tell you, it wasn't cheap."
+  },
+  {
+   "start_ms": 21000,
+   "end_ms": 25000,
+   "text": "My mom said she didn't want to see you."
+  },
+  {
+   "start_ms": 25000,
+   "end_ms": 28000,
+   "text": "Ikura's Kura."
+  },
+  {
+   "start_ms": 28000,
+   "end_ms": 32000,
+   "text": "Okay."
+  },
+  {
+   "start_ms": 32000,
+   "end_ms": 35000,
+   "text": "I'll prove Gran Bahamal is real."
+  },
+  {
+   "start_ms": 35000,
+   "end_ms": 38000,
+   "text": "Uh, you really don't?"
+  },
+  {
+   "start_ms": 38000,
+   "end_ms": 43000,
+   "text": "Wargrant Seld."
+  },
+  {
+   "start_ms": 43000,
+   "end_ms": 45000,
+   "text": "Okay."
+  },
+  {
+   "start_ms": 45000,
+   "end_ms": 50000,
+   "text": "Wargrant Magna."
+  },
+  {
+   "start_ms": 50000,
+   "end_ms": 52000,
+   "text": "Wargrant Round?"
+  },
+  {
+   "start_ms": 52000,
+   "end_ms": 55000,
+   "text": "This is just sad."
+  },
+  {
+   "start_ms": 55000,
+   "end_ms": 57000,
+   "text": "Wargrant Pet?"
+  },
+  {
+   "start_ms": 57000,
+   "end_ms": 59000,
+   "text": "Hey, Uncle."
+  },
+  {
+   "start_ms": 59000,
+   "end_ms": 62000,
+   "text": "Money has been a little tight lately,"
+  },
+  {
+   "start_ms": 62000,
+   "end_ms": 65000,
+   "text": "so I brought some documents for you to sign."
+  },
+  {
+   "start_ms": 65000,
+   "end_ms": 67000,
+   "text": "And after that, they're going to send you somewhere"
+  },
+  {
+   "start_ms": 67000,
+   "end_ms": 69000,
+   "text": "to help you get back to your feet."
+  },
+  {
+   "start_ms": 69000,
+   "end_ms": 73000,
+   "text": "We'll carry them."
+  },
+  {
+   "start_ms": 73000,
+   "end_ms": 75000,
+   "text": "What the hell?"
+  },
+  {
+   "start_ms": 75000,
+   "end_ms": 78000,
+   "text": "Wind, return it."
+  },
+  {
+   "start_ms": 78000,
+   "end_ms": 81000,
+   "text": "And of course, it's Japanese here."
+  },
+  {
+   "start_ms": 81000,
+   "end_ms": 85000,
+   "text": "Oh!"
+  },
+  {
+   "start_ms": 85000,
+   "end_ms": 88000,
+   "text": "It's all real."
+  },
+  {
+   "start_ms": 88000,
+   "end_ms": 90000,
+   "text": "Hold on now."
+  },
+  {
+   "start_ms": 90000,
+   "end_ms": 92000,
+   "text": "Did you just say you were sending me away?"
+  },
+  {
+   "start_ms": 92000,
+   "end_ms": 94000,
+   "text": "I'm sorry."
+  },
+  {
+   "start_ms": 94000,
+   "end_ms": 96000,
+   "text": "I'm sorry."
+  },
+  {
+   "start_ms": 96000,
+   "end_ms": 98000,
+   "text": "I'm sorry."
+  },
+  {
+   "start_ms": 98000,
+   "end_ms": 100000,
+   "text": "I'm sorry."
+  },
+  {
+   "start_ms": 100000,
+   "end_ms": 102000,
+   "text": "I'm sorry."
+  },
+  {
+   "start_ms": 102000,
+   "end_ms": 104000,
+   "text": "I'm sorry."
+  },
+  {
+   "start_ms": 104000,
+   "end_ms": 106000,
+   "text": "I'm sorry."
+  },
+  {
+   "start_ms": 106000,
+   "end_ms": 108000,
+   "text": "I'm sorry."
+  },
+  {
+   "start_ms": 108000,
+   "end_ms": 110000,
+   "text": "I'm sorry."
+  },
+  {
+   "start_ms": 110000,
+   "end_ms": 112000,
+   "text": "I'm sorry."
+  },
+  {
+   "start_ms": 112000,
+   "end_ms": 114000,
+   "text": "I'm sorry."
+  },
+  {
+   "start_ms": 114000,
+   "end_ms": 116000,
+   "text": "You were sending me away somewhere?"
+  },
+  {
+   "start_ms": 116000,
+   "end_ms": 118000,
+   "text": "No, I didn't."
+  },
+  {
+   "start_ms": 118000,
+   "end_ms": 119000,
+   "text": "You sure?"
+  },
+  {
+   "start_ms": 119000,
+   "end_ms": 121000,
+   "text": "Yeah, yeah, so what was that?"
+  },
+  {
+   "start_ms": 121000,
+   "end_ms": 123000,
+   "text": "It's magic."
+  },
+  {
+   "start_ms": 123000,
+   "end_ms": 125000,
+   "text": "Fire."
+  },
+  {
+   "start_ms": 125000,
+   "end_ms": 126000,
+   "text": "Whoa, awesome!"
+  },
+  {
+   "start_ms": 126000,
+   "end_ms": 128000,
+   "text": "Wait, how are you doing that?"
+  },
+  {
+   "start_ms": 128000,
+   "end_ms": 129000,
+   "text": "That's nothing."
+  },
+  {
+   "start_ms": 129000,
+   "end_ms": 132000,
+   "text": "I want to know Sega when the console wars."
+  },
+  {
+   "start_ms": 132000,
+   "end_ms": 133000,
+   "text": "Huh?"
+  },
+  {
+   "start_ms": 133000,
+   "end_ms": 135000,
+   "text": "Sega?"
+  },
+  {
+   "start_ms": 135000,
+   "end_ms": 137000,
+   "text": "Now?"
+  },
+  {
+   "start_ms": 137000,
+   "end_ms": 139000,
+   "text": "Well, these days, Sony and Nintendo"
+  },
+  {
+   "start_ms": 139000,
+   "end_ms": 141000,
+   "text": "are the biggest console makers."
+  },
+  {
+   "start_ms": 141000,
+   "end_ms": 143000,
+   "text": "Huh? No Sega?"
+  },
+  {
+   "start_ms": 143000,
+   "end_ms": 145000,
+   "text": "This is important."
+  },
+  {
+   "start_ms": 145000,
+   "end_ms": 149000,
+   "text": "Well, they stopped making consoles."
+  },
+  {
+   "start_ms": 153000,
+   "end_ms": 156000,
+   "text": "Ikura's Kura."
+  },
+  {
+   "start_ms": 156000,
+   "end_ms": 159000,
+   "text": "Hey uncle, what's Ikura's Kura mean?"
+  },
+  {
+   "start_ms": 159000,
+   "end_ms": 163000,
+   "text": "Oh, it's a memory erasing spell."
+  },
+  {
+   "start_ms": 163000,
+   "end_ms": 166000,
+   "text": "So I can forget sad things."
+  },
+  {
+   "start_ms": 166000,
+   "end_ms": 168000,
+   "text": "Sega was that important?"
+  },
+  {
+   "start_ms": 168000,
+   "end_ms": 171000,
+   "text": "There were a lot of sad times in Grand Bahama."
+  },
+  {
+   "start_ms": 171000,
+   "end_ms": 173000,
+   "text": "Wanna see?"
+  },
+  {
+   "start_ms": 173000,
+   "end_ms": 175000,
+   "text": "Uh, yeah."
+  }
+ ],
+ "meta": {
+  "audio_s": 180.0,
+  "ok": true,
+  "error": null,
+  "infer_s": 33.5,
+  "rtf": 0.186,
+  "peak_ram_mb": 1634,
+  "n_segments": 66
+ }
+}

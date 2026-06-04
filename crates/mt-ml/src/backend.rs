@@ -46,6 +46,8 @@ struct Modules {
     parser: Py<PyAny>,
     /// `movie_translator.hardsub` — `download_episode` + `ocr_and_clean`.
     hardsub: Py<PyAny>,
+    /// `movie_translator.transcription` — `transcribe_to_srt`.
+    transcription: Py<PyAny>,
 }
 
 /// Shared, lazily-loaded module handles, accessed via [`with_modules`].
@@ -91,6 +93,7 @@ where
     let inpainting = py_import(py, "movie_translator.inpainting")?;
     let parser = py_import(py, "movie_translator.identifier.parser")?;
     let hardsub = py_import(py, "movie_translator.hardsub")?;
+    let transcription = py_import(py, "movie_translator.transcription")?;
     let m = Modules {
         types,
         translation,
@@ -99,6 +102,7 @@ where
         inpainting,
         parser,
         hardsub,
+        transcription,
     };
 
     let mut guard = cell.lock().expect("modules mutex poisoned");
@@ -122,6 +126,7 @@ impl Modules {
             inpainting: self.inpainting.clone_ref(py),
             parser: self.parser.clone_ref(py),
             hardsub: self.hardsub.clone_ref(py),
+            transcription: self.transcription.clone_ref(py),
         }
     }
 }
@@ -741,6 +746,46 @@ pub fn hardsub_download(
                 .map_err(py_err)?;
             let s: String = result.str().map_err(py_err)?.extract().map_err(py_err)?;
             Ok(PathBuf::from(s))
+        })
+    })
+}
+
+/// Transcribe the video's `language` audio track to an SRT via ASR
+/// (`movie_translator.transcription.transcribe_to_srt`). Engine is `"apple"`
+/// (SpeechAnalyzer) or `"whisper"` (mlx large-v3) — both run accelerated ML,
+/// so route through the serialised GPU worker. Returns `Ok(None)` when the
+/// audio track / engine / usable lines are missing (skip, not fail).
+pub fn transcribe_to_srt(
+    video: &Path,
+    output_dir: &Path,
+    language: &str,
+    engine: &str,
+) -> Result<Option<PathBuf>> {
+    Python::attach(|py| {
+        with_modules(py, |py, m| {
+            let bound = m.transcription.bind(py);
+            let func = bound.getattr("transcribe_to_srt").map_err(py_err)?;
+            let pathlib = py.import("pathlib").map_err(py_err)?;
+            let path_cls = pathlib.getattr("Path").map_err(py_err)?;
+            let video_p = path_cls
+                .call1((video.to_string_lossy().as_ref(),))
+                .map_err(py_err)?;
+            let out_p = path_cls
+                .call1((output_dir.to_string_lossy().as_ref(),))
+                .map_err(py_err)?;
+            let kwargs = pyo3::types::PyDict::new(py);
+            kwargs.set_item("video_path", &video_p).map_err(py_err)?;
+            kwargs.set_item("output_dir", &out_p).map_err(py_err)?;
+            kwargs.set_item("language", language).map_err(py_err)?;
+            kwargs.set_item("engine", engine).map_err(py_err)?;
+            let result = func
+                .call(PyTuple::empty(py), Some(&kwargs))
+                .map_err(py_err)?;
+            if result.is_none() {
+                return Ok(None);
+            }
+            let s: String = result.str().map_err(py_err)?.extract().map_err(py_err)?;
+            Ok(Some(PathBuf::from(s)))
         })
     })
 }

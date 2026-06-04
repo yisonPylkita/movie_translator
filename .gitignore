@@ -47,3 +47,11 @@ benchmarks/onepiece/
 
 # Rust build artifacts
 target/
+
+# ASR PoC: isolated per-engine venvs + extracted audio (large/derived)
+benchmarks/asr/envs/
+benchmarks/asr/audio/
+benchmarks/asr/**/__pycache__/
+
+# Compiled transcription bridge (built from source on first use)
+movie_translator/transcription/swift/transcribe_bridge

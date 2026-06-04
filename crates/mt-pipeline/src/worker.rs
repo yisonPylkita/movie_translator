@@ -73,6 +73,13 @@ enum Job {
         language: String,
         reply: oneshot::Sender<Result<Option<PathBuf>>>,
     },
+    Transcribe {
+        video: PathBuf,
+        output_dir: PathBuf,
+        language: String,
+        engine: String,
+        reply: oneshot::Sender<Result<Option<PathBuf>>>,
+    },
 }
 
 /// A serialised GPU worker backed by a single tokio task.
@@ -203,6 +210,15 @@ fn run_job(executor: &dyn GpuExecutor, job: Job) {
             reply,
         } => {
             let _ = reply.send(executor.hardsub_ocr_clean(&video, &out_dir, &language));
+        }
+        Job::Transcribe {
+            video,
+            output_dir,
+            language,
+            engine,
+            reply,
+        } => {
+            let _ = reply.send(executor.transcribe(&video, &output_dir, &language, &engine));
         }
     }
 }
@@ -380,6 +396,24 @@ impl GpuExecutor for GpuWorkerHandle {
         })?;
         block_on_reply(rx)
     }
+
+    fn transcribe(
+        &self,
+        video: &Path,
+        output_dir: &Path,
+        language: &str,
+        engine: &str,
+    ) -> Result<Option<PathBuf>> {
+        let (reply, rx) = oneshot::channel();
+        self.send(Job::Transcribe {
+            video: video.to_path_buf(),
+            output_dir: output_dir.to_path_buf(),
+            language: language.to_string(),
+            engine: engine.to_string(),
+            reply,
+        })?;
+        block_on_reply(rx)
+    }
 }
 
 /// A [`GpuExecutor`] that records the maximum observed concurrency.
@@ -461,6 +495,10 @@ impl GpuExecutor for ConcurrencyProbe {
         self.enter();
         Ok(out.to_path_buf())
     }
+    fn transcribe(&self, _v: &Path, _o: &Path, _l: &str, _e: &str) -> Result<Option<PathBuf>> {
+        Ok(None)
+    }
+
     fn hardsub_ocr_clean(&self, _v: &Path, _o: &Path, _l: &str) -> Result<Option<PathBuf>> {
         self.enter();
         Ok(None)
@@ -571,6 +609,16 @@ mod tests {
             ) -> Result<PathBuf> {
                 Ok(out.to_path_buf())
             }
+            fn transcribe(
+                &self,
+                _v: &Path,
+                _o: &Path,
+                _l: &str,
+                _e: &str,
+            ) -> Result<Option<PathBuf>> {
+                Ok(None)
+            }
+
             fn hardsub_ocr_clean(&self, _v: &Path, _o: &Path, _l: &str) -> Result<Option<PathBuf>> {
                 unreachable!()
             }

@@ -1,0 +1,292 @@
+{
+ "engine": "mlx-whisper",
+ "model": "large-v3",
+ "lang": "en",
+ "wav": "en_seg.wav",
+ "segments": [
+  {
+   "start_ms": 0,
+   "end_ms": 8960,
+   "text": "You're Takafumi, my sister's kid."
+  },
+  {
+   "start_ms": 9720,
+   "end_ms": 11360,
+   "text": "But where is..."
+  },
+  {
+   "start_ms": 11360,
+   "end_ms": 13320,
+   "text": "everyone else?"
+  },
+  {
+   "start_ms": 16160,
+   "end_ms": 19060,
+   "text": "Well, our family had a huge falling out because of you."
+  },
+  {
+   "start_ms": 19600,
+   "end_ms": 21580,
+   "text": "What to do with you while you were in a coma."
+  },
+  {
+   "start_ms": 21980,
+   "end_ms": 23520,
+   "text": "And let me tell you, it wasn't cheap."
+  },
+  {
+   "start_ms": 24820,
+   "end_ms": 27820,
+   "text": "My mom said she didn't want to see you."
+  },
+  {
+   "start_ms": 30000,
+   "end_ms": 32000,
+   "text": "I'm sorry."
+  },
+  {
+   "start_ms": 32960,
+   "end_ms": 34340,
+   "text": "Ikuras Kuora."
+  },
+  {
+   "start_ms": 37280,
+   "end_ms": 38320,
+   "text": "Okay."
+  },
+  {
+   "start_ms": 38940,
+   "end_ms": 41960,
+   "text": "I'll prove Gran Bahamal is real."
+  },
+  {
+   "start_ms": 42560,
+   "end_ms": 45000,
+   "text": "Uh, you really don't..."
+  },
+  {
+   "start_ms": 45519,
+   "end_ms": 46980,
+   "text": "Wargrant Seld."
+  },
+  {
+   "start_ms": 49940,
+   "end_ms": 51060,
+   "text": "Okay."
+  },
+  {
+   "start_ms": 52140,
+   "end_ms": 53580,
+   "text": "Wargrant Magna."
+  },
+  {
+   "start_ms": 56780,
+   "end_ms": 58400,
+   "text": "Wargrant Rald."
+  },
+  {
+   "start_ms": 58400,
+   "end_ms": 59400,
+   "text": "This is..."
+  },
+  {
+   "start_ms": 60000,
+   "end_ms": 61000,
+   "text": "just sad."
+  },
+  {
+   "start_ms": 61440,
+   "end_ms": 62440,
+   "text": "Wargrant Gan."
+  },
+  {
+   "start_ms": 62940,
+   "end_ms": 63940,
+   "text": "Wargrant Pat."
+  },
+  {
+   "start_ms": 63940,
+   "end_ms": 64940,
+   "text": "Hey, Uncle..."
+  },
+  {
+   "start_ms": 64940,
+   "end_ms": 65940,
+   "text": "Wargrant Lach."
+  },
+  {
+   "start_ms": 65940,
+   "end_ms": 67940,
+   "text": "Money has been a little tight lately."
+  },
+  {
+   "start_ms": 67940,
+   "end_ms": 68940,
+   "text": "Wargrant Dragon."
+  },
+  {
+   "start_ms": 68940,
+   "end_ms": 71940,
+   "text": "So I brought some documents for you to sign."
+  },
+  {
+   "start_ms": 71940,
+   "end_ms": 74940,
+   "text": "And after that, they're going to send you somewhere to help you get back on your feet."
+  },
+  {
+   "start_ms": 74940,
+   "end_ms": 75940,
+   "text": "Wind carry."
+  },
+  {
+   "start_ms": 85940,
+   "end_ms": 86940,
+   "text": "What the hell?"
+  },
+  {
+   "start_ms": 86940,
+   "end_ms": 88940,
+   "text": "Wind, return it."
+  },
+  {
+   "start_ms": 90000,
+   "end_ms": 95800,
+   "text": "unning here here"
+  },
+  {
+   "start_ms": 95800,
+   "end_ms": 97800,
+   "text": "Aaaaaah!"
+  },
+  {
+   "start_ms": 108280,
+   "end_ms": 110280,
+   "text": "It's all real!"
+  },
+  {
+   "start_ms": 111640,
+   "end_ms": 116039,
+   "text": "Hold on now. Did you just say you were sending me away somewhere?"
+  },
+  {
+   "start_ms": 116039,
+   "end_ms": 116840,
+   "text": "No, I didn't."
+  },
+  {
+   "start_ms": 117800,
+   "end_ms": 118520,
+   "text": "You sure?"
+  },
+  {
+   "start_ms": 118520,
+   "end_ms": 119720,
+   "text": "Yeah, yeah. So what was that?"
+  },
+  {
+   "start_ms": 121240,
+   "end_ms": 121880,
+   "text": "It's magic."
+  },
+  {
+   "start_ms": 123080,
+   "end_ms": 123560,
+   "text": "Fire!"
+  },
+  {
+   "start_ms": 123560,
+   "end_ms": 127720,
+   "text": "Whoa, awesome! Wait, how are you doing that?"
+  },
+  {
+   "start_ms": 127720,
+   "end_ms": 131720,
+   "text": "That's nothing. I want to know if Sega won the console wars."
+  },
+  {
+   "start_ms": 131720,
+   "end_ms": 132040,
+   "text": "Huh?"
+  },
+  {
+   "start_ms": 132920,
+   "end_ms": 135080,
+   "text": "Sega? Now?"
+  },
+  {
+   "start_ms": 136120,
+   "end_ms": 140600,
+   "text": "Well, these days, Sony and Nintendo are the biggest console makers."
+  },
+  {
+   "start_ms": 140600,
+   "end_ms": 141800,
+   "text": "Huh? No Sega?"
+  },
+  {
+   "start_ms": 142440,
+   "end_ms": 143880,
+   "text": "Is this important?"
+  },
+  {
+   "start_ms": 143880,
+   "end_ms": 144520,
+   "text": "Sega!"
+  },
+  {
+   "start_ms": 145800,
+   "end_ms": 148840,
+   "text": "Well, they, uh, stopped making consoles."
+  },
+  {
+   "start_ms": 153000,
+   "end_ms": 153560,
+   "text": "It could have been."
+  },
+  {
+   "start_ms": 153560,
+   "end_ms": 154360,
+   "text": "Cura's Cura."
+  },
+  {
+   "start_ms": 156200,
+   "end_ms": 158840,
+   "text": "Hey, Uncle, what's Ikura's Cura mean?"
+  },
+  {
+   "start_ms": 159400,
+   "end_ms": 164920,
+   "text": "Oh, it's a memory erasing spell. So I can forget sad things."
+  },
+  {
+   "start_ms": 166200,
+   "end_ms": 168440,
+   "text": "Sega was that important?"
+  },
+  {
+   "start_ms": 168440,
+   "end_ms": 171480,
+   "text": "There were a lot of sad times in Gran Bahamo."
+  },
+  {
+   "start_ms": 171480,
+   "end_ms": 172040,
+   "text": "Wanna see?"
+  },
+  {
+   "start_ms": 172760,
+   "end_ms": 173880,
+   "text": "Uh, yeah."
+  }
+ ],
+ "meta": {
+  "audio_s": 180.0,
+  "ok": true,
+  "error": null,
+  "infer_s": 150.3,
+  "rtf": 0.835,
+  "peak_ram_mb": 3515,
+  "n_segments": 55
+ }
+}

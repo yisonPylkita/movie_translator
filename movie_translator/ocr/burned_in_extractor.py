@@ -5,6 +5,7 @@ import numpy as np
 from PIL import Image
 
 from ..logging import logger
+from ..srt import write_srt
 from ..types import BoundingBox, BurnedInResult, DialogueLine, OCRResult
 from .frame_extractor import extract_subtitle_region_frames
 from .vision_ocr import recognize_text_with_boxes
@@ -115,24 +116,6 @@ def _build_dialogue_lines_from_ocr(
     return lines
 
 
-def _format_srt_time(ms: int) -> str:
-    hours = ms // 3_600_000
-    minutes = (ms % 3_600_000) // 60_000
-    seconds = (ms % 60_000) // 1000
-    millis = ms % 1000
-    return f'{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}'
-
-
-def _write_srt(lines: list[DialogueLine], output_path: Path) -> None:
-    parts: list[str] = []
-    for i, line in enumerate(lines, 1):
-        start = _format_srt_time(line.start_ms)
-        end = _format_srt_time(line.end_ms)
-        parts.append(f'{i}\n{start} --> {end}\n{line.text}\n')
-
-    output_path.write_text('\n'.join(parts), encoding='utf-8')
-
-
 def extract_burned_in_subtitles(
     video_path: Path,
     output_dir: Path,
@@ -195,7 +178,7 @@ def extract_burned_in_subtitles(
         logger.info(f'Extracted {len(lines)} subtitle lines via OCR')
 
         srt_path = output_dir / f'{video_path.stem}_ocr.srt'
-        _write_srt(lines, srt_path)
+        write_srt(lines, srt_path)
 
         return BurnedInResult(srt_path, ocr_results)
 

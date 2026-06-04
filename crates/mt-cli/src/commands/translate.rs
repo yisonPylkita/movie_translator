@@ -76,6 +76,18 @@ pub struct TranslateArgs {
     #[arg(long, default_value_t = false)]
     pub force: bool,
 
+    /// Source English dialogue from the audio track via ASR when no subtitle
+    /// text is found (embedded/fetched/burned-in all missed). Transcribes the
+    /// English audio track; see benchmarks/asr/REPORT.md for the engine bake-off.
+    #[arg(long = "transcribe", default_value_t = false)]
+    pub transcribe: bool,
+
+    /// ASR engine for --transcribe: "apple" (SpeechAnalyzer, macOS 26+,
+    /// fastest) or "whisper" (mlx-whisper large-v3, Metal).
+    #[arg(long = "transcribe-engine", default_value = "apple",
+          value_parser = ["apple", "whisper"])]
+    pub transcribe_engine: String,
+
     #[arg(long, short = 'v', default_value_t = false)]
     pub verbose: bool,
 
@@ -120,6 +132,8 @@ impl TranslateArgs {
             keep_artifacts: self.keep_artifacts,
             enable_hardsub_ocr: self.hardsub_ocr,
             force: self.force,
+            enable_transcription: self.transcribe,
+            transcribe_engine: self.transcribe_engine.clone(),
         }
     }
 }

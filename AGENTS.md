@@ -51,8 +51,11 @@ destructive, NOT compatible with `--inpaint`), `--keep-artifacts`
 track by OCRing burned-in subs from ogladajanime.pl — opens the browser, you
 run `scripts/ogladajanime_resolver.user.js`, it picks up the JSON from
 `~/Downloads`; macOS-only), `--force` (re-process files that already have
-Polish). Real runs need GPU + model files; for iteration prefer `--dry-run` or
-a tiny synthetic clip.
+Polish), `--transcribe [--transcribe-engine {apple,whisper}]` (source English
+dialogue from the audio track via ASR when no subtitle text is found — Apple
+SpeechAnalyzer on macOS 26+ or mlx-whisper large-v3; bake-off in
+`benchmarks/asr/REPORT.md`). Real runs need GPU + model files; for iteration
+prefer `--dry-run` or a tiny synthetic clip.
 
 ### Download an anime season (no translation)
 

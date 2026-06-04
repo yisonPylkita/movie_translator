@@ -8,11 +8,10 @@ import pytest
 from movie_translator.ocr.pgs_extractor import (
     _decode_rle,
     _extract_subtitle_images,
-    _format_srt_time,
     _parse_segments,
-    _write_srt,
     extract_pgs_track,
 )
+from movie_translator.srt import format_timestamp, write_srt
 from movie_translator.types import BoundingBox, DialogueLine
 
 # ---------------------------------------------------------------------------
@@ -49,35 +48,35 @@ def _make_pgs_segment(pts_90khz: int, seg_type: int, payload: bytes) -> bytes:
 
 class TestFormatSrtTime:
     def test_zero_ms(self):
-        assert _format_srt_time(0) == '00:00:00,000'
+        assert format_timestamp(0) == '00:00:00,000'
 
     def test_exact_one_second(self):
-        assert _format_srt_time(1000) == '00:00:01,000'
+        assert format_timestamp(1000) == '00:00:01,000'
 
     def test_exact_one_minute(self):
-        assert _format_srt_time(60000) == '00:01:00,000'
+        assert format_timestamp(60000) == '00:01:00,000'
 
     def test_exact_one_hour(self):
-        assert _format_srt_time(3600000) == '01:00:00,000'
+        assert format_timestamp(3600000) == '01:00:00,000'
 
     def test_mixed_components(self):
         # 1h 23m 45s 678ms
         ms = 1 * 3600000 + 23 * 60000 + 45 * 1000 + 678
-        assert _format_srt_time(ms) == '01:23:45,678'
+        assert format_timestamp(ms) == '01:23:45,678'
 
     def test_large_value(self):
         # 99h 59m 59s 999ms
         ms = 99 * 3600000 + 59 * 60000 + 59 * 1000 + 999
-        assert _format_srt_time(ms) == '99:59:59,999'
+        assert format_timestamp(ms) == '99:59:59,999'
 
     def test_milliseconds_only(self):
-        assert _format_srt_time(123) == '00:00:00,123'
+        assert format_timestamp(123) == '00:00:00,123'
 
     def test_one_millisecond(self):
-        assert _format_srt_time(1) == '00:00:00,001'
+        assert format_timestamp(1) == '00:00:00,001'
 
     def test_seconds_and_milliseconds(self):
-        assert _format_srt_time(12345) == '00:00:12,345'
+        assert format_timestamp(12345) == '00:00:12,345'
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +92,7 @@ class TestWriteSrt:
         ]
         output = tmp_path / 'output.srt'
 
-        _write_srt(lines, output)
+        write_srt(lines, output)
 
         content = output.read_text()
         assert '1\n' in content
@@ -107,7 +106,7 @@ class TestWriteSrt:
         lines = [DialogueLine(0, 5000, 'Only line')]
         output = tmp_path / 'single.srt'
 
-        _write_srt(lines, output)
+        write_srt(lines, output)
 
         content = output.read_text()
         assert '1\n' in content
@@ -117,7 +116,7 @@ class TestWriteSrt:
     def test_empty_lines_produces_empty_file(self, tmp_path):
         output = tmp_path / 'empty.srt'
 
-        _write_srt([], output)
+        write_srt([], output)
 
         content = output.read_text()
         assert content == ''
@@ -130,7 +129,7 @@ class TestWriteSrt:
         ]
         output = tmp_path / 'numbered.srt'
 
-        _write_srt(lines, output)
+        write_srt(lines, output)
 
         content = output.read_text()
         assert '1\n' in content
@@ -141,7 +140,7 @@ class TestWriteSrt:
         lines = [DialogueLine(1000, 3000, 'Line one\nLine two')]
         output = tmp_path / 'multiline.srt'
 
-        _write_srt(lines, output)
+        write_srt(lines, output)
 
         content = output.read_text()
         assert 'Line one\nLine two' in content

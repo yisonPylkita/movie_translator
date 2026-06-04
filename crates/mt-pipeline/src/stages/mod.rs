@@ -13,4 +13,5 @@ pub mod fetch;
 pub mod hardsub_ocr;
 pub mod identify;
 pub mod mux;
+pub mod transcribe;
 pub mod translate;

@@ -47,9 +47,16 @@ pub fn run_with_probe(
     } else if let Some(reference) = ctx.reference_path.clone() {
         ctx.english_source = Some(reference);
     } else {
-        // Try embedded text track, defer OCR if needed.
+        // Try embedded text track, defer burned-in OCR if needed (see
+        // `PipelineConfig::burned_in_fallback_allowed` for why --transcribe
+        // suppresses the fallback and lets the transcribe stage fill
+        // english_source instead).
         ctx.english_source = extract_text_only(&ctx)?;
-        if ctx.english_source.is_none() && !ctx.burned_in_probed && vision_ocr_available() {
+        if ctx.english_source.is_none()
+            && ctx.config.burned_in_fallback_allowed()
+            && !ctx.burned_in_probed
+            && vision_ocr_available()
+        {
             ctx.pending_ocr = Some(PendingOcr {
                 r#type: "burned_in".to_string(),
                 track_id: None,
@@ -59,6 +66,11 @@ pub fn run_with_probe(
         }
     }
 
+    if ctx.english_source.is_none() && ctx.config.enable_transcription {
+        // ASR transcription runs as a later stage; leave the source empty for
+        // it (the orchestrator re-checks and skips the file if ASR also fails).
+        return Ok(ctx);
+    }
     if ctx.english_source.is_none() && ctx.pending_ocr.is_none() {
         tracing::info!(
             "{}: no English subtitle source — will skip",
@@ -204,6 +216,20 @@ mod tests {
         let result = run_with_probe(ctx, || true).unwrap();
         let pending = result.pending_ocr.expect("pending");
         assert_eq!(pending.r#type, "burned_in");
+        assert!(result.dialogue_lines.is_none());
+    }
+
+    #[test]
+    fn transcription_enabled_skips_burned_in_and_defers_to_asr() {
+        // --transcribe says "source English from the audio": don't OCR video
+        // frames (clean BDs yield credit-text junk that would preempt ASR),
+        // and don't bail NoEnglishSource — the transcribe stage runs later.
+        let dir = tempfile::tempdir().unwrap();
+        let mut ctx = base_ctx(dir.path());
+        ctx.config.enable_transcription = true;
+        let result = run_with_probe(ctx, || true).unwrap();
+        assert!(result.pending_ocr.is_none());
+        assert!(result.english_source.is_none());
         assert!(result.dialogue_lines.is_none());
     }
 

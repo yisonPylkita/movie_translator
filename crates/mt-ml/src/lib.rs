@@ -14,10 +14,12 @@ pub mod backend;
 pub mod hardsub;
 pub mod inpaint;
 pub mod ocr;
+pub mod transcription;
 pub mod translate;
 
 pub use backend::{vision_ocr_available, ParsedFilename};
 pub use hardsub::{hardsub_download, hardsub_ocr_clean};
 pub use inpaint::inpaint;
 pub use ocr::{ocr_burned_in, ocr_pgs};
+pub use transcription::transcribe_to_srt;
 pub use translate::{translate, TranslateRequest, TranslateResponse};

@@ -33,6 +33,12 @@ pub struct PipelineConfig {
     /// Re-process files that already have Polish subtitles (the run normally
     /// skips them). Useful to re-translate or add a new track to prior outputs.
     pub force: bool,
+    /// Source English dialogue from the audio track via ASR when no subtitle
+    /// text is found anywhere (`--transcribe`).
+    pub enable_transcription: bool,
+    /// ASR engine: "apple" (SpeechAnalyzer, macOS 26+) or "whisper"
+    /// (mlx-whisper large-v3). See `benchmarks/asr/REPORT.md`.
+    pub transcribe_engine: String,
 }
 
 impl Default for PipelineConfig {
@@ -51,6 +57,8 @@ impl Default for PipelineConfig {
             keep_artifacts: false,
             enable_hardsub_ocr: false,
             force: false,
+            enable_transcription: false,
+            transcribe_engine: "apple".to_string(),
         }
     }
 }
@@ -118,9 +126,26 @@ pub struct PipelineContext {
     pub inpainted_video: Option<PathBuf>,
     /// `true` after any stage has probed for burned-in subtitles.
     pub burned_in_probed: bool,
+    /// `true` when `english_source` was produced by ASR transcription of the
+    /// audio track (`--transcribe`). Output tracks then carry AI-transcribed
+    /// provenance in their titles and the transcript is muxed as an English track.
+    #[serde(default)]
+    pub english_from_asr: bool,
     pub pending_ocr: Option<PendingOcr>,
     // No metrics/observability collector field: the metrics subsystem is not
     // part of this implementation.
+}
+
+impl PipelineConfig {
+    /// Whether burned-in (video-frame) OCR may run as the no-subtitle fallback.
+    ///
+    /// `--transcribe` supersedes it: the user chose the audio track as the
+    /// English source, and frame-OCR on clean video yields credit/typesetting
+    /// junk lines that would preempt ASR. PGS/image-track OCR is unaffected —
+    /// those are real subtitle tracks, not a fallback.
+    pub fn burned_in_fallback_allowed(&self) -> bool {
+        !self.enable_transcription
+    }
 }
 
 impl PipelineContext {
@@ -143,6 +168,7 @@ impl PipelineContext {
             ocr_results: None,
             inpainted_video: None,
             burned_in_probed: false,
+            english_from_asr: false,
             pending_ocr: None,
         }
     }

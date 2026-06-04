@@ -22,6 +22,7 @@ from typing import Any
 import numpy as np
 
 from ..logging import logger
+from ..srt import write_srt
 from ..types import BoundingBox, DialogueLine, OCRResult
 from .vision_ocr import is_available as is_ocr_available
 
@@ -332,28 +333,9 @@ def extract_pgs_track(
 
     # Step 4: Write SRT
     srt_path = work_dir / f'{video_path.stem}_pgs_ocr.srt'
-    _write_srt(dialogue_lines, srt_path)
+    write_srt(dialogue_lines, srt_path)
 
     # Clean up
     sup_path.unlink(missing_ok=True)
 
     return srt_path
-
-
-def _write_srt(lines: list[DialogueLine], output_path: Path) -> None:
-    """Write dialogue lines as an SRT file."""
-    parts = []
-    for i, line in enumerate(lines, 1):
-        start = _format_srt_time(line.start_ms)
-        end = _format_srt_time(line.end_ms)
-        parts.append(f'{i}\n{start} --> {end}\n{line.text}\n')
-    output_path.write_text('\n'.join(parts), encoding='utf-8')
-
-
-def _format_srt_time(ms: int) -> str:
-    """Format milliseconds as SRT timestamp."""
-    h = ms // 3600000
-    m = (ms % 3600000) // 60000
-    s = (ms % 60000) // 1000
-    ms_part = ms % 1000
-    return f'{h:02d}:{m:02d}:{s:02d},{ms_part:03d}'
