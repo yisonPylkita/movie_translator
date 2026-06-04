@@ -19,6 +19,19 @@ pub fn model_label(model_name: &str) -> String {
     }
 }
 
+/// Title for an AI-translated Polish track. Notes ASR provenance when the
+/// English source was transcribed from the audio track (`--transcribe`).
+pub fn polish_ai_title(model_name: &str, from_asr: bool) -> String {
+    if from_asr {
+        format!(
+            "Polish ({}, from AI transcription)",
+            model_label(model_name)
+        )
+    } else {
+        format!("Polish ({})", model_label(model_name))
+    }
+}
+
 /// Map external manifest language codes to track language codes.
 fn lang_to_track(lang: &str) -> String {
     match lang {
@@ -159,8 +172,19 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
         tracks.push(SubtitleFile {
             path: ass_path.clone(),
             language: "pol".to_string(),
-            title: format!("Polish ({})", model_label(model_name)),
+            title: polish_ai_title(model_name, ctx.english_from_asr),
             is_default,
+        });
+    }
+
+    // The ASR transcript itself ships as an English track so the original
+    // (pre-translation) text stays inspectable alongside the Polish.
+    if ctx.english_from_asr {
+        tracks.push(SubtitleFile {
+            path: english_source.clone(),
+            language: "eng".to_string(),
+            title: "English (AI Transcribed)".to_string(),
+            is_default: false,
         });
     }
 
@@ -323,6 +347,19 @@ mod tests {
             .iter()
             .map(|t| t.title.clone())
             .collect()
+    }
+
+    #[test]
+    fn polish_ai_title_notes_asr_provenance() {
+        assert_eq!(polish_ai_title("allegro", false), "Polish (Allegro)");
+        assert_eq!(
+            polish_ai_title("allegro", true),
+            "Polish (Allegro, from AI transcription)"
+        );
+        assert_eq!(
+            polish_ai_title("apple", true),
+            "Polish (Apple, from AI transcription)"
+        );
     }
 
     #[test]

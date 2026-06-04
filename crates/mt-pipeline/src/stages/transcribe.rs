@@ -44,6 +44,7 @@ pub fn run(ctx: PipelineContext, executor: &dyn GpuExecutor) -> Result<PipelineC
     );
     ctx.english_source = Some(srt);
     ctx.dialogue_lines = Some(lines);
+    ctx.english_from_asr = true;
     Ok(ctx)
 }
 
@@ -61,6 +62,7 @@ mod tests {
     #[derive(Default)]
     struct SpyExec {
         calls: AtomicUsize,
+        result: Option<PathBuf>,
     }
 
     impl GpuExecutor for SpyExec {
@@ -88,7 +90,7 @@ mod tests {
         }
         fn transcribe(&self, _v: &Path, _o: &Path, _l: &str, _e: &str) -> Result<Option<PathBuf>> {
             self.calls.fetch_add(1, Ordering::SeqCst);
-            Ok(None)
+            Ok(self.result.clone())
         }
     }
 
@@ -121,6 +123,21 @@ mod tests {
         let ctx = run(ctx_with(true, Some(src.clone())), &exec).unwrap();
         assert_eq!(exec.calls.load(Ordering::SeqCst), 0);
         assert_eq!(ctx.english_source, Some(src));
+    }
+
+    #[test]
+    fn adopts_transcribed_srt_and_marks_asr_provenance() {
+        let dir = tempfile::tempdir().unwrap();
+        let srt = dir.path().join("transcribed_en.srt");
+        std::fs::write(&srt, "1\n00:00:01,000 --> 00:00:02,000\nHello there\n").unwrap();
+        let exec = SpyExec {
+            result: Some(srt.clone()),
+            ..SpyExec::default()
+        };
+        let ctx = run(ctx_with(true, None), &exec).unwrap();
+        assert_eq!(ctx.english_source, Some(srt));
+        assert!(ctx.english_from_asr, "ASR provenance must be marked");
+        assert!(!ctx.dialogue_lines.unwrap().is_empty());
     }
 
     #[test]

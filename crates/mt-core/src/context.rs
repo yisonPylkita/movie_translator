@@ -126,6 +126,11 @@ pub struct PipelineContext {
     pub inpainted_video: Option<PathBuf>,
     /// `true` after any stage has probed for burned-in subtitles.
     pub burned_in_probed: bool,
+    /// `true` when `english_source` was produced by ASR transcription of the
+    /// audio track (`--transcribe`). Output tracks then carry AI-transcribed
+    /// provenance in their titles and the transcript is muxed as an English track.
+    #[serde(default)]
+    pub english_from_asr: bool,
     pub pending_ocr: Option<PendingOcr>,
     // No metrics/observability collector field: the metrics subsystem is not
     // part of this implementation.
@@ -151,6 +156,7 @@ impl PipelineContext {
             ocr_results: None,
             inpainted_video: None,
             burned_in_probed: false,
+            english_from_asr: false,
             pending_ocr: None,
         }
     }
