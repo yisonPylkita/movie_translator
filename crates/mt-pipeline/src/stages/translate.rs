@@ -171,6 +171,9 @@ mod tests {
     }
 
     impl GpuExecutor for FakeGpu {
+        fn transcribe(&self, _v: &Path, _o: &Path, _l: &str, _e: &str) -> Result<Option<PathBuf>> {
+            Ok(None)
+        }
         fn translate(&self, req: &TranslateRequest) -> Result<Vec<DialogueLine>> {
             self.seen_models.borrow_mut().push(req.model.clone());
             *self.seen_proper_nouns.borrow_mut() = req.proper_nouns.clone();

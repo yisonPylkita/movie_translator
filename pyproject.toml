@@ -40,6 +40,7 @@ dependencies = [
     "aniparse>=2.0",
     "defusedxml>=0.7",
     "yt-dlp>=2026.3.17",
+    "mlx-whisper>=0.4.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
 ]
 
 [build-system]

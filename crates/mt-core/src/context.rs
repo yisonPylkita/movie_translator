@@ -33,6 +33,12 @@ pub struct PipelineConfig {
     /// Re-process files that already have Polish subtitles (the run normally
     /// skips them). Useful to re-translate or add a new track to prior outputs.
     pub force: bool,
+    /// Source English dialogue from the audio track via ASR when no subtitle
+    /// text is found anywhere (`--transcribe`).
+    pub enable_transcription: bool,
+    /// ASR engine: "apple" (SpeechAnalyzer, macOS 26+) or "whisper"
+    /// (mlx-whisper large-v3). See `benchmarks/asr/REPORT.md`.
+    pub transcribe_engine: String,
 }
 
 impl Default for PipelineConfig {
@@ -51,6 +57,8 @@ impl Default for PipelineConfig {
             keep_artifacts: false,
             enable_hardsub_ocr: false,
             force: false,
+            enable_transcription: false,
+            transcribe_engine: "apple".to_string(),
         }
     }
 }

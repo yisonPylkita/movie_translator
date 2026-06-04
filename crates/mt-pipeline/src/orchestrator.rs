@@ -186,9 +186,18 @@ async fn process_file_inner(
             .await?;
     }
 
+    // Stage 4.6 — ASR transcription fallback (gated by --transcribe): source
+    // English dialogue from the audio track when no subtitle text was found.
+    if ctx.english_source.is_none() && ctx.config.enable_transcription {
+        emit_stage(Stage::Transcribe);
+        let exec = executor.clone();
+        ctx = run_blocking(move || stages::transcribe::run(ctx, &exec)).await?;
+    }
+
     if ctx.english_source.is_none() {
         // Pipeline produced no English source even after extract + burned-in
-        // OCR — treat as `NoEnglishSource` (skip-not-fail). See fix #5.
+        // OCR (and optional ASR transcription) — treat as `NoEnglishSource`
+        // (skip-not-fail). See fix #5.
         return Err(PipelineError::NoEnglishSource);
     }
     if ctx.dialogue_lines.is_none() {

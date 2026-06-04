@@ -55,6 +55,16 @@ pub trait GpuExecutor {
         out_dir: &Path,
         language: &str,
     ) -> Result<Option<PathBuf>>;
+
+    /// Transcribe the `language` audio track to an SRT via ASR (mirrors
+    /// [`mt_ml::transcribe_to_srt`]). `None` => no track / engine / lines.
+    fn transcribe(
+        &self,
+        video: &Path,
+        output_dir: &Path,
+        language: &str,
+        engine: &str,
+    ) -> Result<Option<PathBuf>>;
 }
 
 /// A [`GpuExecutor`] that calls [`mt_ml`] inline (synchronous).
@@ -104,6 +114,16 @@ impl GpuExecutor for DirectGpuExecutor {
         language: &str,
     ) -> Result<Option<PathBuf>> {
         mt_ml::hardsub_ocr_clean(video, out_dir, language).map_err(PipelineError::from)
+    }
+
+    fn transcribe(
+        &self,
+        video: &Path,
+        output_dir: &Path,
+        language: &str,
+        engine: &str,
+    ) -> Result<Option<PathBuf>> {
+        mt_ml::transcribe_to_srt(video, output_dir, language, engine).map_err(PipelineError::from)
     }
 }
 
@@ -221,6 +241,9 @@ mod tests {
     }
 
     impl GpuExecutor for FakeGpu {
+        fn transcribe(&self, _v: &Path, _o: &Path, _l: &str, _e: &str) -> Result<Option<PathBuf>> {
+            Ok(None)
+        }
         fn translate(&self, _req: &TranslateRequest) -> Result<Vec<DialogueLine>> {
             self.calls.borrow_mut().push("translate".into());
             Ok(vec![])

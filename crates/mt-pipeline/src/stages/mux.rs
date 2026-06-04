@@ -302,6 +302,9 @@ mod tests {
         inpaint_calls: RefCell<Vec<PathBuf>>,
     }
     impl GpuExecutor for RecordGpu {
+        fn transcribe(&self, _v: &Path, _o: &Path, _l: &str, _e: &str) -> Result<Option<PathBuf>> {
+            Ok(None)
+        }
         fn translate(&self, _r: &mt_ml::TranslateRequest) -> Result<Vec<DialogueLine>> {
             unreachable!()
         }
