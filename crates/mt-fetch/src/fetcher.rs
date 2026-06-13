@@ -8,7 +8,7 @@ use std::thread;
 use std::time::Duration;
 
 use crate::providers::SubtitleProvider;
-use crate::retry::{with_retry, FetchError};
+use crate::retry::{FetchError, with_retry};
 use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
 use tracing::{debug, info, warn};

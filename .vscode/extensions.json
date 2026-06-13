@@ -1,12 +1,12 @@
 {
-    "recommendations": [
-        "ms-python.python",
-        "charliermarsh.ruff",
-        "skellock.just"
-    ],
-    "unwantedRecommendations": [
-        "ms-python.pylint",
-        "ms-python.flake8",
-        "wholroyd.jinja"
-    ]
+  "recommendations": [
+    "ms-python.python",
+    "charliermarsh.ruff",
+    "skellock.just"
+  ],
+  "unwantedRecommendations": [
+    "ms-python.pylint",
+    "ms-python.flake8",
+    "wholroyd.jinja"
+  ]
 }
