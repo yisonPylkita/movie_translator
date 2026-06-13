@@ -785,7 +785,7 @@ mod tests {
             path: a.clone(),
             lines_done: 50,
             lines_total: 100,
-            model: "allegro".into(),
+            model: "mlx".into(),
         });
         s.apply(ProgressEvent::FileFinished {
             path: a.clone(),

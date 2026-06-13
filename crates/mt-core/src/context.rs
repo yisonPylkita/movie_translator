@@ -45,8 +45,8 @@ impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
             device: "mps".to_string(),
-            batch_size: 16,
-            model: "allegro".to_string(),
+            batch_size: 4,
+            model: "mlx".to_string(),
             extra_models: Vec::new(),
             enable_fetch: true,
             enable_inpaint: false,
@@ -182,8 +182,8 @@ mod tests {
     fn config_defaults() {
         let cfg = PipelineConfig::default();
         assert_eq!(cfg.device, "mps");
-        assert_eq!(cfg.batch_size, 16);
-        assert_eq!(cfg.model, "allegro");
+        assert_eq!(cfg.batch_size, 4);
+        assert_eq!(cfg.model, "mlx");
         assert!(cfg.extra_models.is_empty());
         assert!(cfg.enable_fetch);
         assert!(!cfg.enable_inpaint);

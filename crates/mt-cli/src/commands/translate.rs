@@ -33,11 +33,11 @@ pub struct TranslateArgs {
     #[arg(long, value_parser = ["cpu", "mps"], default_value_t = default_device())]
     pub device: String,
 
-    #[arg(long = "batch-size", default_value_t = 16)]
+    #[arg(long = "batch-size", default_value_t = 4)]
     pub batch_size: u32,
 
-    /// Translation backend. Default on macOS runs BOTH allegro and apple.
-    #[arg(long, value_parser = ["allegro", "apple"])]
+    /// Translation backend. Default: MLX on Apple Silicon, allegro (PyTorch) otherwise.
+    #[arg(long, value_parser = ["allegro", "apple", "mlx"])]
     pub model: Option<String>,
 
     #[arg(long = "no-fetch", default_value_t = false)]
@@ -326,7 +326,7 @@ mod tests {
     fn defaults() {
         let args = parse(&["movie.mkv"]);
         assert_eq!(args.input, "movie.mkv");
-        assert_eq!(args.batch_size, 16);
+        assert_eq!(args.batch_size, 4);
         assert_eq!(args.workers, 0); // 0 = auto -> min(files, 4)
         assert!(args.model.is_none()); // default None -> resolve_models
         assert!(!args.no_fetch); // enable_fetch true unless --no-fetch

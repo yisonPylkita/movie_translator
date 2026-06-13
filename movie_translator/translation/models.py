@@ -35,6 +35,9 @@ def get_local_model_path(model_key: str) -> Path | None:
     return None
 
 
-DEFAULT_MODEL = 'allegro'
+# Default model priority:
+# 1. 'apple' (macOS Translation framework) — fastest, zero memory, macOS 26+
+# 2. 'mlx' (Metal-native INT8) — fallback on any Apple Silicon
+DEFAULT_MODEL = 'apple'
 DEFAULT_DEVICE = 'mps'
-DEFAULT_BATCH_SIZE = 16
+DEFAULT_BATCH_SIZE = 4

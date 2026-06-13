@@ -37,11 +37,13 @@ pub fn resolve_models_with(
     }
 
     if apple_available() {
-        tracing::info!("Apple Translation available -- running Allegro + Apple (two PL tracks)");
-        return ("allegro".to_string(), vec!["apple".to_string()]);
+        tracing::info!("Apple Translation available — using Apple (fastest, zero memory)");
+        return ("apple".to_string(), Vec::new());
     }
 
-    ("allegro".to_string(), Vec::new())
+    // Fallback to MLX on Apple Silicon when Apple Translation is unavailable
+    // (e.g. macOS < 26). MLX is Metal-native, INT8 quantised, and stable.
+    ("mlx".to_string(), Vec::new())
 }
 
 /// Directory holding the Apple Translation Swift bridge, relative to the repo.
@@ -240,16 +242,13 @@ mod tests {
     }
 
     #[test]
-    fn default_with_apple_available_adds_apple_extra() {
+    fn apple_is_default_when_available() {
         let (primary, extra) = resolve_models_with(None, || true);
-        assert_eq!(primary, "allegro");
-        assert_eq!(extra, vec!["apple".to_string()]);
-    }
+        assert_eq!(primary, "apple");
+        assert!(extra.is_empty(), "Apple default must not add extras");
 
-    #[test]
-    fn default_without_apple_is_allegro_only() {
         let (primary, extra) = resolve_models_with(None, || false);
-        assert_eq!(primary, "allegro");
+        assert_eq!(primary, "mlx");
         assert!(extra.is_empty());
     }
 }

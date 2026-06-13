@@ -15,6 +15,7 @@ pub fn model_label(model_name: &str) -> String {
     match model_name {
         "allegro" => "Allegro".to_string(),
         "apple" => "Apple".to_string(),
+        "mlx" => "MLX".to_string(),
         other => other.to_string(),
     }
 }
@@ -366,6 +367,7 @@ mod tests {
     fn model_label_known_and_unknown() {
         assert_eq!(model_label("allegro"), "Allegro");
         assert_eq!(model_label("apple"), "Apple");
+        assert_eq!(model_label("mlx"), "MLX");
         assert_eq!(model_label("nllb"), "nllb");
     }
 
@@ -373,7 +375,7 @@ mod tests {
     fn creates_ai_polish_track() {
         let dir = tempfile::tempdir().unwrap();
         let result = run(base_ctx(dir.path())).unwrap();
-        assert!(titles(&result).contains(&"Polish (Allegro)".to_string()));
+        assert!(titles(&result).contains(&"Polish (MLX)".to_string()));
     }
 
     #[test]
@@ -395,7 +397,7 @@ mod tests {
         let result = run(ctx).unwrap();
         let ts = titles(&result);
         assert!(ts.contains(&"Polish (podnapisi)".to_string()));
-        assert!(ts.contains(&"Polish (Allegro)".to_string()));
+        assert!(ts.contains(&"Polish (MLX)".to_string()));
         let defaults: Vec<_> = result
             .subtitle_tracks
             .as_ref()
@@ -419,7 +421,7 @@ mod tests {
             .filter(|t| t.is_default)
             .collect();
         assert_eq!(defaults.len(), 1);
-        assert_eq!(defaults[0].title, "Polish (Allegro)");
+        assert_eq!(defaults[0].title, "Polish (MLX)");
     }
 
     #[test]
@@ -438,7 +440,7 @@ mod tests {
         let result = run(ctx).unwrap();
         assert_eq!(
             titles(&result),
-            vec!["Polish (Allegro)".to_string(), "Polish (Apple)".to_string()]
+            vec!["Polish (MLX)".to_string(), "Polish (Apple)".to_string()]
         );
         let defaults: Vec<_> = result
             .subtitle_tracks
@@ -448,6 +450,6 @@ mod tests {
             .filter(|t| t.is_default)
             .collect();
         assert_eq!(defaults.len(), 1);
-        assert_eq!(defaults[0].title, "Polish (Allegro)");
+        assert_eq!(defaults[0].title, "Polish (MLX)");
     }
 }

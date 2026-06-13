@@ -173,7 +173,13 @@ class BiDiEncoder(nn.Module):
 
 
 class BiDiDecoderLayer(nn.Module):
-    """Single decoder layer matching Marian's post-LN design with biases."""
+    """Single decoder layer matching Marian's post-LN design with biases.
+
+    Supports KV-caching: if *cache* is provided, only the *new* token's
+    hidden state (x[:, -1:, :]) is processed through self-attention, and
+    cached K/V tensors are appended with the new token's projections.
+    This avoids O(T²) recomputation during autoregressive generation.
+    """
 
     def __init__(self, dims: int, num_heads: int, mlp_dims: int, dropout: float):
         super().__init__()
@@ -192,22 +198,63 @@ class BiDiDecoderLayer(nn.Module):
         memory: mx.array,
         self_mask: mx.array | None = None,
         memory_mask: mx.array | None = None,
+        cache: dict | None = None,
     ) -> mx.array:
-        # Self-attention (post-LN)
+        # ── Self-attention (post-LN) with fixed-buffer KV-cache ──
         residual = x
-        x = self.self_attention(x, x, x, self_mask)
+
+        if cache is not None:
+            k = self.self_attention.key_proj(x)
+            v = self.self_attention.value_proj(x)
+            q = self.self_attention.query_proj(x)
+
+            step = cache['step']
+            # Slice-write into pre-allocated fixed buffers (no concatenate)
+            cache['self_k'][:, step : step + 1] = k
+            cache['self_v'][:, step : step + 1] = v
+            cache['step'] = step + 1
+            total = step + 1
+
+            nh = self.self_attention.num_heads
+            q_h = mx.unflatten(q, -1, (nh, -1)).transpose(0, 2, 1, 3)
+            k_h = mx.unflatten(cache['self_k'][:, :total], -1, (nh, -1)).transpose(0, 2, 1, 3)
+            v_h = mx.unflatten(cache['self_v'][:, :total], -1, (nh, -1)).transpose(0, 2, 1, 3)
+            scale = math.sqrt(1.0 / q_h.shape[-1])
+            x = mx.fast.scaled_dot_product_attention(q_h, k_h, v_h, scale=scale, mask=None)
+            x = x.transpose(0, 2, 1, 3).flatten(-2, -1)
+            x = self.self_attention.out_proj(x)
+        else:
+            x = self.self_attention(x, x, x, self_mask)
+
         x = self.dropout(x)
         x = residual + x
         x = self.self_attention_layer_norm(x)
 
-        # Cross-attention (post-LN)
+        # ── Cross-attention (post-LN) with fixed-buffer KV-cache ──
         residual = x
-        x = self.encoder_attention(x, memory, memory, memory_mask)
+
+        if cache is not None:
+            if cache['cross_k'] is None:
+                # First step: compute cross K/V from encoder memory once
+                cache['cross_k'] = self.encoder_attention.key_proj(memory)
+                cache['cross_v'] = self.encoder_attention.value_proj(memory)
+            q = self.encoder_attention.query_proj(x)
+            nh = self.encoder_attention.num_heads
+            q_h = mx.unflatten(q, -1, (nh, -1)).transpose(0, 2, 1, 3)
+            k_h = mx.unflatten(cache['cross_k'], -1, (nh, -1)).transpose(0, 2, 1, 3)
+            v_h = mx.unflatten(cache['cross_v'], -1, (nh, -1)).transpose(0, 2, 1, 3)
+            scale = math.sqrt(1.0 / q_h.shape[-1])
+            x = mx.fast.scaled_dot_product_attention(q_h, k_h, v_h, scale=scale, mask=memory_mask)
+            x = x.transpose(0, 2, 1, 3).flatten(-2, -1)
+            x = self.encoder_attention.out_proj(x)
+        else:
+            x = self.encoder_attention(x, memory, memory, memory_mask)
+
         x = self.dropout(x)
         x = residual + x
         x = self.encoder_attention_layer_norm(x)
 
-        # FFN (post-LN)
+        # ── FFN (post-LN) ──
         residual = x
         x = self.fc1(x)
         x = nn.relu(x)
@@ -238,6 +285,8 @@ class BiDiDecoder(nn.Module):
             BiDiDecoderLayer(dims, num_heads, mlp_dims, dropout) for _ in range(num_layers)
         ]
         self.dropout = nn.Dropout(dropout)
+        # Pre-allocated causal masks, reused across decode steps
+        self._causal_masks: dict[int, mx.array] = {}
 
     def __call__(
         self,
@@ -245,17 +294,23 @@ class BiDiDecoder(nn.Module):
         memory: mx.array,
         self_mask: mx.array | None = None,
         memory_mask: mx.array | None = None,
+        cache: list[dict] | None = None,
     ) -> mx.array:
-        # Token embeddings (scaled)
         x = self.embed_tokens(input_ids) * EMBED_SCALE
 
-        # Add position embeddings
-        x = x + self.embed_positions(x.shape)
+        if cache is not None:
+            # Position embedding for the new token only
+            step = cache[0]['step']  # tokens already decoded
+            full_len = step + input_ids.shape[1]
+            x = x + self.embed_positions((1, full_len))[:, -input_ids.shape[1] :, :]
+        else:
+            x = x + self.embed_positions(x.shape)
 
         x = self.dropout(x)
 
-        for layer in self.layers:
-            x = layer(x, memory, self_mask, memory_mask)
+        for i, layer in enumerate(self.layers):
+            layer_cache = cache[i] if cache is not None else None
+            x = layer(x, memory, self_mask, memory_mask, cache=layer_cache)
 
         return x
 
@@ -303,6 +358,7 @@ class BidiMLXModel(nn.Module):
         memory: mx.array,
         self_mask: mx.array | None = None,
         memory_mask: mx.array | None = None,
+        cache: list[dict[str, mx.array]] | None = None,
     ) -> mx.array:
         """Decode target tokens given encoder memory.
 
@@ -311,11 +367,14 @@ class BidiMLXModel(nn.Module):
             memory: Encoder output (batch, src_seq_len, d_model).
             self_mask: Causal mask for self-attention.
             memory_mask: Padding mask for encoder-decoder attention.
+            cache: Optional list of per-layer KV caches for fast autoregressive
+                decoding.  When provided, only the *last* token is processed
+                through self-attention (the cache provides past K/V).
 
         Returns:
             Logits tensor (batch, tgt_seq_len, vocab_size).
         """
-        hidden = self.decoder(decoder_input_ids, memory, self_mask, memory_mask)
+        hidden = self.decoder(decoder_input_ids, memory, self_mask, memory_mask, cache=cache)
         logits = self.lm_head(hidden)
         return logits
 
@@ -611,71 +670,71 @@ class BidiMLXModel(nn.Module):
         max_new_tokens: int = 128,
         num_beams: int = 1,
     ) -> mx.array:
-        """Generate target token IDs using greedy decoding.
+        """Generate target token IDs using greedy decoding with fixed-buffer KV-cache.
 
-        Args:
-            input_ids: (batch, src_seq_len) tokenized source.
-            attention_mask: Optional padding mask.
-            max_new_tokens: Maximum tokens to generate.
-            num_beams: Beam size (only 1=greedy implemented).
-
-        Returns:
-            (batch, tgt_seq_len) generated token IDs.
+        Uses pre-allocated KV buffers to avoid O(T²) memory from repeated
+        ``mx.concatenate`` calls during autoregressive generation.
         """
         batch_size = input_ids.shape[0]
         memory = self.encode(input_ids, attention_mask)
 
-        # Start with decoder start tokens
-        decoder_ids = mx.full((batch_size, 1), DECODER_START_TOKEN_ID, dtype=mx.int32)
+        max_len = 1 + max_new_tokens
+        decoder_ids = mx.full((batch_size, max_len), PAD_TOKEN_ID, dtype=mx.int32)
+        decoder_ids[:, 0] = DECODER_START_TOKEN_ID
+        seq_len = 1
 
-        for _step in range(max_new_tokens):
-            # Create causal mask for decoder self-attention
-            seq_len = decoder_ids.shape[1]
-            causal_mask = _create_causal_mask(seq_len)
+        # Pre-allocate fixed KV-cache buffers per layer
+        layer_caches: list[dict] = []
+        for _ in range(NUM_DECODER_LAYERS):
+            cache = {
+                'step': 0,
+                'self_k': mx.zeros((batch_size, max_new_tokens, D_MODEL)),
+                'self_v': mx.zeros((batch_size, max_new_tokens, D_MODEL)),
+                'cross_k': None,  # set on first step
+                'cross_v': None,
+            }
+            layer_caches.append(cache)
 
-            # Forward decoder
-            logits = self.decode(decoder_ids, memory, self_mask=causal_mask)
+        # First step: encode the full source once for cross-attention cache
+        cache_prompt = mx.full((batch_size, 1), DECODER_START_TOKEN_ID, dtype=mx.int32)
+        logits = self.decode(cache_prompt, memory, cache=layer_caches)
 
-            # Greedy: pick the last token's highest-probability next token
-            next_token_logits = logits[:, -1, :]  # (batch, vocab)
-            # Apply final_logits_bias if present
-            if (
-                hasattr(self, 'lm_head')
-                and hasattr(self.lm_head, 'bias')
-                and self.lm_head.bias is not None
-            ):
+        next_token = mx.argmax(logits[:, -1, :], axis=-1)
+        decoder_ids[:, 1] = next_token.astype(mx.int32)
+        seq_len = 2
+
+        if mx.all(mx.equal(next_token, EOS_TOKEN_ID)):
+            return decoder_ids[:, :seq_len]
+
+        for _ in range(1, max_new_tokens):
+            new_token_ids = mx.reshape(decoder_ids[:, seq_len - 1], (-1, 1))
+
+            logits = self.decode(new_token_ids, memory, cache=layer_caches)
+            next_token_logits = logits[:, -1, :]
+            if self.lm_head.bias is not None:
                 next_token_logits = next_token_logits + self.lm_head.bias
-            next_token = mx.argmax(next_token_logits, axis=-1, keepdims=True)  # (batch, 1)
 
-            # Concatenate
-            decoder_ids = mx.concatenate([decoder_ids, next_token.astype(mx.int32)], axis=1)
+            next_token = mx.argmax(next_token_logits, axis=-1)
+            decoder_ids[:, seq_len] = next_token.astype(mx.int32)
+            seq_len += 1
 
-            # Check if all sequences have produced EOS
-            done = mx.equal(next_token, EOS_TOKEN_ID)  # type: ignore[arg-type]
-            if mx.all(done):
+            if mx.all(mx.equal(next_token, EOS_TOKEN_ID)):
                 break
 
-        return decoder_ids
+        return decoder_ids[:, :seq_len]
 
     def translate(
         self,
         texts: list[str],
         max_new_tokens: int = 128,
         progress_callback: Callable | None = None,
-        batch_size: int = 16,
+        batch_size: int = 4,
     ) -> list[str]:
         """Translate a list of English texts to Polish.
 
-        Processes texts in batches to maximize GPU utilization.
-
-        Args:
-            texts: English source strings (without '>>pol<<' prefix).
-            max_new_tokens: Maximum tokens per translation.
-            progress_callback: Optional callback(current, total, rate).
-            batch_size: Number of texts to process in one batch.
-
-        Returns:
-            Polish translated strings.
+        Uses fixed-buffer KV-cache for O(T) decoding with stable memory.
+        Default batch_size=4 (optimal on M1 8GB; larger batches add padding
+        overhead and memory pressure).
         """
         if not texts:
             return []
@@ -687,37 +746,71 @@ class BidiMLXModel(nn.Module):
         for batch_start in range(0, total, batch_size):
             batch_end = min(batch_start + batch_size, total)
             batch_texts = texts[batch_start:batch_end]
-            batch_size_actual = len(batch_texts)
+            b = len(batch_texts)
 
-            # Tokenize as a batch
             input_ids, attention_mask = self.tokenize_source(batch_texts)
-            padding_mask_4d = create_padding_mask(attention_mask)
+            memory = self.encode(input_ids, create_padding_mask(attention_mask))
 
-            # Encode all at once
-            memory = self.encode(input_ids, padding_mask_4d)
+            max_len = 1 + max_new_tokens
+            decoder_ids = mx.full((b, max_len), PAD_TOKEN_ID, dtype=mx.int32)
+            decoder_ids[:, 0] = DECODER_START_TOKEN_ID
+            seq_len = 1
 
-            # Decode autoregressively (batch decode)
-            decoder_ids = mx.full((batch_size_actual, 1), DECODER_START_TOKEN_ID, dtype=mx.int32)
+            # Pre-allocate fixed KV-cache (static, no mx.concatenate in loop)
+            layer_caches: list[dict] = []
+            for _ in range(NUM_DECODER_LAYERS):
+                layer_caches.append(
+                    {
+                        'step': 0,
+                        'self_k': mx.zeros((b, max_new_tokens, D_MODEL)),
+                        'self_v': mx.zeros((b, max_new_tokens, D_MODEL)),
+                        'cross_k': None,
+                        'cross_v': None,
+                    }
+                )
 
-            for _step in range(max_new_tokens):
-                seq_len = decoder_ids.shape[1]
-                causal_mask = _create_causal_mask(seq_len)
+            # First step: decode start token (initialises cross-attn cache)
+            start_input = decoder_ids[:, 0:1]
+            logits = self.decode(start_input, memory, cache=layer_caches)
+            next_token = mx.argmax(logits[:, -1, :], axis=-1)
+            decoder_ids[:, 1] = next_token.astype(mx.int32)
+            seq_len = 2
 
-                logits = self.decode(decoder_ids, memory, self_mask=causal_mask)
-                next_token_logits = logits[:, -1, :]  # (batch, vocab)
-                next_token = mx.argmax(next_token_logits, axis=-1, keepdims=True)
+            if mx.all(mx.equal(next_token, EOS_TOKEN_ID)):
+                batch_results = self.decode_target(decoder_ids[:, :seq_len])
+                for j, text in enumerate(batch_results):
+                    results[batch_start + j] = text
+                if progress_callback:
+                    elapsed = time.time() - start_time
+                    progress_callback(batch_end, total, batch_end / elapsed if elapsed > 0 else 0)
+                continue
 
-                decoder_ids = mx.concatenate([decoder_ids, next_token.astype(mx.int32)], axis=1)
+            # Remaining steps
+            for _ in range(1, max_new_tokens):
+                new_ids = mx.reshape(decoder_ids[:, seq_len - 1], (-1, 1))
+                logits = self.decode(new_ids, memory, cache=layer_caches)
+                next_token_logits = logits[:, -1, :]
+                if self.lm_head.bias is not None:
+                    next_token_logits = next_token_logits + self.lm_head.bias
+                next_token = mx.argmax(next_token_logits, axis=-1)
 
-                # Check if all sequences in batch have EOS
-                done_tokens = mx.equal(next_token, EOS_TOKEN_ID)
-                if mx.all(done_tokens):
+                decoder_ids[:, seq_len] = next_token.astype(mx.int32)
+                seq_len += 1
+
+                if mx.all(mx.equal(next_token, EOS_TOKEN_ID)):
                     break
 
-            # Decode batch results
-            batch_results = self.decode_target(decoder_ids)
+            batch_results = self.decode_target(decoder_ids[:, :seq_len])
             for j, text in enumerate(batch_results):
                 results[batch_start + j] = text
+
+            # Force synchronisation and GC to keep peak memory low
+            mx.eval(next_token)
+            for c in layer_caches:
+                c['self_k'] = None
+                c['self_v'] = None
+                c['cross_k'] = None
+                c['cross_v'] = None
 
             if progress_callback:
                 elapsed = time.time() - start_time

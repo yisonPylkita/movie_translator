@@ -177,7 +177,7 @@ mod tests {
         fn translate(&self, req: &TranslateRequest) -> Result<Vec<DialogueLine>> {
             self.seen_models.borrow_mut().push(req.model.clone());
             *self.seen_proper_nouns.borrow_mut() = req.proper_nouns.clone();
-            if req.model == "allegro" {
+            if req.model == "allegro" || req.model == "mlx" {
                 Ok(self.primary.clone())
             } else {
                 Ok(self.extra.get(&req.model).cloned().unwrap_or_default())
@@ -282,7 +282,7 @@ mod tests {
         };
         let result = run(ctx(dir.path(), vec!["apple".into()]), &gpu, None).unwrap();
         assert_eq!(result.extra_translations["apple"][0].text, "Cześć (apple)");
-        assert_eq!(gpu.seen_models.borrow().as_slice(), &["allegro", "apple"]);
+        assert_eq!(gpu.seen_models.borrow().as_slice(), &["mlx", "apple"]);
     }
 
     #[test]
