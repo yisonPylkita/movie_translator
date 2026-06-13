@@ -157,6 +157,8 @@ pub fn hardsub_download(
 pub fn hardsub_ocr_clean(video: &Path, out_dir: &Path, language: &str) -> Result<Option<PathBuf>> {
     #[cfg(target_os = "macos")]
     {
+        use ocr_postprocess::{postprocess_ocr_results, render_to_srt};
+
         let _ = language; // Vision OCR uses en by default; language support TBD in Rust port
         let result = crate::ocr::ocr_burned_in(video, out_dir, 0.25, 6)?;
 
@@ -205,154 +207,155 @@ pub fn hardsub_ocr_clean(video: &Path, out_dir: &Path, language: &str) -> Result
     }
 }
 
-// ── OCR post-processing (ported from Python hardsub/postprocess.py) ──────
+#[cfg(target_os = "macos")]
+mod ocr_postprocess {
+    use std::collections::HashMap;
 
-use std::collections::HashMap;
-
-/// A single cleaned dialogue line.
-#[derive(Debug, Clone)]
-struct CleanLine {
-    start_ms: i64,
-    end_ms: i64,
-    text: String,
-}
-
-const SIMILARITY: f64 = 0.80;
-const TAIL_MS: i64 = 800;
-const MIN_DURATION_MS: i64 = 200;
-const MIN_LETTERS: usize = 3;
-const MIN_ALPHA_RATIO: f64 = 0.5;
-
-fn norm(text: &str) -> String {
-    text.to_lowercase()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn similar(a: &str, b: &str) -> f64 {
-    let na = norm(a);
-    let nb = norm(b);
-    if na == nb {
-        return 1.0;
+    /// A single cleaned dialogue line.
+    #[derive(Debug, Clone)]
+    pub(super) struct CleanLine {
+        pub(super) start_ms: i64,
+        pub(super) end_ms: i64,
+        pub(super) text: String,
     }
-    let max_len = na.len().max(nb.len());
-    if max_len == 0 {
-        return 1.0;
-    }
-    // Simple character-level similarity (edit-distance based approximation)
-    let common: usize = na.chars().filter(|c| nb.contains(*c)).count();
-    common as f64 / max_len as f64
-}
 
-fn is_dialogue(text: &str) -> bool {
-    let flat = text.replace('\n', " ").trim().to_string();
-    if flat.len() < 2 {
-        return false;
-    }
-    let letters = flat.chars().filter(|c| c.is_alphabetic()).count();
-    let non_space = flat.chars().filter(|c| !c.is_whitespace()).count();
-    if letters < MIN_LETTERS {
-        return false;
-    }
-    if non_space > 0 && (letters as f64 / non_space as f64) < MIN_ALPHA_RATIO {
-        return false;
-    }
-    true
-}
+    const SIMILARITY: f64 = 0.80;
+    const TAIL_MS: i64 = 800;
+    const MIN_DURATION_MS: i64 = 200;
+    const MIN_LETTERS: usize = 3;
+    const MIN_ALPHA_RATIO: f64 = 0.5;
 
-fn best_variant(variants: &[String]) -> String {
-    let mut counts: HashMap<&str, usize> = HashMap::new();
-    for v in variants {
-        *counts.entry(v.as_str()).or_insert(0) += 1;
+    fn norm(text: &str) -> String {
+        text.to_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
     }
-    let top_count = counts.values().max().copied().unwrap_or(0);
-    let tied: Vec<_> = variants
-        .iter()
-        .filter(|v| counts.get(v.as_str()).copied().unwrap_or(0) == top_count)
-        .collect();
-    tied.iter()
-        .max_by_key(|v| v.len())
-        .map(|s| (*s).clone())
-        .unwrap_or_default()
-}
 
-fn postprocess_ocr_results(frame_texts: &[(i64, String)]) -> Vec<CleanLine> {
-    let mut frames: Vec<&(i64, String)> = frame_texts.iter().collect();
-    frames.sort_by_key(|f| f.0);
-
-    let mut lines: Vec<CleanLine> = Vec::new();
-    let mut anchor: Option<String> = None;
-    let mut variants: Vec<String> = Vec::new();
-    let mut start_ms: i64 = 0;
-
-    for (ts, raw) in &frames {
-        let text = raw.trim().to_string();
-        if let Some(ref a) = anchor
-            && !text.is_empty()
-            && similar(&text, a) >= SIMILARITY
-        {
-            variants.push(text);
-            continue;
+    fn similar(a: &str, b: &str) -> f64 {
+        let na = norm(a);
+        let nb = norm(b);
+        if na == nb {
+            return 1.0;
         }
-        // Close the running group
-        if let Some(_a) = anchor {
+        let max_len = na.len().max(nb.len());
+        if max_len == 0 {
+            return 1.0;
+        }
+        // Simple character-level similarity (edit-distance based approximation)
+        let common: usize = na.chars().filter(|c| nb.contains(*c)).count();
+        common as f64 / max_len as f64
+    }
+
+    fn is_dialogue(text: &str) -> bool {
+        let flat = text.replace('\n', " ").trim().to_string();
+        if flat.len() < 2 {
+            return false;
+        }
+        let letters = flat.chars().filter(|c| c.is_alphabetic()).count();
+        let non_space = flat.chars().filter(|c| !c.is_whitespace()).count();
+        if letters < MIN_LETTERS {
+            return false;
+        }
+        if non_space > 0 && (letters as f64 / non_space as f64) < MIN_ALPHA_RATIO {
+            return false;
+        }
+        true
+    }
+
+    fn best_variant(variants: &[String]) -> String {
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        for v in variants {
+            *counts.entry(v.as_str()).or_insert(0) += 1;
+        }
+        let top_count = counts.values().max().copied().unwrap_or(0);
+        let tied: Vec<_> = variants
+            .iter()
+            .filter(|v| counts.get(v.as_str()).copied().unwrap_or(0) == top_count)
+            .collect();
+        tied.iter()
+            .max_by_key(|v| v.len())
+            .map(|s| (*s).clone())
+            .unwrap_or_default()
+    }
+
+    pub(super) fn postprocess_ocr_results(frame_texts: &[(i64, String)]) -> Vec<CleanLine> {
+        let mut frames: Vec<&(i64, String)> = frame_texts.iter().collect();
+        frames.sort_by_key(|f| f.0);
+
+        let mut lines: Vec<CleanLine> = Vec::new();
+        let mut anchor: Option<String> = None;
+        let mut variants: Vec<String> = Vec::new();
+        let mut start_ms: i64 = 0;
+
+        for (ts, raw) in &frames {
+            let text = raw.trim().to_string();
+            if let Some(ref a) = anchor
+                && !text.is_empty()
+                && similar(&text, a) >= SIMILARITY
+            {
+                variants.push(text);
+                continue;
+            }
+            // Close the running group
+            if anchor.is_some() {
+                let t = best_variant(&variants);
+                if *ts - start_ms >= MIN_DURATION_MS && is_dialogue(&t) {
+                    lines.push(CleanLine {
+                        start_ms,
+                        end_ms: *ts,
+                        text: t,
+                    });
+                }
+            }
+            if text.is_empty() {
+                anchor = None;
+                variants.clear();
+            } else {
+                anchor = Some(text.clone());
+                variants = vec![text];
+                start_ms = *ts;
+            }
+        }
+
+        if anchor.is_some() {
+            let last_ts = frames.last().map(|f| f.0).unwrap_or(start_ms);
             let t = best_variant(&variants);
-            if *ts - start_ms >= MIN_DURATION_MS && is_dialogue(&t) {
+            if last_ts + TAIL_MS - start_ms >= MIN_DURATION_MS && is_dialogue(&t) {
                 lines.push(CleanLine {
                     start_ms,
-                    end_ms: *ts,
+                    end_ms: last_ts + TAIL_MS,
                     text: t,
                 });
             }
         }
-        if text.is_empty() {
-            anchor = None;
-            variants.clear();
-        } else {
-            anchor = Some(text.clone());
-            variants = vec![text];
-            start_ms = *ts;
+
+        lines
+    }
+
+    fn fmt_ts(ms: i64) -> String {
+        let h = ms / 3_600_000;
+        let rem = ms % 3_600_000;
+        let m = rem / 60_000;
+        let rem = rem % 60_000;
+        let s = rem / 1000;
+        let ms_rem = rem % 1000;
+        format!("{:02}:{:02}:{:02},{:03}", h, m, s, ms_rem)
+    }
+
+    pub(super) fn render_to_srt(lines: &[CleanLine]) -> String {
+        let mut parts = Vec::new();
+        for (i, ln) in lines.iter().enumerate() {
+            parts.push(format!(
+                "{}\n{} --> {}\n{}\n",
+                i + 1,
+                fmt_ts(ln.start_ms),
+                fmt_ts(ln.end_ms),
+                ln.text
+            ));
         }
+        parts.join("\n")
     }
-
-    if let Some(_a) = anchor {
-        let last_ts = frames.last().map(|f| f.0).unwrap_or(start_ms);
-        let t = best_variant(&variants);
-        if last_ts + TAIL_MS - start_ms >= MIN_DURATION_MS && is_dialogue(&t) {
-            lines.push(CleanLine {
-                start_ms,
-                end_ms: last_ts + TAIL_MS,
-                text: t,
-            });
-        }
-    }
-
-    lines
-}
-
-fn fmt_ts(ms: i64) -> String {
-    let h = ms / 3_600_000;
-    let rem = ms % 3_600_000;
-    let m = rem / 60_000;
-    let rem = rem % 60_000;
-    let s = rem / 1000;
-    let ms_rem = rem % 1000;
-    format!("{:02}:{:02}:{:02},{:03}", h, m, s, ms_rem)
-}
-
-fn render_to_srt(lines: &[CleanLine]) -> String {
-    let mut parts = Vec::new();
-    for (i, ln) in lines.iter().enumerate() {
-        parts.push(format!(
-            "{}\n{} --> {}\n{}\n",
-            i + 1,
-            fmt_ts(ln.start_ms),
-            fmt_ts(ln.end_ms),
-            ln.text
-        ));
-    }
-    parts.join("\n")
 }
 
 fn truncate(s: &str, max: usize) -> String {

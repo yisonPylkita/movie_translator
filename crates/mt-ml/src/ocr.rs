@@ -455,6 +455,7 @@ fn ocr_image(bridge: &Path, image_path: &Path) -> Result<String> {
         .to_string())
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const INLINE_OCR_SWIFT: &str = r#"
 import Foundation
 import Vision
@@ -627,6 +628,7 @@ fn detect_transitions(
 
 // ── Dialogue line builder ─────────────────────────────────────────────────
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn build_dialogue_lines(frame_texts: &[(i64, String)]) -> Vec<mt_core::DialogueLine> {
     let mut lines: Vec<mt_core::DialogueLine> = Vec::new();
     let mut prev_text = String::new();
@@ -660,6 +662,7 @@ fn build_dialogue_lines(frame_texts: &[(i64, String)]) -> Vec<mt_core::DialogueL
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn write_grayscale_pgm(path: &Path, pixels: &[u8], width: usize, height: usize) -> io::Result<()> {
     let mut data = Vec::new();
     data.extend_from_slice(b"P5\n");
