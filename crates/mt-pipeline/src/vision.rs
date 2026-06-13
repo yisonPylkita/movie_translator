@@ -18,5 +18,5 @@ pub fn default_vision_ocr_probe() -> bool {
     if !cfg!(target_os = "macos") {
         return false;
     }
-    mt_ml::vision_ocr_available()
+    mt_ml::is_vision_ocr_available()
 }

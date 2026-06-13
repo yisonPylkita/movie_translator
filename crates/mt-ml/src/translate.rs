@@ -1,8 +1,11 @@
-//! Translation dispatch: Apple (Rust-native) or MLX (PyO3/embedded Python).
+//! Translation backend — Apple Translation framework (Rust-native).
 //!
-//! The Apple Translation backend runs entirely in Rust (calls the Swift bridge
-//! binary, handles sentence merging + enhancements natively).  The MLX backend
-//! (Allegro BiDi via MLX) stays in Python and is called through PyO3.
+//! The only supported backend is the Apple Translation framework on macOS,
+//! called via a compiled Swift bridge binary.  The MLX/PyO3 backend has been
+//! removed — no Python dependency needed.
+//!
+//! Sentence merging, placeholder protection, and postprocessing are handled
+//! in Rust (see `mt-subtitles::sentence_merger` and `mt-subtitles::enhancements`).
 
 use mt_core::{DialogueLine, Result};
 use serde::{Deserialize, Serialize};
@@ -13,11 +16,11 @@ use tracing::info;
 pub struct TranslateRequest {
     /// Dialogue lines to translate.
     pub lines: Vec<DialogueLine>,
-    /// Inference device: `"cpu"`, `"mps"`, or `"cuda"`.
+    /// Inference device (unused with Apple backend, kept for compatibility).
     pub device: String,
     /// Translation batch size.
     pub batch_size: u32,
-    /// Backend/model name: `"apple"` or `"mlx"`.
+    /// Backend/model name: only `"apple"` is supported.
     pub model: String,
     /// Character names to protect from translation, or `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -30,27 +33,23 @@ pub struct TranslateResponse {
     pub lines: Vec<DialogueLine>,
 }
 
-/// Translate dialogue lines.
+/// Translate dialogue lines using the Apple Translation framework.
 ///
-/// Dispatches to the appropriate backend:
-/// - `"apple"` → Rust-native Apple Translation framework via Swift bridge
-/// - `"mlx"`   → PyO3 embedded Python (MLX Allegro BiDi model)
+/// This is the only backend — the MLX/Python backend has been removed.
+/// The Apple backend calls a compiled Swift bridge binary and handles
+/// sentence merging + enhancements natively in Rust.
 ///
 /// # Errors
-/// Returns [`mt_core::MtError`] on failure.
+/// Returns [`mt_core::MtError`] if the Apple Translation framework is
+/// unavailable or fails.
 pub fn translate(req: &TranslateRequest) -> Result<Vec<DialogueLine>> {
-    match req.model.as_str() {
-        "apple" => {
-            info!("Using Apple Translation backend (Rust-native)");
-            let proper = req.proper_nouns.as_deref();
-            crate::apple_translate::translate(&req.lines, req.batch_size, proper)
-        }
-        _ => {
-            info!("Using MLX backend via Python (PyO3)");
-            let proper = req.proper_nouns.as_deref();
-            crate::backend::translate(&req.lines, &req.device, req.batch_size, &req.model, proper)
-        }
-    }
+    info!(
+        "Using Apple Translation backend (batch_size={}, {} lines)",
+        req.batch_size,
+        req.lines.len()
+    );
+    let proper = req.proper_nouns.as_deref();
+    crate::apple_translate::translate(&req.lines, req.batch_size, proper)
 }
 
 #[cfg(test)]
@@ -93,8 +92,6 @@ mod tests {
 
     #[test]
     fn dispatch_routes_apple() {
-        // Verify apple routes correctly (it won't actually translate on CI
-        // without the Swift bridge, but the dispatch logic is correct).
         let req = TranslateRequest {
             lines: vec![DialogueLine {
                 start_ms: 0,
@@ -106,8 +103,6 @@ mod tests {
             model: "apple".to_string(),
             proper_nouns: None,
         };
-        // This will error on non-macOS or without Swift, but we check the
-        // error comes from apple_translate, not from pyo3.
         let result = translate(&req);
         if let Err(e) = &result {
             let msg = e.to_string();
@@ -116,39 +111,6 @@ mod tests {
                 msg.contains("Swift") || msg.contains("swiftc") || msg.contains("bridge"),
                 "Apple backend error should mention Swift: {msg}"
             );
-        }
-    }
-
-    /// Real-model end-to-end translation via PyO3 (MLX).
-    /// Loads the cached Allegro BiDi model from `./models/allegro`, so it's
-    /// `#[ignore]` (heavy: ~2GB model).
-    #[test]
-    #[ignore]
-    fn real_model_translates_via_pyo3() {
-        let req = TranslateRequest {
-            lines: vec![
-                DialogueLine {
-                    start_ms: 0,
-                    end_ms: 1000,
-                    text: "Hello, how are you?".to_string(),
-                },
-                DialogueLine {
-                    start_ms: 1000,
-                    end_ms: 2000,
-                    text: "I am fine, thank you.".to_string(),
-                },
-            ],
-            device: "cpu".to_string(),
-            batch_size: 2,
-            model: "mlx".to_string(),
-            proper_nouns: None,
-        };
-        let out = translate(&req).expect("real translate");
-        assert_eq!(out.len(), 2);
-        for (orig, translated) in req.lines.iter().zip(out.iter()) {
-            assert!(!translated.text.is_empty(), "translation empty");
-            assert_ne!(orig.text, translated.text, "no-op translation");
-            eprintln!("EN: {}\nPL: {}\n", orig.text, translated.text);
         }
     }
 }

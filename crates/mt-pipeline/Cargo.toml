@@ -5,18 +5,19 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-mt-core = { path = "../mt-core" }
-mt-subtitles = { path = "../mt-subtitles" }
-mt-discovery = { path = "../mt-discovery" }
-mt-media = { path = "../mt-media" }
-mt-ml = { path = "../mt-ml" }
-mt-fetch = { path = "../mt-fetch" }
+regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tracing = { workspace = true }
 thiserror = { workspace = true }
-regex = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
+
+mt-core = { workspace = true }
+mt-discovery = { workspace = true }
+mt-fetch = { workspace = true }
+mt-media = { workspace = true }
+mt-ml = { workspace = true }
+mt-subtitles = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

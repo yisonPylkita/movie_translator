@@ -8,7 +8,7 @@ use std::process::Command;
 
 use mt_core::POLISH_CHARS;
 
-use crate::ffmpeg::{get_ffmpeg, get_ffprobe, VideoMuxError};
+use crate::ffmpeg::{VideoMuxError, get_ffmpeg, get_ffprobe};
 
 /// Well-known fonts likely to support Polish, in preference order.
 const PREFERRED_FALLBACK_FONTS: &[&str] = &[
@@ -386,10 +386,10 @@ pub fn find_system_font_for_polish(ass_font_names: &HashSet<String>) -> Option<(
 
     // Phase 3: any system font with Polish support
     for font_path in &system_fonts {
-        if font_supports_polish(font_path) {
-            if let Some(family) = get_font_family_name(font_path) {
-                return Some((font_path.clone(), family));
-            }
+        if font_supports_polish(font_path)
+            && let Some(family) = get_font_family_name(font_path)
+        {
+            return Some((font_path.clone(), family));
         }
     }
 

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::model::{Event, EventKind};
-use crate::processor::{find_dialogue_style, SubtitleProcessor};
+use crate::processor::{SubtitleProcessor, find_dialogue_style};
 
 fn make_ass_content() -> &'static str {
     "[Script Info]\nTitle: Test\nScriptType: v4.00+\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\nStyle: Signs,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\nDialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,Hello, how are you?\nDialogue: 0,0:00:04.00,0:00:06.00,Default,,0,0,0,,I am fine, thank you.\nDialogue: 0,0:00:10.00,0:00:12.00,Default,,0,0,0,,What a beautiful day!\nDialogue: 0,0:00:15.00,0:00:17.00,Signs,,0,0,0,,EPISODE 1\n"

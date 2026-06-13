@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use clap::Parser;
 use mt_fetch::ogladajanime::{self, Discovery, HardsubPlan};
 
@@ -101,7 +101,9 @@ fn resolve_plan(args: &Args) -> Result<HardsubPlan> {
         Discovery::Found { slug, url } => {
             println!("Found: {url}");
             ogladajanime::open_in_browser(&url).map_err(|e| anyhow!("opening browser: {e}"))?;
-            println!("Browser opened. Run the resolver userscript on the anime page — it downloads the players JSON.");
+            println!(
+                "Browser opened. Run the resolver userscript on the anime page — it downloads the players JSON."
+            );
             Some(slug)
         }
         Discovery::Search { url } => {

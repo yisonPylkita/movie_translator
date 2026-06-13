@@ -5,7 +5,7 @@ use std::process::Command;
 
 use mt_core::NON_DIALOGUE_STYLES;
 
-use crate::ffmpeg::{get_ffmpeg, get_video_info, VideoMuxError};
+use crate::ffmpeg::{VideoMuxError, get_ffmpeg, get_video_info};
 
 // ---------------------------------------------------------------------------
 // Error
@@ -222,10 +222,10 @@ pub fn get_english_tracks(track_info: &TrackInfo) -> Vec<SubtitleTrack> {
 pub fn select_best_track(english_tracks: &[SubtitleTrack]) -> Option<SubtitleTrack> {
     let (dialogue_tracks, signs_tracks) = categorize_tracks(english_tracks);
 
-    if !dialogue_tracks.is_empty() {
-        if let Some(result) = select_from_dialogue_tracks(&dialogue_tracks) {
-            return Some(result);
-        }
+    if !dialogue_tracks.is_empty()
+        && let Some(result) = select_from_dialogue_tracks(&dialogue_tracks)
+    {
+        return Some(result);
     }
 
     if !signs_tracks.is_empty() {

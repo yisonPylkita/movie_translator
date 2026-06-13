@@ -7,7 +7,7 @@ use mt_media::{SubtitleExtractor, SubtitleTrack};
 use mt_subtitles::SubtitleProcessor;
 
 use crate::error::{PipelineError, Result};
-use crate::vision::{default_vision_ocr_probe, VisionOcrProbe};
+use crate::vision::{VisionOcrProbe, default_vision_ocr_probe};
 
 /// Stage role name.
 pub const NAME: &str = "extract";

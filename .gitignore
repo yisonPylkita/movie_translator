@@ -1,29 +1,8 @@
-# Python runtime
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-
-# Virtual environments
-.venv/
-venv/
-ENV/
-
-# Distribution / packaging
-*.egg-info/
-dist/
-build/
-
 # macOS
 .DS_Store
 
 # Secrets
 .env
-
-# Coverage
-.coverage
-htmlcov/
 
 # Project specific
 movies/
@@ -36,8 +15,8 @@ test_workdir/
 # Vendor build artifacts (Rust)
 vendor/ilass/target/
 
-# Compiled Swift binary (auto-built from source)
-movie_translator/translation/swift/translate_bridge
+# Rust build artifacts
+target/
 
 # Media files (never commit these)
 *.mkv
@@ -45,13 +24,10 @@ movie_translator/translation/swift/translate_bridge
 *.avi
 benchmarks/onepiece/
 
-# Rust build artifacts
-target/
-
-# ASR PoC: isolated per-engine venvs + extracted audio (large/derived)
-benchmarks/asr/envs/
+# ASR benchmarks: extracted audio (large/derived)
 benchmarks/asr/audio/
-benchmarks/asr/**/__pycache__/
 
-# Compiled transcription bridge (built from source on first use)
-movie_translator/transcription/swift/transcribe_bridge
+# Compiled Swift bridges (auto-built from source)
+ocr_bridge
+transcribe_bridge
+translate_bridge

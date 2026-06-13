@@ -5,18 +5,13 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-mt-core = { path = "../mt-core" }
-mt-subtitles = { path = "../mt-subtitles" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-# Embed CPython directly so the Rust binary calls into the
-# `movie_translator` Python package without spawning subprocesses. Use
-# `auto-initialize` so PyO3 sets up the interpreter on first
-# `Python::with_gil`. Do NOT enable `extension-module` — we link against
-# libpython and embed it, we do not build a Python extension.
-pyo3 = { version = "0.28", features = ["auto-initialize"] }
-once_cell = "1"
+
+mt-core = { workspace = true }
+mt-media = { workspace = true }
+mt-subtitles = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

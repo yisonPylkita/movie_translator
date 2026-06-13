@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use mt_core::SubtitleFile;
 
-use crate::ffmpeg::{get_video_info, mux_video_with_subtitles, VideoMuxError};
+use crate::ffmpeg::{VideoMuxError, get_video_info, mux_video_with_subtitles};
 
 // ---------------------------------------------------------------------------
 // Error

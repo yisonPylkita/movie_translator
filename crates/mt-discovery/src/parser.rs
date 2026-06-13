@@ -1,17 +1,13 @@
-//! Filename parsing via the embedded Python `movie_translator.identifier.parser`.
-//!
-//! The underlying logic relies on `guessit` and `aniparse` Python libraries
-//! (no Rust equivalent), so we call them in-process through PyO3 via the
-//! `mt_ml` crate. The first call initialises the embedded interpreter; every
-//! call after that is a direct function call (no subprocess).
+//! Filename parsing — pure-Rust replacement for the Python `guessit`/`aniparse`
+//! based parser.  Uses `anitomy-pure` for anime filenames and a regex-based
+//! fallback for conventional TV/movie filenames.  No Python PyO3 dependency.
 
-use mt_core::Result;
 use serde::{Deserialize, Serialize};
 
 /// Parsed filename metadata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedName {
-    /// Best-guess title from filename/aniparse/guessit.
+    /// Best-guess title from filename/anitomy/regex fallback.
     pub title: Option<String>,
     /// Release year, if detected.
     pub year: Option<i32>,
@@ -27,23 +23,15 @@ pub struct ParsedName {
     pub release_group: Option<String>,
 }
 
-/// Parse a video filename through the embedded Python interpreter.
+/// Parse a video filename using pure Rust logic.
 ///
-/// # Errors
-/// Returns [`mt_core::MtError::Parse`] (with traceback) when the Python call
-/// raises, or [`mt_core::MtError::PathResolution`] if the `movie_translator/`
-/// package can't be located on `sys.path`.
-pub fn parse_filename(filename: &str, folder: Option<&str>) -> Result<ParsedName> {
-    let parsed = mt_ml::backend::parse_filename(filename, folder)?;
-    Ok(ParsedName {
-        title: parsed.title,
-        year: parsed.year,
-        season: parsed.season,
-        episode: parsed.episode,
-        media_type: parsed.media_type,
-        is_anime: parsed.is_anime,
-        release_group: parsed.release_group,
-    })
+/// Delegates to the `rust_parser` module which uses `anitomy-pure` for anime
+/// bracket patterns and regex fallback for conventional TV/movie filenames.
+///
+/// Returns a `ParsedName` with all available fields filled in.  Missing fields
+/// are `None`.  Never fails (returns a best-effort result for any input).
+pub fn parse_filename(filename: &str, folder: Option<&str>) -> mt_core::Result<ParsedName> {
+    Ok(crate::rust_parser::parse_filename(filename, folder))
 }
 
 #[cfg(test)]
@@ -92,13 +80,9 @@ mod tests {
         assert_eq!(parsed.media_type, "movie");
     }
 
-    /// Integration test: actually calls the embedded Python `parse_filename`.
-    ///
-    /// Marked `#[ignore]` because it requires the Python venv to be in place
-    /// (and `PYO3_PYTHON` set at compile time). Run with
-    /// `cargo test -p mt-discovery -- --ignored` after `just deps`.
+    /// Integration test: pure-Rust parser handles anime bracket filenames.
+    /// No Python needed.
     #[test]
-    #[ignore]
     fn integration_parse_anime_filename() {
         let result = parse_filename("[HorribleSubs] One Piece - 1000 [1080p].mkv", None).unwrap();
         assert!(

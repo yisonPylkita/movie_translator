@@ -111,10 +111,10 @@ fn bridge_test_translation_ok(binary: &Path) -> bool {
         Ok(c) => c,
         Err(_) => return false,
     };
-    if let Some(stdin) = child.stdin.as_mut() {
-        if stdin.write_all(request).is_err() {
-            return false;
-        }
+    if let Some(stdin) = child.stdin.as_mut()
+        && stdin.write_all(request).is_err()
+    {
+        return false;
     }
     let output = match child.wait_with_output() {
         Ok(o) => o,

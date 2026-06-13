@@ -10,15 +10,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use mt_core::swift_bridge::{ensure_compiled, macos_at_least};
 use mt_core::MtError;
+use mt_core::swift_bridge::{ensure_compiled, macos_at_least};
 use mt_core::{DialogueLine, Result as MtResult};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use mt_subtitles::enhancements::{
-    apply_fallbacks, extract_placeholders, postprocess_translation, restore_placeholders,
-    PLACEHOLDER_ONLY_RE,
+    PLACEHOLDER_ONLY_RE, apply_fallbacks, extract_placeholders, postprocess_translation,
+    restore_placeholders,
 };
 use mt_subtitles::sentence_merger::{merge_for_translation, unmerge_translations};
 
@@ -30,6 +30,8 @@ fn swift_source() -> PathBuf {
     // the repo root, discovered by the caller or set via MT_REPO_ROOT.
     // Try to find the source relative to the current directory / exe.
     let candidates = [
+        "crates/mt-ml/swift/translate_bridge.swift",
+        "../crates/mt-ml/swift/translate_bridge.swift",
         "movie_translator/translation/swift/translate_bridge.swift",
         "../movie_translator/translation/swift/translate_bridge.swift",
     ];
@@ -41,8 +43,7 @@ fn swift_source() -> PathBuf {
     }
     // Fallback: check MT_REPO_ROOT
     if let Ok(root) = std::env::var("MT_REPO_ROOT") {
-        let p =
-            PathBuf::from(root).join("movie_translator/translation/swift/translate_bridge.swift");
+        let p = PathBuf::from(root).join("crates/mt-ml/swift/translate_bridge.swift");
         if p.exists() {
             return p;
         }
@@ -50,13 +51,13 @@ fn swift_source() -> PathBuf {
     // Look in the standard repo structure from the repo root
     if let Ok(cwd) = std::env::current_dir() {
         for ancestor in cwd.ancestors() {
-            let p = ancestor.join("movie_translator/translation/swift/translate_bridge.swift");
+            let p = ancestor.join("crates/mt-ml/swift/translate_bridge.swift");
             if p.exists() {
                 return p;
             }
         }
     }
-    PathBuf::from("movie_translator/translation/swift/translate_bridge.swift")
+    PathBuf::from("crates/mt-ml/swift/translate_bridge.swift")
 }
 
 fn swift_binary() -> PathBuf {

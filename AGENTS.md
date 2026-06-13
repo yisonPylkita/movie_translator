@@ -1,7 +1,7 @@
 # AGENTS.md — repo tooling map for AI agents (and new humans)
 
 This doc is the one-shot orientation for working in this repo. If you're
-an LLM coding agent (Claude Code, Cursor, Aider, anything) or a new
+an LLM coding agent (pi, Cursor, Aider, anything) or a new
 contributor, read this first — it's a tighter, denser starting point
 than the user-facing `README.md`.
 
@@ -15,14 +15,14 @@ searches subtitle providers for existing Polish subs, validates and
 aligns them to the video's timeline, falls back to AI translation when
 nothing is found, and muxes everything back in.
 
-**Architecture (this is the load-bearing fact):** the CLI and the
-orchestration pipeline are a **Rust Cargo workspace** (`crates/mt-*`)
-built into the `movie-translator` binary. **Machine learning** —
-translation, OCR, inpainting — and `guessit`/`aniparse` filename parsing
-run as **Python** in the importable `movie_translator` package. The Rust
-binary does NOT spawn `python *.py` subprocesses anymore: `crates/mt-ml`
-**embeds CPython via PyO3** and calls the package directly. Design notes:
-`docs/superpowers/specs/2026-05-27-rust-rewrite-design.md`.
+**Architecture (the load-bearing fact):** everything is **pure Rust** in a
+**Cargo workspace** (`crates/mt-*`) built into the `movie-translator`
+binary. There is **zero Python dependency** — no CPython embedding, no
+PyO3, no venv, no Python scripts. Translation uses the Apple Translation
+framework on macOS (Swift bridge via subprocess, compiled on demand).
+OCR uses Apple Vision (Swift bridge). Inpainting uses a pure Rust Telea
+algorithm. Filename parsing uses `anitomy-pure` + regex. All ML inference
+is native. Design history: `docs/superpowers/specs/2026-05-27-rust-rewrite-design.md`.
 
 ## How to do common things
 
@@ -31,11 +31,10 @@ workflow, its name is in **bold**.
 
 ### Run the full gate (before any "done")
 
-`just check && just test && just py-test`. `check` = `cargo clippy
---workspace --all-targets -D warnings` + `cargo fmt --check` + `ruff
-check movie_translator/`. `test` = `cargo test --workspace`. `py-test` =
-`pytest` over the `movie_translator` package. `just ci` runs `check +
-test` (the Rust half). Cite the output; never assert green without it.
+`just check && just test`. `check` = `cargo clippy --workspace
+--all-targets -D warnings` + `cargo fmt --check`. `test` = `cargo test
+--workspace`. `just ci` runs `check + test`. Cite the output; never
+assert green without it.
 Subagent: **`gate-verify`**.
 
 ### Translate / extract a video
@@ -43,11 +42,12 @@ Subagent: **`gate-verify`**.
 `just run <file-or-dir> [flags]` (translate; default subcommand) or
 `just extract <file-or-dir> [flags]` (pull subtitles out, no
 translation). Both wrap `cargo run --release`. Key flags: `--dry-run`
-(no writes), `--no-fetch` (AI only), `--model {allegro,apple}`,
-`--workers N --batch-size N --device {cpu,mps,cuda}`, `--inpaint`
-(remove burned-in subs — slow), `--in-place` (overwrite originals —
-destructive, NOT compatible with `--inpaint`), `--keep-artifacts`
-(leave intermediates in `.translate_temp/`), `--hardsub-ocr` (source a Polish
+(no writes), `--no-fetch` (AI only), `--model apple` (only the Apple
+Translation backend is supported; macOS 26+ required), `--workers N
+--batch-size N`, `--inpaint` (remove burned-in subs — slow),
+`--in-place` (overwrite originals — destructive, NOT compatible with
+`--inpaint`), `--keep-artifacts` (leave intermediates in
+`.translate_temp/`), `--hardsub-ocr` (source a Polish
 track by OCRing burned-in subs from ogladajanime.pl — opens the browser, you
 run `scripts/ogladajanime_resolver.user.js`, it picks up the JSON from
 `~/Downloads`; macOS-only), `--force` (re-process files that already have
@@ -73,32 +73,26 @@ OCR-into-the-pipeline cousin.
 
 ### Build / set up a fresh checkout
 
-`just setup` (deps + submodules + model + build; idempotent). On macOS
-run `just brew` once first. The pieces: `just deps` (`uv sync` →
-`.venv/`), `just submodules` (vendored `ilass`), `just model` (`git lfs
-pull` the Allegro BiDi model), `just build` (release binary + vendored
-ilass). The binary links libpython, so `deps` must precede `build`.
-
-### Fix the Rust↔Python embedded-CPython boundary
-
-`import movie_translator` failing, torch/transformers not loading,
-multiprocessing workers crashing, "library not found" on Linux — these
-are PyO3-embedding problems, not logic bugs. The contract: `PYO3_PYTHON`
-= `.venv/bin/python` at build time; on Linux `LD_LIBRARY_PATH` must
-include libpython's dir at runtime; `multiprocessing.set_executable` is
-pinned to the venv python at interpreter init. Subagent:
-**`pyo3-bridge-doctor`**.
+`just setup` (submodules + build; idempotent). On macOS run `just brew`
+once first. The pieces: `just submodules` (vendored `ilass`), `just
+build` (release binary + vendored ilass). No Python or venv needed.
 
 ### Debug an ML stage (translation / OCR / inpainting)
 
-The stage runs inside the GPU worker via `crates/mt-ml` → the
-`movie_translator` Python package. Reproduce the Python side in
-isolation first (`uv run python -c "from movie_translator.translation
-import ..."`) to split "Python ML bug" from "Rust bridge/pipeline bug."
-Translation = `movie_translator/translation/` (Allegro model + Apple
-backend + sentence merger). OCR = `movie_translator/ocr/` (Vision,
-PGS, burned-in, frame extraction). Inpainting =
-`movie_translator/inpainting/` (LaMa). Subagent: **`ml-stage-debug`**.
+All ML stages run in pure Rust. Translation calls the Apple Translation
+framework on macOS via a compiled Swift bridge subprocess. OCR calls
+Apple Vision via Swift bridge. Inpainting uses a pure Rust Telea
+algorithm. Filename parsing uses `anitomy-pure` + regex. If a stage
+fails, check the Swift bridge compilation output or the ffmpeg subprocess
+stderr. There is no Python layer to debug.
+
+### Debug an ML stage (translation / OCR / inpainting)
+
+All ML stages are pure Rust. Translation = `crates/mt-ml/src/apple_translate.rs`
+(Apple Translation via Swift bridge + Rust sentence merger).
+OCR = `crates/mt-ml/src/ocr.rs` (Apple Vision via Swift bridge).
+Inpainting = `crates/mt-ml/src/inpaint.rs` (pure Rust Telea algorithm).
+Subagent: **`ml-stage-debug`**.
 
 ### Debug subtitle fetch / validation / alignment
 
@@ -113,16 +107,16 @@ cross-correlation fallback. Subagent: **`subtitle-fetch-align-debug`**.
 
 ### Run / read benchmarks
 
-Translation-quality benchmarks live under `benchmarks/` (`uv sync
---group benchmarks` for the sacrebleu scorer). Convention: after a big
-refactor, run the benchmark and commit the results into git so quality
-regressions are visible in history. Subagent: **`benchmark-runner`**.
+ASR benchmarks and translation benchmarks live in `benchmarks/`.
+Convention: after a big refactor, run the benchmark and commit the
+results into git so quality regressions are visible in history.
+Subagent: **`benchmark-runner`**.
 
-### Auto-fix lint / format
+### Auto-fix format + lint
 
-`just lint` (clippy `--fix` + `cargo fmt` + `ruff check --fix` + `ruff
-format`). The PostToolUse hook already formats each file you edit; `just
-lint` is the whole-tree version.
+`just fix` formats Rust, TOML, shell, Swift, and JSON files. `just fix-clippy`
+auto-fixes clippy warnings. `just tidy` runs fix + clippy + dependency ordering
+check. `just check` validates everything without modifying.
 
 ## File map
 
@@ -131,66 +125,30 @@ lint` is the whole-tree version.
 ├── crates/                         Rust Cargo workspace (the binary)
 │   ├── mt-core/        Foundation: error, types, context, exec, identity. No mt-* deps.
 │   ├── mt-subtitles/   ASS/SRT parsing, encoding, dialogue model, processor.
-│   ├── mt-discovery/   Filename → media identity (calls Python parser via mt-ml), hashing, TMDB.
+│   ├── mt-discovery/   Filename → media identity (anitomy-pure + regex), hashing, TMDB.
 │   ├── mt-fetch/       Providers, download, validate, score, align (ilass + xcorr), style classifier.
-│   ├── mt-media/       FFmpeg extract/mux, font checks, file operations.
-│   ├── mt-ml/          PyO3 embedded-CPython bridge → the Python package. THE boundary.
+│   ├── mt-media/       FFmpeg extract/mux, font checks, file operations, PGS parser.
+│   ├── mt-ml/          ML inference: Apple Translation (Swift bridge), Apple Vision OCR, inpainting.
 │   ├── mt-pipeline/    Orchestration: stages, GPU worker (serialised), progress events, proper nouns.
 │   └── mt-cli/         clap CLI + ratatui TUI. Two bins: movie-translator + anime-dl (season downloader).
-├── movie_translator/               Python ML backend (importable package)
-│   ├── translation/    Allegro BiDi model + Apple Translation (swift bridge) + sentence merger.
-│   ├── ocr/            Vision OCR, PGS extractor, burned-in extractor, frame extractor.
-│   ├── inpainting/     LaMa-based burned-in subtitle removal.
-│   ├── identifier/     guessit/aniparse filename parser.
-│   ├── ffmpeg.py, logging.py, types.py
-│   └── tests/          + per-subpackage tests/ (pytest)
 ├── vendor/ilass/                   Git submodule — DP subtitle alignment engine (built by `just build`).
-├── benchmarks/                     Translation-quality benchmarks (sacrebleu).
-├── custom_model/                   Research/planning only — NOT wired into the pipeline.
+├── benchmarks/                     ASR + translation benchmarks.
 ├── docs/
 │   ├── research/                   Custom-translation-model design (research only).
 │   └── superpowers/{plans,specs}/  Historical design docs; rust-rewrite spec is the architecture record.
-├── models/                         git-lfs translation model files.
 ├── justfile                        Tooling entry point (`just` to list).
 ├── Cargo.toml / Cargo.lock         Rust workspace.
-├── pyproject.toml / uv.lock        Python deps (uv + ruff + ty + pytest).
 ├── rust-toolchain.toml             Pinned Rust channel (single source of truth, local + CI).
-├── .python-version                 Python pin.
 ├── Brewfile                        macOS system tools.
-├── conftest.py                     Shared pytest fixtures.
 ├── README.md                       User-facing docs.
 ├── AGENTS.md                       This file.
-└── .claude/agents/                 Subagent definitions (tracked).
+├── .pi/                            Pi-lens skills and agent definitions.
+├── scripts/                        Utility scripts (check-deps-sorted.sh).
 ```
 
 ## Gotchas list
 
 Every entry below cost real debugging time. Read once, save hours later.
-
-### PyO3 / embedded-CPython boundary (`crates/mt-ml`)
-
-- **`PYO3_PYTHON` must point at `.venv/bin/python`** at build time. The
-  justfile exports it; CI sets it via env. Build against the system
-  python and the embedded interpreter won't see torch/transformers and
-  `import movie_translator`'s deps fail at runtime.
-- **`multiprocessing.set_executable` is pinned to the venv python** at
-  interpreter init (`init_python_runtime` in `backend.rs`). Without it,
-  Python's spawn-start workers re-exec the `movie-translator` binary with
-  a `-c <boilerplate>` argv, which clap then rejects — manifests as
-  bizarre CLI errors from inside an ML stage.
-- **Linux needs `LD_LIBRARY_PATH` to include libpython's dir** at
-  runtime (PyO3 dynamically links libpython; macOS uses rpath and works
-  without it). CI resolves it via `sysconfig LIBDIR`. A binary that
-  builds fine but dies with "cannot open shared object file
-  libpython…" at startup is this.
-- **Don't hold the modules mutex across a re-entrant backend call.**
-  `with_modules` clones the module handles under the lock then releases
-  before running `f`, because importing/calling Python can re-enter the
-  backend (translate → model_cache → modules). Holding the lock
-  deadlocks. (Fixed once already — `e427aaa`.)
-- **Python stderr is redirected** to `.translate_temp/python.stderr.log`
-  (or `$MT_PYTHON_STDERR_LOG`). If an ML stage "fails silently," that
-  log has the traceback, not the Rust logs.
 
 ### GPU / pipeline serialization
 
@@ -230,73 +188,49 @@ Every entry below cost real debugging time. Read once, save hours later.
   NapiProjekt, OpenSubtitles. There's a `rate_limiter.rs` + `retry.rs`
   for a reason — don't loop fetches in a tight retry without backoff.
 
-### ML stages (`movie_translator/` Python package)
+### ML stages (`crates/mt-ml`)
 
-- **`transformers`/`tqdm` noise is silenced at init** — if you need the
-  warnings for debugging, that suppression is in `init_python_runtime`.
-- **OCR is Apple-Silicon-only** (Apple Vision). Burned-in OCR and
-  `--ocr-language` don't work on Linux; the real-model tests are
-  `#[ignore]`'d so CI (Linux + macOS, no GPU/model) stays green.
-- **The Apple Translation backend builds a Swift bridge** from source on
-  first use (`movie_translator/translation/swift/translate_bridge`,
-  gitignored). macOS 26+ only.
-- **`custom_model/` and `docs/research/` are research only.** Not wired
-  into the pipeline. Don't treat them as live code paths — see
-  `[[project_custom_model]]`.
+- **OCR is macOS-only** (Apple Vision via Swift bridge). On Linux,
+  burned-in OCR and PGS OCR return errors gracefully.
+- **Apple Translation builds a Swift bridge** from source on first use
+  (`movie_translator/translation/swift/translate_bridge`). The binary is
+  gitignored and compiled on demand. macOS 26+ required.
+- **Inpainting uses a pure Rust Telea algorithm** — no OpenCV or Python
+  dependency. Works on any platform.
 
 ### Build / toolchain / CI
 
 - **`rust-toolchain.toml` is the single source of truth** for the
   compiler version (local + CI both read it via `rustup show`). Bump
   deliberately.
-- **CI skips the git-lfs model fetch on purpose** (`lfs: false`) — the
-  real-model tests are `#[ignore]`'d and skipping LFS avoids the repo's
-  bandwidth quota. Don't "fix" CI by re-enabling LFS.
-- **`uv sync` must run before any cargo command** in CI and locally —
-  PyO3 reads `PYO3_PYTHON` (the venv python) at link time, so the venv
-  must exist first.
 - **`.translate_temp/` and `test_workdir/` are scratch** (gitignored).
   `--keep-artifacts` populates the former for debugging.
 
 ### Agentic workflow rules
 
-- **Parallelize by DISJOINT file lanes.** Three non-overlapping lanes:
-  Rust crates (`crates/**`), Python ML backend (`movie_translator/**`),
-  tooling/docs (`justfile`, `.github/**`, `docs/**`, `scripts/**`,
-  `pyproject.toml`, `conftest.py`). Fan out one agent per lane; they
-  never touch each other's files. Same-file work is serial.
+- **Parallelize by DISJOINT file lanes.** Two non-overlapping lanes:
+  Rust crates (`crates/**`) and tooling/docs (`justfile`, `.github/**`,
+  `docs/**`). Fan out one agent per lane; they never touch each other's
+  files. Same-file work is serial.
 - **Serialize GPU + outward actions.** GPU is a single shared resource
   (see above). `--in-place`, `git lfs` ops, and looped provider fetches
   are destructive/outward — confirm, don't parallelize.
-- **Named reusable workflows live in `.claude/workflows/`** — currently
-  `review-changes` (read-only 3-lane diff review) and `benchmark-audit`
-  (read-only benchmark-history audit). Invoke via the Workflow tool.
-- **Verify via the gate chain, cite evidence.** Run the actual command
-  (`just check` / `just test` / `just py-test`) and quote its output;
-  never assert "done" or "should work" without having run it.
-- **Hooks enforce, prose advises.** `.claude/hooks/` make two rules
-  deterministic: `post-tool-use.sh` auto-formats every edited file
-  (rustfmt / ruff) and surfaces syntax/lint errors; `stop-gate.sh`
-  blocks turn-end on a failing fast gate (`cargo fmt --check` + `ruff
-  check`) whenever the tree is dirty. The slow gates (clippy, cargo
-  test, pytest, ty) stay at `just check`/`test`/`py-test` + CI. Hooks
-  are snapshotted at session start — after editing them, reload
-  (`/hooks` or restart) before relying on them.
-- **No code index — plain grep/ripgrep is the default.** For structural
-  Rust edits across crates, prefer compiler-driven refactors (rename via
-  the type system, then `just check`) over text munging.
+- **Verify via the gate chain, cite evidence.** Run `just check` / `just test`
+  and quote the output; never assert "done" without having run it.
+- **No code index — plain grep/ripgrep is the default.** For structural Rust
+  edits across crates, prefer compiler-driven refactors (rename via the type
+  system, then `just check`) over text munging.
 
 ## Subagent index
 
-Tracked under `.claude/agents/`. Each is a Claude Code subagent
-definition — invoke via the Agent tool. Reach for these when the task
-has the "spans several crates/tools, has multiple gotchas" character;
-for one-shot file edits or simple queries, use the main agent directly.
+Tracked under `.pi/skills/`. Each is a pi skill definition — invoke via
+the Skill tool or subagent delegation. Reach for these when the task
+spans several crates/tools and has multiple gotchas; for one-shot file
+edits or simple queries, use the main agent directly.
 
 | Subagent                       | When to use                                                                                                                                                  |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **`gate-verify`**              | After edits, want to ship-check: runs `just check` + `test` + `py-test`, parses each, reports green or the exact failing gate/test with output. Read-only.    |
-| **`pyo3-bridge-doctor`**       | The Rust↔Python embedded-CPython boundary is broken: import failures, `PYO3_PYTHON` mismatch, libpython/`LD_LIBRARY_PATH`, multiprocessing-spawn crashes.    |
-| **`ml-stage-debug`**           | A translation / OCR / inpainting stage misbehaves at runtime. Reproduces the Python side in isolation to split ML bug from Rust-bridge bug.                   |
+| **`gate-verify`**              | After edits, want to ship-check: runs `just check` + `test`, parses each, reports green or the exact failing gate/test with output. Read-only.    |
+| **`ml-stage-debug`**           | A translation / OCR / inpainting stage misbehaves at runtime. Debugs the Rust/Swift bridge code path.    |
 | **`subtitle-fetch-align-debug`** | Fetched subs are wrong/rejected/mis-timed: provider issues, validation scoring, ilass/xcorr alignment, dialogue classification, offset correction.          |
 | **`benchmark-runner`**         | Run the translation-quality benchmarks and/or audit stored results in git for regressions after a refactor.                                                  |

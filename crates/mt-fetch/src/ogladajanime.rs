@@ -185,10 +185,10 @@ pub fn open_in_browser(url: &str) -> Result<(), FetchError> {
 
 /// The default Downloads directory (`$XDG_DOWNLOAD_DIR`, then `$HOME/Downloads`).
 pub fn default_downloads_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("XDG_DOWNLOAD_DIR") {
-        if !dir.is_empty() {
-            return PathBuf::from(dir);
-        }
+    if let Ok(dir) = std::env::var("XDG_DOWNLOAD_DIR")
+        && !dir.is_empty()
+    {
+        return PathBuf::from(dir);
     }
     if let Ok(home) = std::env::var("HOME") {
         return PathBuf::from(home).join("Downloads");
@@ -289,10 +289,10 @@ pub fn parse_plan(path: &Path, fallback_slug: &str) -> Result<HardsubPlan, Fetch
         .unwrap_or_else(|| fallback_slug.to_string());
     let mut episodes = HashMap::new();
     for ep in json.episodes {
-        if let Some(n) = ep.episode {
-            if !ep.resolved.is_empty() {
-                episodes.insert(n, ep.resolved);
-            }
+        if let Some(n) = ep.episode
+            && !ep.resolved.is_empty()
+        {
+            episodes.insert(n, ep.resolved);
         }
     }
     Ok(HardsubPlan { slug, episodes })

@@ -188,10 +188,10 @@ pub fn run_with_ops(
         if !ctx.config.dry_run {
             if ctx.config.in_place {
                 replace_in_place(&ctx.video_path, &temp_video, ops)?;
-                if let Some(inpainted) = &ctx.inpainted_video {
-                    if inpainted.exists() {
-                        let _ = std::fs::remove_file(inpainted);
-                    }
+                if let Some(inpainted) = &ctx.inpainted_video
+                    && inpainted.exists()
+                {
+                    let _ = std::fs::remove_file(inpainted);
                 }
             } else {
                 replace_original(&ctx.video_path, &temp_video, ops)?;
@@ -252,21 +252,21 @@ fn replace_original(video_path: &Path, temp_video: &Path, ops: &dyn MuxOps) -> R
             if video_path.exists() {
                 let _ = std::fs::remove_file(video_path);
             }
-            if backup_path.exists() {
-                if let Err(rename_err) = std::fs::rename(&backup_path, video_path) {
-                    // The muxed file was already removed but we couldn't move the
-                    // backup back into place. No data is lost — the original is
-                    // preserved at the `.backup` path — but it isn't where the
-                    // user expects it. Tell them so manual recovery is possible.
-                    tracing::error!(
-                        "failed to restore original from backup ({rename_err}); \
+            if backup_path.exists()
+                && let Err(rename_err) = std::fs::rename(&backup_path, video_path)
+            {
+                // The muxed file was already removed but we couldn't move the
+                // backup back into place. No data is lost — the original is
+                // preserved at the `.backup` path — but it isn't where the
+                // user expects it. Tell them so manual recovery is possible.
+                tracing::error!(
+                    "failed to restore original from backup ({rename_err}); \
                          your original is preserved at {} — rename it back to {} \
                          to recover",
-                        backup_path.display(),
-                        video_path.display(),
-                    );
-                    return Err(PipelineError::Io(rename_err));
-                }
+                    backup_path.display(),
+                    video_path.display(),
+                );
+                return Err(PipelineError::Io(rename_err));
             }
             Err(e)
         }
@@ -392,10 +392,10 @@ mod tests {
             if let Some(msg) = &self.verify_err {
                 return Err(PipelineError::Stage(msg.clone()));
             }
-            if let Some((after, msg)) = &self.verify_fail_after {
-                if n > *after {
-                    return Err(PipelineError::Stage(msg.clone()));
-                }
+            if let Some((after, msg)) = &self.verify_fail_after
+                && n > *after
+            {
+                return Err(PipelineError::Stage(msg.clone()));
             }
             Ok(())
         }

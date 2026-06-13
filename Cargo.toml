@@ -3,18 +3,48 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 version = "0.1.0"
 license = "MIT"
 
+# ── External dependencies (crates.io) ──────────────────────────────────────
 [workspace.dependencies]
-tokio = { version = "1", features = ["full"] }
+anitomy-pure = "0.1.0"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+crossterm = "0.28"
+dirs = "6"
+encoding_rs = "0.8"
+lazy_static = "1"
+md-5 = "0.11"
+ndarray = "0.17"
+percent-encoding = "2"
+quick-xml = "0.40"
+ratatui = "0.29"
+regex = "1"
+reqwest = { version = "0.13", features = [
+    "json",
+    "rustls",
+], default-features = false }
+scraper = "0.27"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tempfile = "3"
 thiserror = "2"
-anyhow = "1"
-reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
-clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-regex = "1"
+ttf-parser = "0.25"
+urlencoding = "2"
+which = "8"
+zip = "8"
+
+# ── Internal workspace crates ──────────────────────────────────────────────
+mt-cli = { path = "crates/mt-cli" }
+mt-core = { path = "crates/mt-core" }
+mt-discovery = { path = "crates/mt-discovery" }
+mt-fetch = { path = "crates/mt-fetch" }
+mt-media = { path = "crates/mt-media" }
+mt-ml = { path = "crates/mt-ml" }
+mt-pipeline = { path = "crates/mt-pipeline" }
+mt-subtitles = { path = "crates/mt-subtitles" }

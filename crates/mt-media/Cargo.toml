@@ -5,14 +5,15 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-mt-core = { path = "../mt-core" }
-mt-subtitles = { path = "../mt-subtitles" }
+dirs = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 thiserror = { workspace = true }
-ttf-parser = "0.25"
-dirs = "6"
-tempfile = "3"
 tracing = { workspace = true }
+ttf-parser = { workspace = true }
+
+mt-core = { workspace = true }
+mt-subtitles = { workspace = true }
 
 [dev-dependencies]

@@ -38,12 +38,13 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use crossterm::ExecutableCommand;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+    EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use crossterm::ExecutableCommand;
 use mt_pipeline::{FinishStatus, ProgressEvent, ProgressSender, Stage};
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -52,12 +53,11 @@ use ratatui::widgets::{
     Block, Borders, Cell, Gauge, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
     Table, Wrap,
 };
-use ratatui::Terminal;
 use tokio::sync::mpsc;
-use tracing::field::Visit;
 use tracing::Subscriber;
-use tracing_subscriber::layer::Context;
+use tracing::field::Visit;
 use tracing_subscriber::Layer;
+use tracing_subscriber::layer::Context;
 
 // ── Colour palette ────────────────────────────────────────────────
 
@@ -670,56 +670,55 @@ fn run_interactive(
         } else {
             tick.saturating_sub(last_render.elapsed())
         };
-        if event::poll(poll_timeout).unwrap_or(false) {
-            if let Ok(Event::Key(k)) = event::read() {
-                if k.kind == KeyEventKind::Press {
-                    let quit = match k.code {
-                        KeyCode::Char('q') => true,
-                        KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => true,
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            state.log_scroll = state.log_scroll.saturating_add(1);
-                            state.focus = FocusPane::Logs;
-                            false
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            state.log_scroll = state.log_scroll.saturating_sub(1);
-                            state.focus = FocusPane::Logs;
-                            false
-                        }
-                        KeyCode::PageDown => {
-                            state.log_scroll = state.log_scroll.saturating_add(20);
-                            state.focus = FocusPane::Logs;
-                            false
-                        }
-                        KeyCode::PageUp => {
-                            state.log_scroll = state.log_scroll.saturating_sub(20);
-                            state.focus = FocusPane::Logs;
-                            false
-                        }
-                        KeyCode::End => {
-                            state.log_scroll = usize::MAX;
-                            state.focus = FocusPane::Logs;
-                            false
-                        }
-                        KeyCode::Home => {
-                            state.log_scroll = 0;
-                            state.focus = FocusPane::Logs;
-                            false
-                        }
-                        KeyCode::Tab | KeyCode::Char('l') => {
-                            state.focus = match state.focus {
-                                FocusPane::Files => FocusPane::Logs,
-                                FocusPane::Logs => FocusPane::Files,
-                            };
-                            false
-                        }
-                        _ => false,
-                    };
-                    if quit {
-                        *quit_flag.lock().unwrap() = true;
-                        break;
-                    }
+        if event::poll(poll_timeout).unwrap_or(false)
+            && let Ok(Event::Key(k)) = event::read()
+            && k.kind == KeyEventKind::Press
+        {
+            let quit = match k.code {
+                KeyCode::Char('q') => true,
+                KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => true,
+                KeyCode::Down | KeyCode::Char('j') => {
+                    state.log_scroll = state.log_scroll.saturating_add(1);
+                    state.focus = FocusPane::Logs;
+                    false
                 }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    state.log_scroll = state.log_scroll.saturating_sub(1);
+                    state.focus = FocusPane::Logs;
+                    false
+                }
+                KeyCode::PageDown => {
+                    state.log_scroll = state.log_scroll.saturating_add(20);
+                    state.focus = FocusPane::Logs;
+                    false
+                }
+                KeyCode::PageUp => {
+                    state.log_scroll = state.log_scroll.saturating_sub(20);
+                    state.focus = FocusPane::Logs;
+                    false
+                }
+                KeyCode::End => {
+                    state.log_scroll = usize::MAX;
+                    state.focus = FocusPane::Logs;
+                    false
+                }
+                KeyCode::Home => {
+                    state.log_scroll = 0;
+                    state.focus = FocusPane::Logs;
+                    false
+                }
+                KeyCode::Tab | KeyCode::Char('l') => {
+                    state.focus = match state.focus {
+                        FocusPane::Files => FocusPane::Logs,
+                        FocusPane::Logs => FocusPane::Files,
+                    };
+                    false
+                }
+                _ => false,
+            };
+            if quit {
+                *quit_flag.lock().unwrap() = true;
+                break;
             }
         }
 
@@ -1065,34 +1064,32 @@ fn render_files(frame: &mut ratatui::Frame<'_>, area: Rect, state: &UiState) {
         .files
         .iter()
         .find(|f| matches!(f.status, FileViewStatus::Active) && f.sub_progress.is_some())
+        && let Some((d, t)) = active.sub_progress
+        && t > 0
     {
-        if let Some((d, t)) = active.sub_progress {
-            if t > 0 {
-                let ratio = active.progress_bar.ratio().clamp(0.0, 1.0);
-                let gauge_color = active.stage.map(stage_color).unwrap_or(Color::Cyan);
-                let label = active
-                    .sub_label
-                    .clone()
-                    .unwrap_or_else(|| format!("{d}/{t}"));
-                let gauge_area = Rect {
-                    x: inner.x,
-                    y: inner.y + inner.height.saturating_sub(1),
-                    width: inner.width,
-                    height: 1,
-                };
-                let g = Gauge::default()
-                    .gauge_style(
-                        Style::default()
-                            .fg(gauge_color)
-                            .bg(Color::DarkGray)
-                            .add_modifier(Modifier::BOLD),
-                    )
-                    .ratio(ratio)
-                    .label(label)
-                    .use_unicode(true);
-                frame.render_widget(g, gauge_area);
-            }
-        }
+        let ratio = active.progress_bar.ratio().clamp(0.0, 1.0);
+        let gauge_color = active.stage.map(stage_color).unwrap_or(Color::Cyan);
+        let label = active
+            .sub_label
+            .clone()
+            .unwrap_or_else(|| format!("{d}/{t}"));
+        let gauge_area = Rect {
+            x: inner.x,
+            y: inner.y + inner.height.saturating_sub(1),
+            width: inner.width,
+            height: 1,
+        };
+        let g = Gauge::default()
+            .gauge_style(
+                Style::default()
+                    .fg(gauge_color)
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .ratio(ratio)
+            .label(label)
+            .use_unicode(true);
+        frame.render_widget(g, gauge_area);
     }
 }
 
@@ -1440,12 +1437,13 @@ mod tests {
         }
         assert_eq!(s.log_lines.len(), MAX_LOG_LINES);
         assert!(s.log_lines.first().unwrap().message.contains("msg50"));
-        assert!(s
-            .log_lines
-            .last()
-            .unwrap()
-            .message
-            .contains(&format!("msg{}", MAX_LOG_LINES + 49)));
+        assert!(
+            s.log_lines
+                .last()
+                .unwrap()
+                .message
+                .contains(&format!("msg{}", MAX_LOG_LINES + 49))
+        );
     }
 
     #[test]

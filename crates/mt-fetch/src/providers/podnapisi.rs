@@ -3,8 +3,8 @@
 use std::io::Read as _;
 use std::path::Path;
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::events::Event;
 
 use crate::retry::FetchError;
 use crate::types::SubtitleMatch;
@@ -119,12 +119,11 @@ pub fn parse_xml_response(xml: &str) -> Result<Vec<PodnapisiSubtitle>, FetchErro
             Ok(Event::End(e)) => {
                 let name_bytes = e.name();
                 let tag = std::str::from_utf8(name_bytes.as_ref()).unwrap_or("");
-                if tag == "subtitle" {
-                    if let Some(sub) = current.take() {
-                        if !sub.id.is_empty() {
-                            subs.push(sub);
-                        }
-                    }
+                if tag == "subtitle"
+                    && let Some(sub) = current.take()
+                    && !sub.id.is_empty()
+                {
+                    subs.push(sub);
                 }
                 current_tag.clear();
             }

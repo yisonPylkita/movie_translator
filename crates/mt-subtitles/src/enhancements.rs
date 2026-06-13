@@ -230,34 +230,31 @@ fn remove_dialogue_markers(text: &str) -> String {
     let trimmed = text.trim();
 
     // Try exclamation mark pattern: "- x! - x!"
-    if let Some(rest) = trimmed.strip_prefix("- ") {
-        if let Some((first, second_rest)) = rest.split_once('!') {
-            let second_rest = second_rest.trim();
-            if let Some(second) = second_rest.strip_prefix("- ") {
-                if let Some(second_text) = second.strip_suffix('!').map(|s| s.trim()) {
-                    if !second_text.is_empty()
-                        && first.trim().to_lowercase() == second_text.to_lowercase()
-                    {
-                        return format!("{}!", first.trim());
-                    }
-                }
-            }
+    if let Some(rest) = trimmed.strip_prefix("- ")
+        && let Some((first, second_rest)) = rest.split_once('!')
+    {
+        let second_rest = second_rest.trim();
+        if let Some(second) = second_rest.strip_prefix("- ")
+            && let Some(second_text) = second.strip_suffix('!').map(|s| s.trim())
+            && !second_text.is_empty()
+            && first.trim().to_lowercase() == second_text.to_lowercase()
+        {
+            return format!("{}!", first.trim());
         }
     }
 
     // Try punctuation pattern: "- x. - x." etc.
     for punct in &[".", "!", "?"] {
-        if let Some(rest) = trimmed.strip_prefix("- ") {
-            if let Some((first, rest_after_punct)) = rest.split_once(punct) {
-                let rest_after_punct = rest_after_punct.trim();
-                if let Some(second_with_trailing) = rest_after_punct.strip_prefix("- ") {
-                    // The second part should end with the same punctuation
-                    if let Some(second) = second_with_trailing.strip_suffix(punct).map(|s| s.trim())
-                    {
-                        if first.trim().to_lowercase() == second.to_lowercase() {
-                            return format!("{}{}", first.trim(), punct);
-                        }
-                    }
+        if let Some(rest) = trimmed.strip_prefix("- ")
+            && let Some((first, rest_after_punct)) = rest.split_once(punct)
+        {
+            let rest_after_punct = rest_after_punct.trim();
+            if let Some(second_with_trailing) = rest_after_punct.strip_prefix("- ") {
+                // The second part should end with the same punctuation
+                if let Some(second) = second_with_trailing.strip_suffix(punct).map(|s| s.trim())
+                    && first.trim().to_lowercase() == second.to_lowercase()
+                {
+                    return format!("{}{}", first.trim(), punct);
                 }
             }
         }

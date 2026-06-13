@@ -64,10 +64,10 @@ pub fn find_videos(input_path: &Path) -> Vec<PathBuf> {
 fn collect_videos(root: &Path, dir: &Path, out: &mut Vec<PathBuf>, visited: &mut HashSet<PathBuf>) {
     // Record this directory's canonical path; if we've already visited it,
     // a symlink cycle has brought us back — stop.
-    if let Ok(canon) = std::fs::canonicalize(dir) {
-        if !visited.insert(canon) {
-            return;
-        }
+    if let Ok(canon) = std::fs::canonicalize(dir)
+        && !visited.insert(canon)
+    {
+        return;
     }
 
     let mut entries: Vec<PathBuf> = match std::fs::read_dir(dir) {

@@ -5,7 +5,7 @@
 //! TMDB enrichment is always optional.
 
 use mt_core::{MtError, Result};
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 
 const TMDB_BASE: &str = "https://api.themoviedb.org/3";
@@ -76,10 +76,10 @@ pub(crate) fn build_search_url(
         ("query", title.to_string()),
     ];
     // Skip the year param for both None and year == 0.
-    if let Some(y) = year {
-        if y != 0 {
-            params.push((year_key, y.to_string()));
-        }
+    if let Some(y) = year
+        && y != 0
+    {
+        params.push((year_key, y.to_string()));
     }
 
     let qs: Vec<String> = params

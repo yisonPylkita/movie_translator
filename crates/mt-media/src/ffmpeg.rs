@@ -545,19 +545,19 @@ pub fn build_ffmpeg_mux_args(
     // attachment-stream index (`-metadata:s:t:0`, `:1`, …). Using the
     // index-less `-metadata:s:t` for every font would land all values on the
     // same (wrong) attachment when there is more than one font.
-    if let Some(fonts) = font_attachments {
-        if !is_mp4 {
-            for (attach_idx, font_path) in fonts.iter().enumerate() {
-                args.push("-attach".to_string());
-                args.push(font_path.to_string_lossy().to_string());
-                args.push(format!("-metadata:s:t:{attach_idx}"));
-                args.push(format!("mimetype={}", mimetype_for_font(font_path)));
-                args.push(format!("-metadata:s:t:{attach_idx}"));
-                args.push(format!(
-                    "filename={}",
-                    font_path.file_name().unwrap_or_default().to_string_lossy()
-                ));
-            }
+    if let Some(fonts) = font_attachments
+        && !is_mp4
+    {
+        for (attach_idx, font_path) in fonts.iter().enumerate() {
+            args.push("-attach".to_string());
+            args.push(font_path.to_string_lossy().to_string());
+            args.push(format!("-metadata:s:t:{attach_idx}"));
+            args.push(format!("mimetype={}", mimetype_for_font(font_path)));
+            args.push(format!("-metadata:s:t:{attach_idx}"));
+            args.push(format!(
+                "filename={}",
+                font_path.file_name().unwrap_or_default().to_string_lossy()
+            ));
         }
     }
 

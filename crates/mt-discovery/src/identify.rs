@@ -4,9 +4,9 @@
 //! TMDB enrichment into a [`mt_core::MediaIdentity`].
 
 use crate::hasher::compute_oshash;
-use crate::metadata::{extract_container_metadata, ContainerMetadata};
-use crate::parser::{parse_filename, ParsedName};
-use crate::tmdb::{lookup_tmdb, TmdbResult};
+use crate::metadata::{ContainerMetadata, extract_container_metadata};
+use crate::parser::{ParsedName, parse_filename};
+use crate::tmdb::{TmdbResult, lookup_tmdb};
 use mt_core::{MediaIdentity, Result};
 use std::path::Path;
 
@@ -51,12 +51,11 @@ pub(crate) fn assemble_identity(
     let release_group = parsed.release_group.clone();
 
     // If container has episode info and parsed didn't get one, try to use it
-    if let Some(ref container_ep_str) = container.episode {
-        if episode.is_none() {
-            if let Ok(ep) = container_ep_str.parse::<i32>() {
-                episode = Some(ep);
-            }
-        }
+    if let Some(ref container_ep_str) = container.episode
+        && episode.is_none()
+        && let Ok(ep) = container_ep_str.parse::<i32>()
+    {
+        episode = Some(ep);
     }
 
     let (imdb_id, tmdb_id) = match tmdb {

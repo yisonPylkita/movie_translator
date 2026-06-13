@@ -206,20 +206,19 @@ pub fn resolve_pending_ocr(
     }
 
     // If extract_english deferred OCR and we now have a source, extract lines.
-    if stage_label == OcrStageLabel::ExtractEnglish {
-        if let Some(source) = ctx.english_source.clone() {
-            if ctx.dialogue_lines.is_none() {
-                let lines = SubtitleProcessor::extract_dialogue_lines(&source)?;
-                if lines.is_empty() {
-                    ctx.pending_ocr = None;
-                    return Err(PipelineError::Stage(format!(
-                        "No dialogue lines found in {}",
-                        source.display()
-                    )));
-                }
-                ctx.dialogue_lines = Some(lines);
-            }
+    if stage_label == OcrStageLabel::ExtractEnglish
+        && let Some(source) = ctx.english_source.clone()
+        && ctx.dialogue_lines.is_none()
+    {
+        let lines = SubtitleProcessor::extract_dialogue_lines(&source)?;
+        if lines.is_empty() {
+            ctx.pending_ocr = None;
+            return Err(PipelineError::Stage(format!(
+                "No dialogue lines found in {}",
+                source.display()
+            )));
         }
+        ctx.dialogue_lines = Some(lines);
     }
 
     ctx.pending_ocr = None;

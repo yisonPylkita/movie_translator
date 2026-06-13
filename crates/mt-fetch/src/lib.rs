@@ -21,6 +21,6 @@ pub use fetcher::SubtitleFetcher;
 pub use style_classifier::classify_styles;
 pub use types::SubtitleMatch;
 pub use validator::{
-    build_activity_vector, compute_line_match_score, compute_similarity, extract_timestamps,
-    SubtitleValidator,
+    SubtitleValidator, build_activity_vector, compute_line_match_score, compute_similarity,
+    extract_timestamps,
 };

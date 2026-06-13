@@ -150,11 +150,11 @@ pub fn merge_ocr_results(frame_texts: &[(i64, String)]) -> Vec<CleanLine> {
     for (ts, raw) in &frames {
         let text = raw.trim();
         if !text.is_empty() {
-            if let Some(ref mut g) = anchor {
-                if similar(text, &g.text) >= SIMILARITY {
-                    g.variants.push(text.to_string());
-                    continue;
-                }
+            if let Some(ref mut g) = anchor
+                && similar(text, &g.text) >= SIMILARITY
+            {
+                g.variants.push(text.to_string());
+                continue;
             }
             // Boundary: close the running group
             close(*ts, &mut anchor);

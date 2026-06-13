@@ -21,10 +21,10 @@ pub fn clean_segments(segs: &[DialogueLine], audio_ms: i64) -> Vec<DialogueLine>
         if seg.start_ms >= audio_ms {
             continue;
         }
-        if let Some(ref prev) = prev_text {
-            if text == prev.as_str() {
-                continue;
-            }
+        if let Some(ref prev) = prev_text
+            && text == prev.as_str()
+        {
+            continue;
         }
         out.push(DialogueLine {
             start_ms: seg.start_ms,

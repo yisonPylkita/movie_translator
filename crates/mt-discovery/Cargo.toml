@@ -5,13 +5,15 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-mt-core = { path = "../mt-core" }
-mt-ml = { path = "../mt-ml" }
-md-5 = "0.11"
+anitomy-pure = { workspace = true }
+md-5 = { workspace = true }
+percent-encoding = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-reqwest = { workspace = true, features = ["blocking"] }
-percent-encoding = "2"
+
+mt-core = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }

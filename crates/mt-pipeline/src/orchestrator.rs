@@ -25,10 +25,10 @@ use mt_media::SubtitleExtractor;
 use tokio::sync::Semaphore;
 
 use crate::error::{PipelineError, Result};
-use crate::gpu::{resolve_pending_ocr, DirectGpuExecutor, GpuExecutor, OcrStageLabel};
+use crate::gpu::{DirectGpuExecutor, GpuExecutor, OcrStageLabel, resolve_pending_ocr};
 use crate::progress::{FinishStatus, ProgressEvent, ProgressSender, Stage};
 use crate::stages;
-use crate::vision::{default_vision_ocr_probe, VisionOcrProbe};
+use crate::vision::{VisionOcrProbe, default_vision_ocr_probe};
 use crate::worker::{GpuWorker, GpuWorkerHandle};
 
 /// Per-file outcome: `success`, `failed`, or `skipped`.
@@ -456,12 +456,11 @@ async fn prepare_hardsub_plan(
 /// back to the file stem.
 fn hardsub_title(path: &Path) -> String {
     let filename = path.file_name().map(|n| n.to_string_lossy().to_string());
-    if let Some(name) = filename.as_deref() {
-        if let Ok(parsed) = mt_ml::backend::parse_filename(name, None) {
-            if let Some(title) = parsed.title.filter(|t| !t.is_empty()) {
-                return title;
-            }
-        }
+    if let Some(name) = filename.as_deref()
+        && let Ok(parsed) = mt_discovery::parser::parse_filename(name, None)
+        && let Some(title) = parsed.title.filter(|t| !t.is_empty())
+    {
+        return title;
     }
     path.file_stem()
         .map(|s| s.to_string_lossy().to_string())

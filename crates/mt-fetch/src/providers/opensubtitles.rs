@@ -335,10 +335,10 @@ impl super::SubtitleProvider for OpenSubtitlesProvider {
         if let Some(e) = identity.episode {
             query_params.push(("episode_number", e.to_string()));
         }
-        if identity.media_type == "movie" {
-            if let Some(y) = identity.year {
-                query_params.push(("year", y.to_string()));
-            }
+        if identity.media_type == "movie"
+            && let Some(y) = identity.year
+        {
+            query_params.push(("year", y.to_string()));
         }
         if let Some(ref imdb_id) = identity.imdb_id {
             let stripped = imdb_id.trim_start_matches("tt").to_string();

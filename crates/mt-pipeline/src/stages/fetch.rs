@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use mt_core::{FetchedSubtitle, PipelineContext};
 use mt_fetch::providers::{
-    animesub::AnimeSubProvider, napiprojekt::NapiProjektProvider,
-    opensubtitles::OpenSubtitlesProvider, podnapisi::PodnapisiProvider, SubtitleProvider,
+    SubtitleProvider, animesub::AnimeSubProvider, napiprojekt::NapiProjektProvider,
+    opensubtitles::OpenSubtitlesProvider, podnapisi::PodnapisiProvider,
 };
 use mt_fetch::retry::with_retry;
 use mt_fetch::{SubtitleFetcher, SubtitleMatch, SubtitleValidator};
@@ -72,15 +72,14 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
     // Realign fetched Polish subtitles against the English reference.
     if let (Some(reference), Some(map)) =
         (ctx.reference_path.clone(), ctx.fetched_subtitles.clone())
+        && let Some(pol_subs) = map.get("pol")
     {
-        if let Some(pol_subs) = map.get("pol") {
-            for sub in pol_subs {
-                let (method, offset) = align_subtitle(&sub.path, &reference);
-                tracing::debug!(
-                    "aligned {} via {method} (offset={offset:?})",
-                    sub.path.display()
-                );
-            }
+        for sub in pol_subs {
+            let (method, offset) = align_subtitle(&sub.path, &reference);
+            tracing::debug!(
+                "aligned {} via {method} (offset={offset:?})",
+                sub.path.display()
+            );
         }
     }
 
@@ -96,14 +95,14 @@ fn build_fetcher(video_path: &Path) -> SubtitleFetcher {
     let mut napi = NapiProjektProvider::new();
     napi.set_video_path(video_path);
     providers.push(Box::new(napi));
-    if let Ok(api_key) = std::env::var("OPENSUBTITLES_API_KEY") {
-        if !api_key.is_empty() {
-            providers.push(Box::new(OpenSubtitlesProvider::new(
-                Some(api_key),
-                None,
-                None,
-            )));
-        }
+    if let Ok(api_key) = std::env::var("OPENSUBTITLES_API_KEY")
+        && !api_key.is_empty()
+    {
+        providers.push(Box::new(OpenSubtitlesProvider::new(
+            Some(api_key),
+            None,
+            None,
+        )));
     }
     SubtitleFetcher::new(providers)
 }

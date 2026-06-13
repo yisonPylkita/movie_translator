@@ -1,27 +1,22 @@
-//! ML inference drivers, embedded.
+//! ML inference drivers — pure Rust, no Python.
 //!
-//! ML inference that still runs in Python (Apple Vision, MLX model) is called
-//! through PyO3 embedding.  The Apple Translation backend has been rewritten
-//! in Rust-native code (see [`apple_translate`]) and calls the Swift bridge
-//! binary directly.
-//! Model objects (e.g. `SubtitleTranslator`) are loaded ONCE per binary run
-//! and reused across every file in a `run_all`.
+//! ML inference that previously ran in Python (Apple Vision, MLX model) now
+//! runs natively: Apple Vision OCR calls a compiled Swift bridge, the Apple
+//! Translation backend calls the Swift bridge directly, and the inpainting
+//! algorithm is a pure Rust Telea implementation.
 //!
-//! Build requirement: set `PYO3_PYTHON=$(repo)/.venv/bin/python` when
-//! invoking cargo so PyO3 links against the venv interpreter (which has the
-//! `movie_translator` dependencies installed). The justfile + CI do this.
+//! The embedded CPython (PyO3) dependency has been removed entirely.
+//! No Python or venv is needed at build or runtime.
 
 pub mod apple_translate;
-pub mod backend;
 pub mod hardsub;
 pub mod inpaint;
 pub mod ocr;
 pub mod transcription;
 pub mod translate;
 
-pub use backend::{vision_ocr_available, ParsedFilename};
 pub use hardsub::{hardsub_download, hardsub_ocr_clean};
 pub use inpaint::inpaint;
-pub use ocr::{ocr_burned_in, ocr_pgs};
+pub use ocr::{is_vision_ocr_available, ocr_burned_in, ocr_pgs};
 pub use transcription::transcribe_to_srt;
-pub use translate::{translate, TranslateRequest, TranslateResponse};
+pub use translate::{TranslateRequest, TranslateResponse, translate};

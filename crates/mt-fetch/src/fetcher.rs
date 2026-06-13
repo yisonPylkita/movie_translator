@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::providers::SubtitleProvider;
-use crate::retry::{with_retry, FetchError};
+use crate::retry::{FetchError, with_retry};
 use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
 

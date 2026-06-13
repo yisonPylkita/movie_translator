@@ -3,13 +3,13 @@
 
 use std::path::Path;
 
-use mt_core::types::{is_non_dialogue_style, replace_polish_chars, DialogueLine};
+use mt_core::types::{DialogueLine, is_non_dialogue_style, replace_polish_chars};
 use thiserror::Error;
 
 use crate::{
     ass::{load_ass, to_ass_string},
     error::ParseError,
-    model::{strip_ass_overrides, Event, EventKind, Subtitles},
+    model::{Event, EventKind, Subtitles, strip_ass_overrides},
     srt::{load_srt, to_srt_string},
 };
 

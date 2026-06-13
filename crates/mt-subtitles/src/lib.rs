@@ -66,7 +66,7 @@ use std::path::Path;
 pub use encoding::normalize_encoding;
 pub use error::ParseError;
 pub use model::{AssTime, Event, EventKind, RawSection, Style, Subtitles};
-pub use processor::{find_dialogue_style, SubtitleProcessingError, SubtitleProcessor};
+pub use processor::{SubtitleProcessingError, SubtitleProcessor, find_dialogue_style};
 
 /// Load a subtitle file by path, dispatching on extension (`.ass`/`.ssa` or `.srt`).
 pub fn load(path: &Path) -> Result<Subtitles, ParseError> {

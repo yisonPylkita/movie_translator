@@ -1,88 +1,41 @@
 ---
 name: ml-stage-debug
-description: Debug translation, OCR, or inpainting stage failures. Reproduce the Python ML side in isolation to split ML logic bug from Rust bridge/pipeline bug. Localizes the failing module; the parent agent fixes.
+description: Debug translation, OCR, or inpainting stage failures. All stages are pure Rust (no Python). Localizes the failing module; the parent agent fixes.
 ---
 
 # ML Stage Debug
 
-The GPU stages run inside the single tokio worker via `crates/mt-ml` →
-the `movie_translator` Python package. Your first job is always to split
-the layers:
+All ML stages in this project run in pure Rust — zero Python
+dependencies. Stages are called through the serialised GPU worker
+(`crates/mt-pipeline/src/worker.rs`).
 
-- **Bridge/pipeline bug** — only reproduces through the
-  `movie-translator` binary. Hand off to `pyo3-bridge-doctor` (bridge)
-  or the parent (pipeline orchestration).
-- **ML logic bug** — reproduces under `uv run python -c "..."` against
-  the package directly. That's yours.
+## Translation (`crates/mt-ml/src/apple_translate.rs`)
 
-So: reproduce the failing stage in isolation in Python FIRST.
+Apple Translation framework via compiled Swift bridge. macOS 26+.
+Sentence merging in `crates/mt-subtitles/src/sentence_merger.rs`.
 
-## The three stages
+## OCR (`crates/mt-ml/src/ocr.rs`)
 
-### Translation — `movie_translator/translation/`
+Apple Vision via Swift bridge (`crates/mt-ml/swift/ocr_bridge.swift`).
+PGS parsing in `crates/mt-media/src/pgs_parser.rs`. macOS only.
 
-- `translator.py` / `models.py` — the Allegro BiDi en↔pl model.
-- `apple_backend.py` + `swift/` — Apple Translation (macOS 26+; builds a
-  Swift bridge from source on first use).
-- `sentence_merger.py` — merges subtitle lines into sentences before
-  translating (timing-aware). A common source of "translation is shifted
-  / merged wrong" bugs.
-- `enhancements.py`, `model_cache.py` — post-processing + the
-  load-once cache (model loaded once per binary run, reused per file).
-- Reproduce: `uv run python -c "from
-  movie_translator.translation import translate_dialogue_lines; ..."`.
-  Empty/garbage output with no exception → check device + batch + the
-  merger; an exception → read it and localize.
+## Inpainting (`crates/mt-ml/src/inpaint.rs`)
 
-### OCR — `movie_translator/ocr/`
+Pure Rust Telea algorithm. Works on all platforms.
 
-- `vision_ocr.py` (Apple Vision — **macOS Apple-Silicon only**),
-  `pgs_extractor.py` (bitmap PGS tracks), `burned_in_extractor.py`
-  (hardcoded subs), `frame_extractor.py` (bottom-crop, FPS, diff-based
-  change detection).
-- Burned-in flow: bottom 25% of frames @ 3 FPS scaled to 1280px →
-  pixel-diff change detection → OCR only transition frames → dedup →
-  timed SRT. "Missing lines" → change-detection threshold; "duplicated
-  lines" → dedup step.
-- On Linux there is no Vision — these stages are expected to be
-  unavailable, and the real-model tests are `#[ignore]`'d.
+## Transcription (`crates/mt-ml/src/transcription.rs`)
 
-### Inpainting — `movie_translator/inpainting/`
+Apple SpeechAnalyzer (Swift bridge) or whisper-cli subprocess.
+VAD is energy-based (inline).
 
-- `mask_generator.py` (where to paint), `backends.py` /
-  `inpainter.py` (LaMa), `video_processor.py` (per-frame apply).
-- Slow; `--inpaint` is NOT compatible with `--in-place`. Artifacts →
-  mask too tight/loose; check `mask_generator` before blaming the model.
+## Diagnostic flow
 
-## Where the traceback actually is
-
-If the stage failed "silently" through the binary, the Python exception
-is in `.translate_temp/python.stderr.log` (or `$MT_PYTHON_STDERR_LOG`),
-NOT the Rust logs. Read it first.
-
-## Tests
-
-`just py-test` runs the package tests; narrow with
-`uv run pytest -o addopts="" movie_translator/translation -k <name>`
-(the `-o addopts=""` drops the xdist `-n auto` so output is linear and
-readable while debugging). Real-model tests are slow/ignored — most unit
-tests use small synthetic inputs.
-
-## What you return
-
-```
-Stage:      translation | ocr | inpainting
-Layer:      ML logic (reproduces under `uv run python`) | bridge/pipeline (binary-only)
-Module:     <file:func that owns the bug>
-Cause:      <inference + the repro command + its output / the stderr-log traceback>
-Fix:        <concrete change, or hand-off to pyo3-bridge-doctor / parent>
-Confidence: <high | medium | low>
-```
+1. Compile-time failure → fix the Rust code.
+2. Runtime failure → check Swift bridge compilation output, ffmpeg
+   stderr (`RUST_LOG=debug`), or system dependency (whisper-cli path,
+   macOS version).
 
 ## What you don't do
 
-- Don't reimplement an ML stage in Rust — the Python/Rust split is
-  deliberate. Fixes land in the `movie_translator` package.
-- Don't run heavy real-model translations to repro when a small
-  synthetic input reproduces the bug. Keep repros cheap.
-- Don't push changes; localize and hand back to the parent agent.
+- Don't add Python back.
+- Don't push changes; localise and hand back to the parent agent.

@@ -1,57 +1,42 @@
 # Movie Translator — English→Polish video subtitle translator.
 #
-# `just` is the entry point for everything: setup, build, run, tests, lint.
+# `just` is the entry point for everything: setup, build, run, tests, fix, check.
 # Run `just` (or `just --list`) to see every available recipe.
 
-# PyO3 needs to know which Python interpreter to embed at build time. We
-# point it at the uv-managed venv so the embedded interpreter sees the same
-# packages the Python code uses (torch, transformers, guessit, …).
-# `just deps` creates the venv before any build runs.
-export PYO3_PYTHON := justfile_directory() + "/.venv/bin/python"
+# No Python needed — the entire ML pipeline runs in pure Rust.
 
 default:
     @just --list
 
 # ─── Setup ─────────────────────────────────────────────────────────────────
 
-# Full one-shot setup: Python env, submodules, model files, and the binary.
-# Idempotent — safe to re-run. On macOS, run `just brew` once first.
-setup: deps submodules model build
-    @echo
+# One-shot setup: submodules + build.
+setup: submodules build
+    @echo ""
     @echo "Setup complete. Try: just run /path/to/video.mkv --dry-run"
 
-# macOS only: install system tools (just, ffmpeg, git-lfs, uv, ...) via Homebrew.
+# macOS only: install system tools (just, ffmpeg, git-lfs) via Homebrew.
 brew:
     brew bundle
 
-# Install / sync the Python ML backend environment (torch, transformers, ...).
-deps:
-    uv sync
+# Install development tools for formatting (taplo for TOML, shfmt for shell).
+# Run this once to get all formatters.
+install-fmt-tools:
+    cargo install taplo-cli
+    @# shfmt: install via Go or brew
+    @if command -v brew >/dev/null 2>&1; then \
+        brew install shfmt shellcheck 2>/dev/null || true; \
+    fi
+    @echo "✓ Formatting tools installed. Run 'just fix' to format all files."
 
 # Initialise git submodules (vendor/ilass).
 submodules:
     git submodule update --init --recursive
 
-# Download + convert the translation model (Allegro BiDi en↔pl) to MLX INT8.
-#
-# Downloads the PyTorch model from HuggingFace (allegro/BiDi-eng-pol), converts
-# it to MLX, quantises to INT8, and saves to models/allegro/.
-#
-# On first run, use `--torch-dir` if you already have the model cached, or
-# omit it to download from HuggingFace automatically.
-model:
-    uv run python scripts/download_and_convert_model.py
-
-# Pull the pre-converted MLX INT8 model from Git LFS (faster than re-converting).
-model-pull:
-    git lfs install
-    git lfs pull --include="models/allegro/"
-
 # ─── Build ─────────────────────────────────────────────────────────────────
 
 # Build the release binary + the vendored ilass alignment engine.
-# Depends on `deps` so the venv exists before cargo links against libpython.
-build: deps
+build:
     cargo build --release --bin movie-translator --bin anime-dl
     cd vendor/ilass && cargo build --release
 
@@ -73,37 +58,112 @@ extract input *args:
 anime-dl name *args:
     cargo run --release --quiet --bin anime-dl -- "{{ name }}" {{ args }}
 
-# ─── Tests + lint ──────────────────────────────────────────────────────────
+# ─── Tests ─────────────────────────────────────────────────────────────────
 
 # Run the Rust test suite. Usage: `just test [extra cargo-test args]`
-test *args: deps
+test *args:
     cargo test --workspace {{ args }}
 
-# Run the Python ML-backend test suite.
-py-test *args:
-    uv run pytest -o addopts="" movie_translator {{ args }}
+# ─── Fix (auto-format all file types) ──────────────────────────────────────
 
-# Lint + format check, no modifications (mirrors CI).
-check: deps
-    cargo clippy --workspace --all-targets -- -D warnings
-    cargo fmt --check
-    uv run ruff check movie_translator/
+# Fix all files in the repo: format Rust, TOML, shell scripts, Swift, JSON.
+fix: fix-rust fix-toml fix-sh fix-swift fix-json
+    @echo "✓ All files formatted."
 
-# Auto-fix lint + format issues (Rust + Python).
-lint: deps
-    cargo clippy --workspace --all-targets --fix --allow-dirty --allow-staged -- -D warnings
+# Format Rust code with rustfmt.
+fix-rust:
     cargo fmt
-    uv run ruff check --fix movie_translator/
-    uv run ruff format movie_translator/
+
+# Format TOML files with taplo.
+fix-toml:
+    @if command -v taplo >/dev/null 2>&1; then \
+        find . -name '*.toml' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' -exec taplo format {} +; \
+    fi
+
+# Format shell scripts with shfmt.
+fix-sh:
+    @if command -v shfmt >/dev/null 2>&1; then \
+        find . -name '*.sh' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' -exec shfmt -w -i 2 {} +; \
+    fi
+
+# Format Swift files with swift-format (if available).
+fix-swift:
+    @if command -v swift-format >/dev/null 2>&1; then \
+        find . -name '*.swift' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' -exec swift-format -i {} + 2>/dev/null || true; \
+    fi
+
+# Format JSON files with jq (canonical sort-keys formatting).
+fix-json:
+    @if command -v jq >/dev/null 2>&1; then \
+        find . -name '*.json' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' \
+            -not -name 'package-lock.json' -not -name 'Cargo.lock' \
+            -exec sh -c 'jq --sort-keys . "{}" > "{}.tmp" && mv "{}.tmp" "{}"' \; 2>/dev/null || true; \
+    fi
+
+# Auto-fix clippy warnings.
+fix-clippy:
+    cargo clippy --workspace --all-targets --fix --allow-dirty --allow-staged -- -D warnings
+
+# ─── Check (validate formatting, no modifications) ─────────────────────────
+
+# Check all file types for formatting issues. No modifications.
+check: check-clippy check-fmt
+    @echo "✓ All checks passed."
+
+# Check Rust formatting (clippy + rustfmt).
+check-clippy:
+    cargo clippy --workspace --all-targets -- -D warnings
+
+check-fmt: check-fmt-rust check-fmt-toml check-fmt-sh check-fmt-swift check-fmt-json
+    @echo "✓ All formatting checks passed."
+
+# Check Rust formatting with cargo fmt --check.
+check-fmt-rust:
+    cargo fmt --check
+
+# Check TOML formatting with taplo.
+check-fmt-toml:
+    @if command -v taplo >/dev/null 2>&1; then \
+        find . -name '*.toml' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' -exec taplo format --check {} + 2>&1 || { echo "TOML formatting issues found. Run: just fix-toml"; exit 1; }; \
+    fi
+
+# Check shell script formatting with shfmt --diff.
+check-fmt-sh:
+    @if command -v shfmt >/dev/null 2>&1; then \
+        find . -name '*.sh' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' -exec shfmt -d -i 2 {} + 2>&1 || { echo "Shell formatting issues found. Run: just fix-sh"; exit 1; }; \
+    fi
+
+# Check Swift formatting (best-effort, no failure).
+check-fmt-swift:
+    @if command -v swift-format >/dev/null 2>&1; then \
+        find . -name '*.swift' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' -exec swift-format -m format {} + 2>/dev/null || true; \
+    fi
+
+# Check JSON formatting (best-effort, no failure).
+check-fmt-json:
+    @if command -v jq >/dev/null 2>&1; then \
+        find . -name '*.json' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' \
+            -not -name 'package-lock.json' -not -name 'Cargo.lock' \
+            -exec sh -c 'jq --sort-keys . "{}" | diff - "{}" >/dev/null 2>&1' \; 2>/dev/null || true; \
+    fi
 
 # All checks + all tests (CI equivalent).
 ci: check test
 
+# ─── Tidy (fix + lint + ordering) ──────────────────────────────────────────
+
+# Full tidy: fix all formatting, clippy, and check dependency ordering.
+tidy: fix fix-clippy tidy-check-deps
+    @echo "✓ Tidy: all files formatted, linted, and dependencies sorted."
+
+# Check that Cargo.toml [dependencies] entries are alphabetically sorted.
+tidy-check-deps:
+    bash scripts/check-deps-sorted.sh
+
 # ─── Misc ──────────────────────────────────────────────────────────────────
 
-# Install a git pre-commit hook that runs `just check`.
+# Install a git pre-commit hook that runs formatting fixes + checks.
 install-hooks:
-    @echo '#!/bin/sh' > .git/hooks/pre-commit
-    @echo 'just check' >> .git/hooks/pre-commit
+    @printf '#!/bin/sh\njust fix && just check && just tidy-check-deps\n' > .git/hooks/pre-commit
     @chmod +x .git/hooks/pre-commit
-    @echo 'Pre-commit hook installed (runs just check).'
+    @echo 'Pre-commit hook installed (runs just fix + just check + tidy-check-deps).'

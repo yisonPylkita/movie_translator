@@ -44,12 +44,12 @@ pub fn ensure_compiled(
     }
 
     // Check if binary is already fresh (exists and source is not newer)
-    if let Ok(src_mtime) = source.metadata().and_then(|m| m.modified()) {
-        if let Ok(bin_mtime) = binary.metadata().and_then(|m| m.modified()) {
-            if src_mtime <= bin_mtime {
-                return Ok(binary.to_path_buf());
-            }
-        }
+    if let (Ok(src_mtime), Ok(bin_mtime)) = (
+        source.metadata().and_then(|m| m.modified()),
+        binary.metadata().and_then(|m| m.modified()),
+    ) && src_mtime <= bin_mtime
+    {
+        return Ok(binary.to_path_buf());
     }
 
     // Find swiftc
