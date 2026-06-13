@@ -56,3 +56,59 @@ def test_punctuation_only_piece_not_emitted():
     seg = DialogueLine(0, 4000, '...Hello there. How are you?')
     out = split_segment(seg)
     assert [s.text for s in out] == ['...Hello there.', 'How are you?']
+
+
+def test_vad_boundary_snaps_end_time():
+    # VAD says there's a pause at 5200ms within a 0-10000ms utterance.
+    seg = DialogueLine(0, 10000, 'First sentence. Second sentence.')
+    out = split_segment(seg, boundaries=[5200])
+    assert len(out) == 2
+    assert out[0].text == 'First sentence.'
+    assert out[1].text == 'Second sentence.'
+    assert out[0].start_ms == 0
+    assert out[0].end_ms == 5200  # snapped to VAD boundary
+    assert out[1].start_ms == 5200
+    assert out[1].end_ms == 10000
+
+
+def test_vad_boundary_out_of_range_ignored():
+    # Boundary before start or after end is ignored.
+    seg = DialogueLine(2000, 8000, 'Hello. World.')
+    out = split_segment(seg, boundaries=[1000, 9000])
+    assert len(out) == 2
+    # Falls back to proportional timing.
+    assert 4000 <= out[0].end_ms <= 6000
+
+
+def test_vad_boundaries_more_gaps_than_sentences():
+    # Boundary list longer than pieces — extra boundaries ignored.
+    seg = DialogueLine(0, 10000, 'A. B.')
+    out = split_segment(seg, boundaries=[3000, 6000, 8000])
+    assert len(out) == 2
+    assert out[0].end_ms == 3000
+
+
+def test_vad_boundaries_more_sentences_than_gaps():
+    # Three sentences but only one VAD pause -> groups the first two.
+    seg = DialogueLine(0, 10000, 'One. Two. Three.')
+    out = split_segment(seg, boundaries=[4000])
+    # Groups: 'One. Two.' (2 pieces at boundary 4000) | 'Three.' (end)
+    assert len(out) == 2
+    assert out[0].text == 'One. Two.'
+    assert out[0].end_ms == 4000
+    assert out[1].text == 'Three.'
+    assert out[1].end_ms == 10000
+
+
+def test_vad_boundaries_passed_to_split_segments():
+    # Multiple segments, boundaries distributed per-segment.
+    segs = [
+        DialogueLine(0, 6000, 'Line one. Line two.'),
+        DialogueLine(7000, 13000, 'Line three. Line four.'),
+    ]
+    boundaries = [3000, 8000]
+    out = split_segments(segs, boundaries)
+    assert [s.text for s in out] == ['Line one.', 'Line two.', 'Line three.', 'Line four.']
+    assert out[0].end_ms == 3000  # snapped to boundary 0
+    assert out[1].start_ms == 3000
+    assert out[1].end_ms == 6000  # seg end takes precedence over boundary 8000

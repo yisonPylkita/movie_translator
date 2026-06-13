@@ -346,7 +346,7 @@ async fn run_all_full(
         None
     };
 
-    let worker = GpuWorker::spawn();
+    let worker = GpuWorker::spawn_with_progress(progress.clone());
     let result = run_all_with_executor(
         video_files,
         root_dir,

@@ -38,16 +38,37 @@ def _pieces(text: str) -> list[str]:
     return out
 
 
-def split_segment(seg: DialogueLine) -> list[DialogueLine]:
-    """Split one segment into sentence pieces with proportional timing.
+def split_segment(
+    seg: DialogueLine,
+    boundaries: list[int] | None = None,
+) -> list[DialogueLine]:
+    """Split one segment into sentence pieces with timing from boundaries.
 
-    Timing is allocated proportionally to piece length and clamped so every
-    piece satisfies `start <= end <= seg.end_ms` even under rounding
-    accumulation on degenerate (many-sentences, tiny-span) segments.
+    When ``boundaries`` (VAD-detected pause timestamps in ms within this
+    segment's time span) are provided, each piece's end time is snapped to
+    the nearest boundary.  This gives natural pause-aligned cuts instead of
+    proportional-length guesses.  Falls back to proportional timing when no
+    boundaries are given or none fall inside the segment's range.
     """
     pieces = _pieces(seg.text)
     if len(pieces) <= 1:
         return [seg]
+
+    # Narrow to boundaries that actually fall inside this segment.
+    inner = [b for b in (boundaries or []) if seg.start_ms < b < seg.end_ms]
+    # Cap the number of splits to the number of sentence pieces.
+    if len(inner) >= len(pieces):
+        inner = inner[: len(pieces) - 1]
+
+    if not inner:
+        # Fall back to purely proportional timing.
+        return _proportional_split(seg, pieces)
+
+    return _boundary_split(seg, pieces, inner)
+
+
+def _proportional_split(seg: DialogueLine, pieces: list[str]) -> list[DialogueLine]:
+    """Split proportionally by character length (original heuristic)."""
     total = sum(len(p) for p in pieces)
     span = seg.end_ms - seg.start_ms
     out: list[DialogueLine] = []
@@ -62,9 +83,93 @@ def split_segment(seg: DialogueLine) -> list[DialogueLine]:
     return out
 
 
-def split_segments(segs: list[DialogueLine]) -> list[DialogueLine]:
-    """Split every segment; order preserved."""
+def _boundary_split(
+    seg: DialogueLine,
+    pieces: list[str],
+    boundaries: list[int],
+) -> list[DialogueLine]:
+    """Split pieces across VAD pause boundaries.
+
+    Groups sentence pieces into chunks and snaps each chunk's end time to
+    the corresponding VAD pause boundary. When more pieces than boundaries,
+    the first ``N`` pieces share the first boundary; the last ``M`` pieces
+    share the last boundary; middle pieces get their own boundary.
+
+    This is a practical heuristic: VAD catches natural pause points, but
+    there may be more sentence boundaries than silence gaps (when the
+    speaker doesn't pause between sentences).
+    """
+    num_boundaries = len(boundaries)
+    num_pieces = len(pieces)
+
+    # Distribute pieces across the available boundaries.
+    # ─── Strategy ──────────────────────────────────────────────────────
+    #   pieces:  [A] [B] [C] [D] [E]      boundaries: [t1] [t2]
+    #   Groups:  {A, B, C}  |  {D}  |  {E}
+    #              ^-- t1       ^-- t2     ^-- seg.end_ms
+    # ────────────────────────────────────────────────────────────────────
+    # Group assignments: first pieces share first boundary, middle gets own,
+    # last pieces share last boundary.
+    if num_pieces <= num_boundaries:
+        # Each piece gets its own boundary (or share for extras).
+        return _one_per_piece(seg, pieces, boundaries)
+
+    # More pieces than boundaries: distribute.
+    # pieces per boundary, distributing the remainder.
+    base = num_pieces // (num_boundaries + 1)
+    rem = num_pieces % (num_boundaries + 1)
+
+    groups: list[list[str]] = []
+    idx = 0
+    for b in range(num_boundaries + 1):
+        count = base + (1 if b < rem else 0)
+        groups.append(pieces[idx : idx + count])
+        idx += count
+
+    out: list[DialogueLine] = []
+    cursor = seg.start_ms
+    for i, group in enumerate(groups):
+        text = ' '.join(group).strip()
+        if not text:
+            continue
+        if i < len(boundaries):
+            end = boundaries[i]
+        else:
+            end = seg.end_ms
+        out.append(DialogueLine(cursor, end, text))
+        cursor = end
+    return out
+
+
+def _one_per_piece(
+    seg: DialogueLine,
+    pieces: list[str],
+    boundaries: list[int],
+) -> list[DialogueLine]:
+    """Each piece gets one boundary, with extras sharing the last."""
+    out: list[DialogueLine] = []
+    cursor = seg.start_ms
+    for i, piece in enumerate(pieces):
+        if i < len(boundaries):
+            end = boundaries[i]
+        else:
+            end = seg.end_ms
+        out.append(DialogueLine(cursor, end, piece))
+        cursor = end
+    return out
+
+
+def split_segments(
+    segs: list[DialogueLine],
+    boundaries: list[int] | None = None,
+) -> list[DialogueLine]:
+    """Split every segment; order preserved.
+
+    When ``boundaries`` (VAD-detected pause timestamps) are provided, they
+    are used across all segments — each segment picks only the boundaries
+    that fall within its time span.
+    """
     out: list[DialogueLine] = []
     for seg in segs:
-        out.extend(split_segment(seg))
+        out.extend(split_segment(seg, boundaries))
     return out

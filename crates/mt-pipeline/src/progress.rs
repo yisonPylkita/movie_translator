@@ -98,11 +98,34 @@ pub enum ProgressEvent {
         lines_total: u64,
         model: String,
     },
+    /// ASR transcription progress (emitted from the Python backend when a
+    /// progress callback is wired). ``percent`` is 0-100.
+    ///
+    /// TODO: wire progress callback through the PyO3 bridge so this event
+    /// fires during long Whisper transcriptions. See `transcription/__init__.py`.
+    TranscribeProgress {
+        path: PathBuf,
+        percent: u8,
+    },
     /// A free-form log line (forwarded from tracing or Python stderr).
     Log {
         level: String,
         target: String,
         message: String,
+    },
+    /// Emitted when the GPU worker starts processing a job.
+    GpuJobStarted {
+        /// Human-readable job type: "translate", "ocr_pgs", "ocr_burned_in",
+        /// "inpaint", "hardsub_ocr_clean", "transcribe".
+        job_type: String,
+        path: PathBuf,
+    },
+    /// Emitted when the GPU worker finishes a job.
+    GpuJobFinished {
+        job_type: String,
+        path: PathBuf,
+        elapsed_ms: u64,
+        success: bool,
     },
     FileFinished {
         path: PathBuf,
@@ -186,7 +209,9 @@ mod tests {
             Stage::Identify.label(),
             Stage::ExtractRef.label(),
             Stage::Fetch.label(),
+            Stage::HardsubOcr.label(),
             Stage::ExtractEnglish.label(),
+            Stage::Transcribe.label(),
             Stage::Translate.label(),
             Stage::CreateTracks.label(),
             Stage::Mux.label(),

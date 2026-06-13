@@ -36,6 +36,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::error::{PipelineError, Result};
 use crate::gpu::{DirectGpuExecutor, GpuExecutor};
+use crate::progress::{ProgressEvent, ProgressSender};
 
 /// A unit of GPU work plus the channel to return its result.
 ///
@@ -91,6 +92,8 @@ pub struct GpuWorker {
     handle: GpuWorkerHandle,
     task: tokio::task::JoinHandle<()>,
     stop: oneshot::Sender<()>,
+    #[allow(dead_code)]
+    progress: ProgressSender,
 }
 
 impl GpuWorker {
@@ -98,6 +101,69 @@ impl GpuWorker {
     /// (the real `mt_ml` embedded-Python calls).
     pub fn spawn() -> Self {
         Self::spawn_with(DirectGpuExecutor::new())
+    }
+
+    /// Spawn a worker with progress events.
+    ///
+    /// Like [`spawn_with`] but passes the real progress sender into the worker
+    /// task so GPU job started/finished events are emitted. The progress sender
+    /// is captured inside the tokio task, NOT set after the task is already
+    /// running (the bug `spawn_with` → overwrite approach would cause).
+    pub fn spawn_with_progress(progress: ProgressSender) -> Self {
+        let executor = DirectGpuExecutor::new();
+        Self::spawn_executor_with_progress(executor, progress)
+    }
+
+    fn spawn_executor_with_progress<E>(executor: E, progress: ProgressSender) -> Self
+    where
+        E: GpuExecutor + Send + Sync + 'static,
+    {
+        let (tx, mut rx) = mpsc::unbounded_channel::<Job>();
+        let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
+        let executor = Arc::new(executor);
+        let progress_for_handle = progress.clone();
+
+        let task = {
+            let progress = progress.clone();
+            tokio::spawn(async move {
+                loop {
+                    let job = tokio::select! {
+                        biased;
+                        maybe = rx.recv() => match maybe {
+                            Some(job) => job,
+                            None => break,
+                        },
+                        _ = &mut stop_rx => {
+                            while let Ok(job) = rx.try_recv() {
+                                let exec = executor.clone();
+                                let prog = progress.clone();
+                                let _ = tokio::task::spawn_blocking(move || {
+                                    run_job_with_progress(exec.as_ref(), job, &prog)
+                                })
+                                .await;
+                            }
+                            break;
+                        }
+                    };
+                    let exec = executor.clone();
+                    let prog = progress.clone();
+                    let _ = tokio::task::spawn_blocking(move || {
+                        run_job_with_progress(exec.as_ref(), job, &prog)
+                    })
+                    .await;
+                }
+            })
+        };
+
+        GpuWorker {
+            handle: GpuWorkerHandle {
+                tx,
+                progress: progress_for_handle,
+            },
+            task,
+            stop: stop_tx,
+            progress,
+        }
     }
 
     /// Spawn a worker executing jobs via the supplied (sync) [`GpuExecutor`].
@@ -112,42 +178,56 @@ impl GpuWorker {
         let (tx, mut rx) = mpsc::unbounded_channel::<Job>();
         let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
         let executor = Arc::new(executor);
+        let progress = ProgressSender::disabled();
+        let progress_for_handle = progress.clone();
 
-        let task = tokio::spawn(async move {
-            // FIFO: pull one job, run it to completion, then pull the next.
-            // Exit when the channel closes (all senders dropped) OR an explicit
-            // stop signal arrives — after which any already-queued jobs are
-            // drained so in-flight submissions still get a reply.
-            loop {
-                let job = tokio::select! {
-                    biased;
-                    maybe = rx.recv() => match maybe {
-                        Some(job) => job,
-                        None => break, // all handles dropped
-                    },
-                    _ = &mut stop_rx => {
-                        // Drain whatever is already queued, then stop.
-                        while let Ok(job) = rx.try_recv() {
-                            let exec = executor.clone();
-                            let _ = tokio::task::spawn_blocking(move || {
-                                run_job(exec.as_ref(), job)
-                            })
-                            .await;
+        let task = {
+            let progress = progress.clone();
+            tokio::spawn(async move {
+                // FIFO: pull one job, run it to completion, then pull the next.
+                // Exit when the channel closes (all senders dropped) OR an explicit
+                // stop signal arrives — after which any already-queued jobs are
+                // drained so in-flight submissions still get a reply.
+                loop {
+                    let job = tokio::select! {
+                        biased;
+                        maybe = rx.recv() => match maybe {
+                            Some(job) => job,
+                            None => break, // all handles dropped
+                        },
+                        _ = &mut stop_rx => {
+                            // Drain whatever is already queued, then stop.
+                            while let Ok(job) = rx.try_recv() {
+                                let exec = executor.clone();
+                                let prog = progress.clone();
+                                let _ = tokio::task::spawn_blocking(move || {
+                                    run_job_with_progress(exec.as_ref(), job, &prog)
+                                })
+                                .await;
+                            }
+                            break;
                         }
-                        break;
-                    }
-                };
-                let exec = executor.clone();
-                // spawn_blocking because the underlying `mt_ml` calls are
-                // synchronous PyO3 (GIL-acquiring) calls into embedded CPython.
-                let _ = tokio::task::spawn_blocking(move || run_job(exec.as_ref(), job)).await;
-            }
-        });
+                    };
+                    let exec = executor.clone();
+                    let prog = progress.clone();
+                    // spawn_blocking because the underlying `mt_ml` calls are
+                    // synchronous PyO3 (GIL-acquiring) calls into embedded CPython.
+                    let _ = tokio::task::spawn_blocking(move || {
+                        run_job_with_progress(exec.as_ref(), job, &prog)
+                    })
+                    .await;
+                }
+            })
+        };
 
         GpuWorker {
-            handle: GpuWorkerHandle { tx },
+            handle: GpuWorkerHandle {
+                tx,
+                progress: progress_for_handle,
+            },
             task,
             stop: stop_tx,
+            progress,
         }
     }
 
@@ -171,10 +251,32 @@ impl GpuWorker {
 }
 
 /// Run a single job synchronously and send the result back.
+#[allow(dead_code)]
 fn run_job(executor: &dyn GpuExecutor, job: Job) {
-    match job {
+    run_job_impl(executor, job, None);
+}
+
+/// Run a single job with progress events.
+fn run_job_with_progress(executor: &dyn GpuExecutor, job: Job, progress: &ProgressSender) {
+    run_job_impl(executor, job, Some(progress));
+}
+
+fn run_job_impl(executor: &dyn GpuExecutor, job: Job, progress: Option<&ProgressSender>) {
+    let started = std::time::Instant::now();
+    let (job_type, path) = job_describe(&job);
+
+    // Emit GpuJobStarted
+    if let Some(p) = progress {
+        p.send(ProgressEvent::GpuJobStarted {
+            job_type: job_type.clone(),
+            path: path.clone(),
+        });
+    }
+
+    let success = match job {
         Job::Translate { req, reply } => {
-            let _ = reply.send(executor.translate(&req));
+            let r = executor.translate(&req);
+            reply.send(r).is_ok()
         }
         Job::OcrPgs {
             video,
@@ -182,7 +284,8 @@ fn run_job(executor: &dyn GpuExecutor, job: Job) {
             work_dir,
             reply,
         } => {
-            let _ = reply.send(executor.ocr_pgs(&video, track_index, &work_dir));
+            let r = executor.ocr_pgs(&video, track_index, &work_dir);
+            reply.send(r).is_ok()
         }
         Job::OcrBurnedIn {
             video,
@@ -191,7 +294,8 @@ fn run_job(executor: &dyn GpuExecutor, job: Job) {
             fps,
             reply,
         } => {
-            let _ = reply.send(executor.ocr_burned_in(&video, &output_dir, crop_ratio, fps));
+            let r = executor.ocr_burned_in(&video, &output_dir, crop_ratio, fps);
+            reply.send(r).is_ok()
         }
         Job::Inpaint {
             video,
@@ -201,7 +305,8 @@ fn run_job(executor: &dyn GpuExecutor, job: Job) {
             ocr_results,
             reply,
         } => {
-            let _ = reply.send(executor.inpaint(&video, &output, &device, &backend, &ocr_results));
+            let r = executor.inpaint(&video, &output, &device, &backend, &ocr_results);
+            reply.send(r).is_ok()
         }
         Job::HardsubOcrClean {
             video,
@@ -209,7 +314,8 @@ fn run_job(executor: &dyn GpuExecutor, job: Job) {
             language,
             reply,
         } => {
-            let _ = reply.send(executor.hardsub_ocr_clean(&video, &out_dir, &language));
+            let r = executor.hardsub_ocr_clean(&video, &out_dir, &language);
+            reply.send(r).is_ok()
         }
         Job::Transcribe {
             video,
@@ -218,8 +324,33 @@ fn run_job(executor: &dyn GpuExecutor, job: Job) {
             engine,
             reply,
         } => {
-            let _ = reply.send(executor.transcribe(&video, &output_dir, &language, &engine));
+            let r = executor.transcribe(&video, &output_dir, &language, &engine);
+            reply.send(r).is_ok()
         }
+    };
+
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+
+    // Emit GpuJobFinished
+    if let Some(p) = progress {
+        p.send(ProgressEvent::GpuJobFinished {
+            job_type,
+            path,
+            elapsed_ms,
+            success,
+        });
+    }
+}
+
+/// Extract a human-readable job type and file path from a Job for event emission.
+fn job_describe(job: &Job) -> (String, PathBuf) {
+    match job {
+        Job::Translate { .. } => ("translate".to_string(), PathBuf::new()),
+        Job::OcrPgs { video, .. } => ("ocr_pgs".to_string(), video.clone()),
+        Job::OcrBurnedIn { video, .. } => ("ocr_burned_in".to_string(), video.clone()),
+        Job::Inpaint { video, .. } => ("inpaint".to_string(), video.clone()),
+        Job::HardsubOcrClean { video, .. } => ("hardsub_ocr".to_string(), video.clone()),
+        Job::Transcribe { video, .. } => ("transcribe".to_string(), video.clone()),
     }
 }
 
@@ -233,6 +364,8 @@ const WORKER_GONE: &str = "GPU worker stopped before completing the task";
 #[derive(Clone)]
 pub struct GpuWorkerHandle {
     tx: mpsc::UnboundedSender<Job>,
+    #[allow(dead_code)]
+    progress: ProgressSender,
 }
 
 impl GpuWorkerHandle {

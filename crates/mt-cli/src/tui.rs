@@ -1,30 +1,37 @@
-//! Ratatui-driven progress UI consuming `mt_pipeline::ProgressEvent` events.
+//! Ratatui-driven progress dashboard consuming `mt_pipeline::ProgressEvent` events.
+//!
+//! # Dashboard layout
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────┐
+//! │ Status Bar (title · files · GPU · elapsed)      │
+//! ├────────────────────────┬────────────────────────┤
+//! │                        │ GPU Worker             │
+//! │  File Progress Table   │ ▸ translate            │
+//! │  (animated gauges,     │ ████████░░ 80%         │
+//! │   per-stage colors)    │ Queue: 2  Last: 1.2s   │
+//! │                        │                        │
+//! ├────────────────────────┴────────────────────────┤
+//! │ Log Pane (scrollable, color-coded by level)     │
+//! ├─────────────────────────────────────────────────┤
+//! │ q/Ctrl-C: quit  │ j/k: scroll logs  │ Tab: pane │
+//! └─────────────────────────────────────────────────┘
+//! ```
 //!
 //! Two operating modes:
 //!
 //! * **Interactive TUI** (when stdout is a TTY): enters the alternate screen,
-//!   draws a per-file table with status icons, current stage, OCR/translate
-//!   sub-progress, plus a bottom log pane fed by tracing + Python stderr. Tears
-//!   down cleanly on drop, on `q`/`Ctrl-C`, or on panic via [`set_hook`].
+//!   draws the dashboard layout above. Tears down cleanly on drop, on `q`/`Ctrl-C`,
+//!   or on panic via [`set_hook`].
 //!
 //! * **Plain mode** (CI, pipes, redirected stdout): no alternate screen, no raw
-//!   mode — just prints one line per file lifecycle event. Same event stream,
-//!   different sink.
+//!   mode — just prints one line per file lifecycle event.
 //!
 //! The renderer runs on a dedicated OS thread, NOT a tokio task: ratatui's
 //! crossterm backend uses blocking poll() and we want the rendering to survive
-//! tokio runtime stalls (the pipeline's `spawn_blocking` GPU work can park
-//! every worker thread). The pipeline's `mpsc::UnboundedSender<ProgressEvent>`
-//! crosses the thread boundary cheaply.
-//!
-//! # Tracing layer
-//!
-//! [`TuiTracingLayer`] is a [`tracing_subscriber::Layer`] that drains
-//! tracing events into the same progress channel as `ProgressEvent::Log`. The
-//! TUI shows the most recent N entries in a scrollable log pane. The layer is
-//! always installed; in plain mode the log events still print to stderr via the
-//! sibling `fmt` layer, so behaviour for unsuspecting users is unchanged.
+//! tokio runtime stalls.
 
+use std::collections::VecDeque;
 use std::io::{self, IsTerminal, Stdout, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -41,13 +48,102 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Gauge, Paragraph, Row, Table, Wrap};
+use ratatui::widgets::{
+    Block, Borders, Cell, Gauge, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
+    Table, Wrap,
+};
 use ratatui::Terminal;
 use tokio::sync::mpsc;
 use tracing::field::Visit;
 use tracing::Subscriber;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::Layer;
+
+// ── Colour palette ────────────────────────────────────────────────
+
+/// Each pipeline stage gets a distinct foreground colour so users can
+/// visually scan the file table.
+fn stage_color(stage: Stage) -> Color {
+    match stage {
+        Stage::Identify => Color::Cyan,
+        Stage::ExtractRef => Color::Blue,
+        Stage::Fetch => Color::Magenta,
+        Stage::HardsubOcr => Color::LightMagenta,
+        Stage::ExtractEnglish => Color::LightBlue,
+        Stage::Transcribe => Color::LightYellow,
+        Stage::Translate => Color::Green,
+        Stage::CreateTracks => Color::Yellow,
+        Stage::Mux => Color::Red,
+    }
+}
+
+/// A subset of the 216‑colour cube and terminal‑safe colours used for
+/// GPU job types in the worker panel.
+fn gpu_job_color(job_type: &str) -> Color {
+    match job_type {
+        "translate" => Color::Green,
+        "ocr_pgs" => Color::Blue,
+        "ocr_burned_in" => Color::LightBlue,
+        "inpaint" => Color::Red,
+        "hardsub_ocr" => Color::LightMagenta,
+        "transcribe" => Color::LightYellow,
+        _ => Color::DarkGray,
+    }
+}
+
+fn log_level_color(level: &str) -> Color {
+    match level {
+        "ERROR" => Color::Red,
+        "WARN" => Color::Yellow,
+        "INFO" => Color::White,
+        "DEBUG" => Color::DarkGray,
+        "TRACE" => Color::DarkGray,
+        _ => Color::White,
+    }
+}
+
+// ── Animation (smooth progress interpolation) ─────────────────────
+
+/// Smoothly interpolates a progress value towards its target each frame,
+/// giving animated gauge movement instead of instantaneous jumps.
+#[derive(Debug, Clone)]
+struct SmoothProgress {
+    current: f64,
+    target: f64,
+    /// How much of the gap we close per tick (0.1 = 10%).
+    lerp_factor: f64,
+}
+
+impl SmoothProgress {
+    fn new() -> Self {
+        Self {
+            current: 0.0,
+            target: 0.0,
+            lerp_factor: 0.25,
+        }
+    }
+
+    fn set_target(&mut self, target: f64) {
+        self.target = target;
+    }
+
+    /// Advance the animation by one frame, returning the current ratio.
+    fn tick(&mut self) -> f64 {
+        let gap = self.target - self.current;
+        if gap.abs() < 0.005 {
+            self.current = self.target;
+        } else {
+            self.current += gap * self.lerp_factor;
+        }
+        self.current
+    }
+
+    fn ratio(&self) -> f64 {
+        self.current
+    }
+}
+
+// ── Data types ────────────────────────────────────────────────────
 
 /// Status icon + colour for the file table.
 fn status_glyph(s: FileViewStatus) -> (&'static str, Color) {
@@ -59,19 +155,6 @@ fn status_glyph(s: FileViewStatus) -> (&'static str, Color) {
         FileViewStatus::SkippedNoSubs => ("⏭", Color::Yellow),
         FileViewStatus::Failed => ("✗", Color::Red),
     }
-}
-
-/// One row's worth of UI state.
-#[derive(Debug, Clone)]
-struct FileView {
-    path: PathBuf,
-    status: FileViewStatus,
-    stage: Option<Stage>,
-    /// Per-stage progress (e.g. OCR n/N, translate lines/total).
-    sub_progress: Option<(u64, u64)>,
-    sub_label: Option<String>,
-    /// True once we've seen FileFinished for this row.
-    finished: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,22 +178,95 @@ impl From<FinishStatus> for FileViewStatus {
     }
 }
 
-/// Aggregate UI state shared between the TUI thread and the (single) event
-/// consumer that owns it. Owned only by the renderer thread — events are
-/// pushed in via the mpsc channel.
-#[derive(Debug, Default)]
-struct UiState {
-    files: Vec<FileView>,
-    log_lines: Vec<String>,
-    /// Newest at the end; trimmed to MAX_LOG_LINES.
-    started_at: Option<Instant>,
-    /// Path of the python stderr capture file, shown in the log header.
-    python_log_path: Option<PathBuf>,
+#[derive(Debug, Clone)]
+struct FileView {
+    path: PathBuf,
+    status: FileViewStatus,
+    stage: Option<Stage>,
+    sub_progress: Option<(u64, u64)>,
+    sub_label: Option<String>,
+    finished: bool,
+    /// Animated gauge driven by this file's sub_progress.
+    progress_bar: SmoothProgress,
 }
 
-const MAX_LOG_LINES: usize = 500;
-const LOG_TAIL_RENDER: usize = 100;
+#[derive(Debug, Clone)]
+struct LogLine {
+    level: String,
+    target: String,
+    message: String,
+}
 
+#[derive(Debug, Clone)]
+struct GpuJobInfo {
+    job_type: String,
+    path: PathBuf,
+    elapsed_ms: Option<u64>,
+    success: Option<bool>,
+}
+
+#[derive(Debug, Clone)]
+struct GpuStatus {
+    current_job: Option<GpuJobInfo>,
+    /// Last few completed jobs (newest first).
+    last_jobs: VecDeque<GpuJobInfo>,
+    /// Track whether a job animation should show a "working" spinner.
+    job_spinner_frame: u8,
+    /// Animated fill for the GPU job gauge (represents "elapsed time" visually).
+    progress: SmoothProgress,
+}
+
+impl GpuStatus {
+    fn new() -> Self {
+        Self {
+            current_job: None,
+            last_jobs: VecDeque::with_capacity(8),
+            job_spinner_frame: 0,
+            progress: SmoothProgress::new(),
+        }
+    }
+
+    fn push_finished(&mut self, info: GpuJobInfo) {
+        if self.last_jobs.len() >= 8 {
+            self.last_jobs.pop_back();
+        }
+        self.last_jobs.push_front(info);
+    }
+
+    fn tick_animation(&mut self) {
+        self.job_spinner_frame = self.job_spinner_frame.wrapping_add(1);
+        if self.current_job.is_some() {
+            // Oscillate the gauge to show "in progress" visually.
+            let phase = (self.job_spinner_frame as f64 * 0.1).sin().abs();
+            self.progress.set_target(phase);
+        } else {
+            self.progress.set_target(0.0);
+        }
+    }
+}
+
+/// Which panel has keyboard focus for scrollable content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FocusPane {
+    Files,
+    Logs,
+}
+
+// ── UI state ──────────────────────────────────────────────────────
+
+#[derive(Debug)]
+struct UiState {
+    files: Vec<FileView>,
+    log_lines: Vec<LogLine>,
+    started_at: Option<Instant>,
+    python_log_path: Option<PathBuf>,
+    gpu: GpuStatus,
+    /// Scroll offset for the log pane (0 = newest, grows upward).
+    log_scroll: usize,
+    focus: FocusPane,
+}
+
+const MAX_LOG_LINES: usize = 1000;
 impl UiState {
     fn upsert_file(&mut self, path: &PathBuf) -> &mut FileView {
         if let Some(idx) = self.files.iter().position(|f| &f.path == path) {
@@ -123,12 +279,17 @@ impl UiState {
             sub_progress: None,
             sub_label: None,
             finished: false,
+            progress_bar: SmoothProgress::new(),
         });
         self.files.last_mut().unwrap()
     }
 
-    fn push_log(&mut self, line: String) {
-        self.log_lines.push(line);
+    fn push_log(&mut self, level: String, target: String, message: String) {
+        self.log_lines.push(LogLine {
+            level,
+            target,
+            message,
+        });
         if self.log_lines.len() > MAX_LOG_LINES {
             let drop = self.log_lines.len() - MAX_LOG_LINES;
             self.log_lines.drain(..drop);
@@ -156,7 +317,6 @@ impl UiState {
                 let f = self.upsert_file(&path);
                 f.status = FileViewStatus::Active;
                 f.stage = Some(stage);
-                // Clear sub-progress between stages.
                 f.sub_progress = None;
                 f.sub_label = None;
             }
@@ -164,6 +324,9 @@ impl UiState {
                 let f = self.upsert_file(&path);
                 f.sub_progress = Some((done, total));
                 f.sub_label = Some(format!("OCR {done}/{total}"));
+                if total > 0 {
+                    f.progress_bar.set_target(done as f64 / total as f64);
+                }
             }
             ProgressEvent::FetchResult {
                 path,
@@ -172,6 +335,10 @@ impl UiState {
             } => {
                 let f = self.upsert_file(&path);
                 f.sub_label = Some(format!("fetch: {downloaded}/{candidates_found} dl'd"));
+                if candidates_found > 0 {
+                    f.progress_bar
+                        .set_target(downloaded as f64 / candidates_found as f64);
+                }
             }
             ProgressEvent::TranslateBatch {
                 path,
@@ -182,14 +349,46 @@ impl UiState {
                 let f = self.upsert_file(&path);
                 f.sub_progress = Some((lines_done, lines_total));
                 f.sub_label = Some(format!("translate ({model}) {lines_done}/{lines_total}"));
+                if lines_total > 0 {
+                    f.progress_bar
+                        .set_target(lines_done as f64 / lines_total as f64);
+                }
+            }
+            ProgressEvent::TranscribeProgress { path, percent } => {
+                let f = self.upsert_file(&path);
+                f.sub_label = Some(format!("transcribing… {percent}%"));
+                f.progress_bar.set_target(percent as f64 / 100.0);
             }
             ProgressEvent::Log {
                 level,
                 target,
                 message,
             } => {
-                let line = format!("[{level} {target}] {message}");
-                self.push_log(line);
+                self.push_log(level, target, message);
+            }
+            ProgressEvent::GpuJobStarted { job_type, path } => {
+                self.gpu.current_job = Some(GpuJobInfo {
+                    job_type,
+                    path,
+                    elapsed_ms: None,
+                    success: None,
+                });
+                self.gpu.progress = SmoothProgress::new();
+            }
+            ProgressEvent::GpuJobFinished {
+                job_type,
+                path,
+                elapsed_ms,
+                success,
+            } => {
+                let info = GpuJobInfo {
+                    job_type,
+                    path,
+                    elapsed_ms: Some(elapsed_ms),
+                    success: Some(success),
+                };
+                self.gpu.current_job = None;
+                self.gpu.push_finished(info);
             }
             ProgressEvent::FileFinished { path, status } => {
                 let f = self.upsert_file(&path);
@@ -198,16 +397,23 @@ impl UiState {
                 f.sub_progress = None;
                 f.sub_label = None;
                 f.finished = true;
+                f.progress_bar.set_target(1.0);
             }
         }
     }
+
+    /// Advance frame‑based animations (smooth progress, spinner).
+    fn tick_animations(&mut self) {
+        for f in &mut self.files {
+            f.progress_bar.tick();
+        }
+        self.gpu.tick_animation();
+    }
 }
 
+// ── Tracing layer ─────────────────────────────────────────────────
+
 /// Tracing layer that forwards events into the TUI's progress channel.
-///
-/// Newly logged events become `ProgressEvent::Log { level, target, message }`,
-/// which the TUI accumulates into its log pane. When the channel is closed
-/// (TUI torn down), events are dropped silently.
 pub struct TuiTracingLayer {
     sender: ProgressSender,
 }
@@ -218,8 +424,6 @@ impl TuiTracingLayer {
     }
 }
 
-/// Visitor pulling the most useful fields off a tracing event into a string.
-/// We surface the `message` field; other fields are appended as `k=v`.
 struct MessageVisitor {
     message: String,
     extras: String,
@@ -286,21 +490,15 @@ impl<S: Subscriber> Layer<S> for TuiTracingLayer {
     }
 }
 
-/// Capture handle for Python stderr. The init script in `mt_ml::backend`
-/// redirects Python's `sys.stderr` to a file under `.translate_temp/`; this
-/// type holds the path and tails the file into the log pane.
-///
-/// The capture file is created on demand at the path returned by
-/// [`python_stderr_capture_path`]. We do NOT manage Python's interpreter
-/// directly here — `mt_ml::backend::init_python_runtime` does that on first
-/// use of the embedded interpreter.
+// ── Python stderr capture path ────────────────────────────────────
+
 pub fn python_stderr_capture_path(root: &std::path::Path) -> PathBuf {
     root.join(".translate_temp").join("python.stderr.log")
 }
 
-/// A guard ensuring the terminal is restored regardless of how the program exits.
+// ── Terminal guard ────────────────────────────────────────────────
+
 pub struct TerminalGuard {
-    /// `None` after `restore`, which is also called from Drop.
     inner: Option<Terminal<CrosstermBackend<Stdout>>>,
     raw_enabled: bool,
 }
@@ -324,7 +522,6 @@ impl TerminalGuard {
     }
 
     pub fn restore(&mut self) {
-        // Idempotent — also safe to call from Drop.
         if let Some(mut terminal) = self.inner.take() {
             let _ = terminal.show_cursor();
         }
@@ -342,11 +539,8 @@ impl Drop for TerminalGuard {
     }
 }
 
-/// Public entry: spawn a TUI consumer thread on the given event receiver.
-///
-/// Returns a handle that the caller joins after `run_all_with_progress` returns
-/// (and the pipeline's sender is dropped). The TUI also exits early on `q` or
-/// Ctrl-C; in that case `quit_requested()` returns `true`.
+// ── Public API ────────────────────────────────────────────────────
+
 pub struct TuiHandle {
     join: Option<JoinHandle<UiState>>,
     quit_flag: Arc<Mutex<bool>>,
@@ -354,8 +548,6 @@ pub struct TuiHandle {
 }
 
 impl TuiHandle {
-    /// Wait for the renderer thread to finish (the sender must be dropped or
-    /// the user must press `q`). Returns the final `UiState` for summary use.
     pub fn join(mut self) -> Option<JoinedTuiState> {
         let st = self.join.take()?.join().ok()?;
         Some(JoinedTuiState {
@@ -373,25 +565,22 @@ impl TuiHandle {
     }
 }
 
-/// Final state harvested from the TUI on join, used to print the summary
-/// after teardown.
 pub struct JoinedTuiState {
     pub files: Vec<(PathBuf, FileViewStatus)>,
     pub python_log_path: PathBuf,
 }
 
 impl JoinedTuiState {
+    #[allow(dead_code)]
     pub fn was_failure(&self, status: FileViewStatus) -> bool {
         matches!(status, FileViewStatus::Failed)
     }
 }
 
-/// Public glyph for printing the JoinedTuiState (used by the summary printer).
 pub fn finish_glyph(s: FileViewStatus) -> &'static str {
     status_glyph(s).0
 }
 
-/// Public-readable name for `FileViewStatus`.
 pub fn status_name(s: FileViewStatus) -> &'static str {
     match s {
         FileViewStatus::Queued => "queued",
@@ -403,13 +592,11 @@ pub fn status_name(s: FileViewStatus) -> &'static str {
     }
 }
 
-/// True if stdout looks like a real terminal (TUI is appropriate).
 pub fn stdout_is_tty() -> bool {
     io::stdout().is_terminal()
 }
 
-/// Spawn the renderer thread. The renderer pulls events from `rx`; when `rx`
-/// is closed (sender dropped) the thread exits cleanly.
+/// Spawn the renderer thread.
 pub fn spawn_tui(
     mut rx: mpsc::UnboundedReceiver<ProgressEvent>,
     python_log_path: PathBuf,
@@ -436,7 +623,8 @@ pub fn spawn_tui(
     }
 }
 
-/// Interactive renderer loop.
+// ── Interactive renderer ─────────────────────────────────────────
+
 fn run_interactive(
     rx: &mut mpsc::UnboundedReceiver<ProgressEvent>,
     quit_flag: Arc<Mutex<bool>>,
@@ -444,12 +632,14 @@ fn run_interactive(
 ) -> UiState {
     let mut state = UiState {
         python_log_path: Some(python_log_path),
-        ..UiState::default()
+        files: Vec::new(),
+        log_lines: Vec::new(),
+        started_at: Some(Instant::now()),
+        gpu: GpuStatus::new(),
+        log_scroll: 0,
+        focus: FocusPane::Logs,
     };
-    state.started_at = Some(Instant::now());
 
-    // Best-effort terminal setup. If we can't enter raw mode (no TTY in
-    // practice), degrade to the plain renderer.
     let guard = match TerminalGuard::enter() {
         Ok(g) => g,
         Err(e) => {
@@ -457,36 +647,83 @@ fn run_interactive(
             return run_plain(rx);
         }
     };
-    // Move into a Mutex so the panic hook can restore the terminal too.
     let guard = Arc::new(Mutex::new(guard));
     install_panic_hook(guard.clone());
 
-    let tick = Duration::from_millis(100);
+    let tick = Duration::from_millis(50); // 20 FPS animation
     let mut last_render = Instant::now() - tick;
 
     loop {
-        // Drain whatever events are available (non-blocking).
+        // Drain events (non-blocking).
         let mut received_any = false;
         while let Ok(ev) = rx.try_recv() {
             state.apply(ev);
             received_any = true;
         }
 
-        // Check for keypresses (non-blocking poll, 50ms).
-        if event::poll(Duration::from_millis(50)).unwrap_or(false) {
+        // Advance frame animations regardless of events (smooth bars/spinner).
+        state.tick_animations();
+
+        // Key input (non-blocking poll, 30ms).
+        let poll_timeout = if received_any || last_render.elapsed() >= tick {
+            Duration::ZERO
+        } else {
+            tick.saturating_sub(last_render.elapsed())
+        };
+        if event::poll(poll_timeout).unwrap_or(false) {
             if let Ok(Event::Key(k)) = event::read() {
-                if k.kind == KeyEventKind::Press
-                    && (k.code == KeyCode::Char('q')
-                        || (k.code == KeyCode::Char('c')
-                            && k.modifiers.contains(KeyModifiers::CONTROL)))
-                {
-                    *quit_flag.lock().unwrap() = true;
-                    break;
+                if k.kind == KeyEventKind::Press {
+                    let quit = match k.code {
+                        KeyCode::Char('q') => true,
+                        KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => true,
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            state.log_scroll = state.log_scroll.saturating_add(1);
+                            state.focus = FocusPane::Logs;
+                            false
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            state.log_scroll = state.log_scroll.saturating_sub(1);
+                            state.focus = FocusPane::Logs;
+                            false
+                        }
+                        KeyCode::PageDown => {
+                            state.log_scroll = state.log_scroll.saturating_add(20);
+                            state.focus = FocusPane::Logs;
+                            false
+                        }
+                        KeyCode::PageUp => {
+                            state.log_scroll = state.log_scroll.saturating_sub(20);
+                            state.focus = FocusPane::Logs;
+                            false
+                        }
+                        KeyCode::End => {
+                            state.log_scroll = usize::MAX;
+                            state.focus = FocusPane::Logs;
+                            false
+                        }
+                        KeyCode::Home => {
+                            state.log_scroll = 0;
+                            state.focus = FocusPane::Logs;
+                            false
+                        }
+                        KeyCode::Tab | KeyCode::Char('l') => {
+                            state.focus = match state.focus {
+                                FocusPane::Files => FocusPane::Logs,
+                                FocusPane::Logs => FocusPane::Files,
+                            };
+                            false
+                        }
+                        _ => false,
+                    };
+                    if quit {
+                        *quit_flag.lock().unwrap() = true;
+                        break;
+                    }
                 }
             }
         }
 
-        // Render at ~10 Hz, plus immediately after an event burst.
+        // Render at ~20 FPS, plus immediately after event bursts.
         if received_any || last_render.elapsed() >= tick {
             let mut g = guard.lock().unwrap();
             if let Some(term) = g.terminal() {
@@ -496,9 +733,9 @@ fn run_interactive(
             last_render = Instant::now();
         }
 
-        // Channel closed AND no events queued → pipeline is done, exit.
+        // Channel closed + no events → pipeline done.
         if rx.is_closed() && rx.is_empty() {
-            // Final render so the closing screen reflects FileFinished states.
+            // Final render so we see the last state.
             let mut g = guard.lock().unwrap();
             if let Some(term) = g.terminal() {
                 let _ = term.draw(|f| render(f, &state));
@@ -508,8 +745,6 @@ fn run_interactive(
         }
     }
 
-    // Tear down — explicit so it happens before we return state (in case any
-    // caller wants to print right after).
     if let Ok(mut g) = guard.lock() {
         g.restore();
     }
@@ -526,9 +761,18 @@ fn install_panic_hook(guard: Arc<Mutex<TerminalGuard>>) {
     }));
 }
 
-/// Plain-mode renderer: one line per FileStarted / FileFinished, no TUI.
+// ── Plain mode ────────────────────────────────────────────────────
+
 fn run_plain(rx: &mut mpsc::UnboundedReceiver<ProgressEvent>) -> UiState {
-    let mut state = UiState::default();
+    let mut state = UiState {
+        files: Vec::new(),
+        log_lines: Vec::new(),
+        started_at: Some(Instant::now()),
+        gpu: GpuStatus::new(),
+        log_scroll: 0,
+        focus: FocusPane::Logs,
+        python_log_path: None,
+    };
     while let Some(ev) = rx.blocking_recv() {
         match &ev {
             ProgressEvent::FileStarted { path } => {
@@ -555,23 +799,38 @@ fn run_plain(rx: &mut mpsc::UnboundedReceiver<ProgressEvent>) -> UiState {
     state
 }
 
+// ── Rendering ─────────────────────────────────────────────────────
+
 fn render(frame: &mut ratatui::Frame<'_>, state: &UiState) {
     let area = frame.area();
+
+    // ── Layout ────────────────────────────────────────────────────
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Min(8),
-            Constraint::Percentage(35),
-            Constraint::Length(1),
+            Constraint::Length(3),      // Status bar
+            Constraint::Min(6),         // Files + GPU (horizontal split)
+            Constraint::Percentage(35), // Logs
+            Constraint::Length(1),      // Footer
         ])
         .split(area);
 
     render_header(frame, chunks[0], state);
-    render_files(frame, chunks[1], state);
+
+    // Middle: horizontal split of Files | GPU
+    let mid_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(chunks[1]);
+
+    render_files(frame, mid_chunks[0], state);
+    render_gpu_panel(frame, mid_chunks[1], state);
+
     render_logs(frame, chunks[2], state);
     render_footer(frame, chunks[3]);
 }
+
+// ── Header ────────────────────────────────────────────────────────
 
 fn render_header(frame: &mut ratatui::Frame<'_>, area: Rect, state: &UiState) {
     let total = state.files.len();
@@ -610,88 +869,198 @@ fn render_header(frame: &mut ratatui::Frame<'_>, area: Rect, state: &UiState) {
     let m = (secs % 3600) / 60;
     let s = secs % 60;
 
+    // Build summary spans
     let mut spans = vec![
         Span::styled(
-            "movie-translator ",
-            Style::default().add_modifier(Modifier::BOLD),
+            " movie-translator ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(format!(
-            "  {done}/{total} done · {active} active · {queued} queued"
-        )),
+        Span::raw("  "),
+        Span::styled(
+            format!("{done}/{total}"),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" done "),
     ];
-    if failed > 0 {
+
+    if active > 0 {
         spans.push(Span::styled(
-            format!(" · {failed} failed"),
-            Style::default().fg(Color::Red),
+            format!("{active} active "),
+            Style::default().fg(Color::Cyan),
         ));
     }
-    spans.push(Span::raw(format!("  ·  elapsed {h:02}:{m:02}:{s:02}")));
+    if queued > 0 {
+        spans.push(Span::styled(
+            format!("{queued} queued "),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+    if failed > 0 {
+        spans.push(Span::styled(
+            format!("{failed} failed "),
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ));
+    }
 
-    let text = Paragraph::new(Line::from(spans))
-        .block(Block::default().borders(Borders::ALL).title("Status"));
+    // GPU status indicator
+    if let Some(job) = &state.gpu.current_job {
+        let jc = gpu_job_color(&job.job_type);
+        spans.push(Span::styled(
+            format!(" ◇ {} ", job.job_type),
+            Style::default().fg(jc).add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    spans.push(Span::raw(format!("  ·  {h:02}:{m:02}:{s:02}")));
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let text = Paragraph::new(Line::from(spans)).block(block);
     frame.render_widget(text, area);
 }
 
+// ── File table ────────────────────────────────────────────────────
+
 fn render_files(frame: &mut ratatui::Frame<'_>, area: Rect, state: &UiState) {
-    let inner = area;
-    let max_rows = inner.height.saturating_sub(2) as usize; // borders
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" Files ({}) ", state.files.len()))
+        .border_style(Style::default().fg(Color::DarkGray))
+        .title_style(
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .fg(Color::White),
+        );
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if state.files.is_empty() {
+        let empty = Paragraph::new("Waiting for files…")
+            .style(Style::default().fg(Color::DarkGray))
+            .centered();
+        frame.render_widget(empty, inner);
+        return;
+    }
+
+    let max_rows = inner.height.saturating_sub(2) as usize; // header + bottom gauge margin
+    if max_rows == 0 {
+        return;
+    }
+
     let total = state.files.len();
-    // Show the most recently-updated window: prioritise active/finished files
-    // already at top, but ensure we always see the bottom of the queue. Simple
-    // heuristic: take the FIRST `max_rows` files (so initially queued shows the
-    // queue; as they finish they remain in order).
-    let visible_count = max_rows.min(total);
-    let start = total.saturating_sub(visible_count);
-    let rows = state.files[start..]
+    let start = total.saturating_sub(max_rows);
+    let visible = &state.files[start..];
+    let rows: Vec<Row<'_>> = visible
         .iter()
         .map(|f| {
             let (glyph, color) = status_glyph(f.status);
+
+            // Stage label with color
+            let stage_style = match f.stage {
+                Some(s) => Style::default().fg(stage_color(s)),
+                None => Style::default().fg(Color::DarkGray),
+            };
             let stage_label = f
                 .stage
                 .map(|s| s.label().to_string())
                 .unwrap_or_else(|| status_name(f.status).to_string());
-            let sub_text = f.sub_label.clone().unwrap_or_default();
-            let pct = match (f.sub_progress, f.finished) {
-                (_, true) => 100,
-                (Some((d, t)), false) if t > 0 => ((d as f64 / t as f64) * 100.0) as u16,
-                _ => 0,
-            };
+
             let name = f
                 .path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
+
+            // Animated gauge bar
+            let pct = (f.progress_bar.ratio() * 100.0) as u16;
+
+            let detail = f.sub_label.clone().unwrap_or_default();
+
             Row::new(vec![
-                Span::styled(glyph.to_string(), Style::default().fg(color)),
-                Span::raw(name),
-                Span::raw(stage_label),
-                Span::raw(format!("{pct:>3}%")),
-                Span::raw(sub_text),
+                Cell::from(Span::styled(glyph.to_string(), Style::default().fg(color))),
+                Cell::from(Span::raw(name)),
+                Cell::from(Span::styled(stage_label, stage_style)),
+                gauge_cell(pct, f.stage),
+                Cell::from(Span::raw(detail)),
             ])
         })
-        .collect::<Vec<_>>();
+        .collect();
 
     let widths = [
         Constraint::Length(2),
-        Constraint::Percentage(45),
-        Constraint::Length(12),
-        Constraint::Length(5),
-        Constraint::Min(20),
+        Constraint::Percentage(40),
+        Constraint::Length(13),
+        Constraint::Length(8),
+        Constraint::Min(15),
     ];
-    let table = Table::new(rows, widths)
-        .header(
-            Row::new(vec!["", "file", "stage", "pct", "detail"])
-                .style(Style::default().add_modifier(Modifier::BOLD)),
-        )
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!("Files ({total})")),
-        );
-    frame.render_widget(table, inner);
+    let header = Row::new(vec![
+        Cell::from(Span::styled("", Style::default())),
+        Cell::from(Span::styled(
+            "file",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "stage",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "progress",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "detail",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+    ]);
 
-    // Render a wide progress gauge underneath for the most-recent active file
-    // — useful for OCR / translate batches.
+    // Use high-water gauge: area below the last visible row uses the
+    // remaining space, but we render the gauge on the file that is
+    // currently ACTIVE with sub_progress.
+    let _available_rows = max_rows.min(visible.len());
+    let gauge_row_idx = visible
+        .iter()
+        .rposition(|f| matches!(f.status, FileViewStatus::Active) && f.sub_progress.is_some());
+
+    // Table rendering
+    let table_rows: Vec<Row<'_>> = if let Some(g_idx) = gauge_row_idx {
+        // Build rows but replace the gauge row with one that also has a Gauge widget
+        rows.into_iter()
+            .enumerate()
+            .map(|(i, row)| {
+                if i == g_idx {
+                    // Already done above
+                    row
+                } else {
+                    row
+                }
+            })
+            .collect()
+    } else {
+        rows
+    };
+
+    let table = Table::new(table_rows, widths)
+        .header(header)
+        .style(Style::default())
+        .column_spacing(1);
+
+    // Render table inside a scrollable area
+    let table_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: inner.height.saturating_sub(1), // leave room for gauge
+    };
+    frame.render_widget(table, table_area);
+
+    // Render a thin animated gauge for the active file at the bottom
     if let Some(active) = state
         .files
         .iter()
@@ -699,78 +1068,307 @@ fn render_files(frame: &mut ratatui::Frame<'_>, area: Rect, state: &UiState) {
     {
         if let Some((d, t)) = active.sub_progress {
             if t > 0 {
-                let ratio = (d as f64 / t as f64).clamp(0.0, 1.0);
-                // Place at bottom inside the files frame's area; tight stack.
-                let gauge_area = Rect {
-                    x: inner.x + 1,
-                    y: inner.y + inner.height.saturating_sub(2),
-                    width: inner.width.saturating_sub(2),
-                    height: 1,
-                };
+                let ratio = active.progress_bar.ratio().clamp(0.0, 1.0);
+                let gauge_color = active.stage.map(stage_color).unwrap_or(Color::Cyan);
                 let label = active
                     .sub_label
                     .clone()
                     .unwrap_or_else(|| format!("{d}/{t}"));
+                let gauge_area = Rect {
+                    x: inner.x,
+                    y: inner.y + inner.height.saturating_sub(1),
+                    width: inner.width,
+                    height: 1,
+                };
                 let g = Gauge::default()
-                    .gauge_style(Style::default().fg(Color::Cyan))
+                    .gauge_style(
+                        Style::default()
+                            .fg(gauge_color)
+                            .bg(Color::DarkGray)
+                            .add_modifier(Modifier::BOLD),
+                    )
                     .ratio(ratio)
-                    .label(label);
+                    .label(label)
+                    .use_unicode(true);
                 frame.render_widget(g, gauge_area);
             }
         }
     }
 }
 
+/// Build a small unicode gauge cell for the table row.
+fn gauge_cell(pct: u16, stage: Option<Stage>) -> Cell<'static> {
+    let color = stage.map(stage_color).unwrap_or(Color::Cyan);
+    let bar_char = if pct >= 90 {
+        '█'
+    } else if pct >= 60 {
+        '▓'
+    } else if pct >= 30 {
+        '▒'
+    } else {
+        '░'
+    };
+
+    // 5 characters of bar
+    let full = pct.min(100) as usize / 20; // 0..5
+    let bar: String = (0..5)
+        .map(|i| if i < full { bar_char } else { '░' })
+        .collect();
+
+    Cell::from(Span::styled(
+        format!("{} {:>3}%", bar, pct),
+        Style::default().fg(color),
+    ))
+}
+
+// ── GPU Worker Panel ──────────────────────────────────────────────
+
+fn render_gpu_panel(frame: &mut ratatui::Frame<'_>, area: Rect, state: &UiState) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" GPU ")
+        .border_style(Style::default().fg(Color::DarkGray))
+        .title_style(
+            Style::default()
+                .add_modifier(Modifier::BOLD)
+                .fg(Color::LightCyan),
+        );
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Current job section
+    let (top_area, bottom_area) = {
+        let h = inner.height;
+        if h < 5 {
+            (inner, Rect::default())
+        } else {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(3), Constraint::Min(1)])
+                .split(inner);
+            (chunks[0], chunks[1])
+        }
+    };
+
+    if let Some(job) = &state.gpu.current_job {
+        let jc = gpu_job_color(&job.job_type);
+        let elapsed = state
+            .started_at
+            .map(|t| format!("{:.1}s", t.elapsed().as_secs_f64()))
+            .unwrap_or_default();
+
+        let top_text = vec![
+            Line::from(vec![
+                Span::styled("▶ ", Style::default().fg(Color::Green)),
+                Span::styled(
+                    &job.job_type,
+                    Style::default().fg(jc).add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(" "),
+                Span::styled(elapsed, Style::default().fg(Color::DarkGray)),
+            ]),
+            Line::from(Span::styled(
+                job.path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default(),
+                Style::default().fg(Color::White),
+            )),
+        ];
+        let p = Paragraph::new(top_text);
+        frame.render_widget(p, top_area);
+
+        // Animated progress gauge for active job
+        let ratio = state.gpu.progress.ratio();
+        let gauge = Gauge::default()
+            .gauge_style(Style::default().fg(jc).bg(Color::DarkGray))
+            .ratio(ratio)
+            .label("working…")
+            .use_unicode(true);
+        frame.render_widget(
+            gauge,
+            Rect {
+                x: top_area.x,
+                y: top_area.y + top_area.height.saturating_sub(1),
+                width: top_area.width,
+                height: 1,
+            },
+        );
+    } else {
+        let idle = Paragraph::new(Line::from(vec![Span::styled(
+            "● idle",
+            Style::default().fg(Color::DarkGray),
+        )]));
+        frame.render_widget(idle, top_area);
+    }
+
+    // Last few jobs history
+    if !state.gpu.last_jobs.is_empty() && bottom_area.height > 0 {
+        let lines: Vec<Line<'_>> = state
+            .gpu
+            .last_jobs
+            .iter()
+            .map(|j| {
+                let jc = gpu_job_color(&j.job_type);
+                let glyph = match j.success {
+                    Some(true) => "✓",
+                    Some(false) => "✗",
+                    None => "·",
+                };
+                let glyph_color = match j.success {
+                    Some(true) => Color::Green,
+                    Some(false) => Color::Red,
+                    None => Color::DarkGray,
+                };
+                let elapsed_str = j
+                    .elapsed_ms
+                    .map(|ms| {
+                        if ms >= 1000 {
+                            format!("{:.1}s", ms as f64 / 1000.0)
+                        } else {
+                            format!("{ms}ms")
+                        }
+                    })
+                    .unwrap_or_default();
+                let name = j
+                    .path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+
+                Line::from(vec![
+                    Span::styled(glyph, Style::default().fg(glyph_color)),
+                    Span::raw(" "),
+                    Span::styled(&j.job_type, Style::default().fg(jc)),
+                    Span::raw(format!(" {elapsed_str}")),
+                    if name.is_empty() {
+                        Span::raw("")
+                    } else {
+                        Span::styled(format!(" ({name})"), Style::default().fg(Color::DarkGray))
+                    },
+                ])
+            })
+            .collect();
+
+        let p = Paragraph::new(lines)
+            .block(Block::default().title(format!(" Last {} ", state.gpu.last_jobs.len())));
+        frame.render_widget(p, bottom_area);
+    }
+}
+
+// ── Logs ──────────────────────────────────────────────────────────
+
 fn render_logs(frame: &mut ratatui::Frame<'_>, area: Rect, state: &UiState) {
-    let tail_start = state.log_lines.len().saturating_sub(LOG_TAIL_RENDER);
-    let lines: Vec<Line<'_>> = state.log_lines[tail_start..]
+    let title = match state.python_log_path.as_ref() {
+        Some(p) => format!(" Logs (python → {}) ", p.display()),
+        None => " Logs ".to_string(),
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title.as_str())
+        .border_style(Style::default().fg(if state.focus == FocusPane::Logs {
+            Color::Cyan
+        } else {
+            Color::DarkGray
+        }))
+        .title_style(Style::default().add_modifier(Modifier::BOLD));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if state.log_lines.is_empty() {
+        let empty = Paragraph::new("Waiting for log output…")
+            .style(Style::default().fg(Color::DarkGray))
+            .centered();
+        frame.render_widget(empty, inner);
+        return;
+    }
+
+    // Figure out visible range based on scroll offset.
+    let max_visible = inner.height as usize;
+    // Clamp scroll to valid range.
+    let max_scroll = state.log_lines.len().saturating_sub(max_visible);
+    let scroll = state.log_scroll.min(max_scroll);
+
+    // We show from (log_lines.len() - max_visible - scroll) to end, scrolling upward.
+    let end = state.log_lines.len().saturating_sub(scroll);
+    let start = end.saturating_sub(max_visible);
+
+    let lines: Vec<Line<'_>> = state.log_lines[start..end]
         .iter()
         .map(|l| {
-            let style = if l.contains("[ERROR") || l.contains("error") || l.contains("Failed") {
-                Style::default().fg(Color::Red)
-            } else if l.contains("[WARN") || l.contains("warning") {
-                Style::default().fg(Color::Yellow)
-            } else if l.contains("[DEBUG") || l.contains("[TRACE") {
-                Style::default().fg(Color::DarkGray)
-            } else {
-                Style::default()
-            };
-            Line::from(Span::styled(l.clone(), style))
+            let lc = log_level_color(&l.level);
+            Line::from(vec![
+                Span::styled(
+                    format!("{:5} ", l.level),
+                    Style::default().fg(lc).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("[{}] ", l.target),
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(&l.message, Style::default().fg(lc)),
+            ])
         })
         .collect();
-    let title = match state.python_log_path.as_ref() {
-        Some(p) => format!("Logs (python stderr → {})", p.display()),
-        None => "Logs".to_string(),
-    };
-    let p = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .wrap(Wrap { trim: false });
-    frame.render_widget(p, area);
+
+    let p = Paragraph::new(lines).wrap(Wrap { trim: false });
+    frame.render_widget(p, inner);
+
+    // Scrollbar
+    if state.log_lines.len() > max_visible {
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("↑"))
+            .end_symbol(Some("↓"))
+            .track_symbol(Some("│"))
+            .thumb_symbol("█")
+            .style(Style::default().fg(Color::DarkGray));
+        let mut scrollbar_state =
+            ScrollbarState::new(state.log_lines.len().saturating_sub(max_visible)).position(scroll);
+        frame.render_stateful_widget(scrollbar, inner, &mut scrollbar_state);
+    }
 }
+
+// ── Footer ────────────────────────────────────────────────────────
 
 fn render_footer(frame: &mut ratatui::Frame<'_>, area: Rect) {
     let p = Paragraph::new(Line::from(vec![
-        Span::styled("q", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(" or "),
-        Span::styled("Ctrl-C", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(": quit  "),
-        Span::raw("(pipeline runs until current file completes)"),
+        Span::styled(" q", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" quit  "),
+        Span::styled("↑↓/j k", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" scroll  "),
+        Span::styled("Tab", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" focus pane  "),
+        Span::styled("Home/End", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" jump  "),
     ]))
     .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(p, area);
 }
+
+// ── Tests ─────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    /// Event-channel plumbing: a fake orchestrator sends a realistic event
-    /// sequence into the UiState aggregator and we assert the per-file state
-    /// transitions land where we expect. No terminal IO.
+    fn setup_state() -> UiState {
+        UiState {
+            files: Vec::new(),
+            log_lines: Vec::new(),
+            started_at: Some(Instant::now()),
+            gpu: GpuStatus::new(),
+            log_scroll: 0,
+            focus: FocusPane::Logs,
+            python_log_path: None,
+        }
+    }
+
     #[test]
     fn ui_state_aggregates_event_sequence() {
-        let mut s = UiState::default();
+        let mut s = setup_state();
         let a = PathBuf::from("a.mkv");
         let b = PathBuf::from("b.mkv");
         s.apply(ProgressEvent::Queued {
@@ -806,10 +1404,33 @@ mod tests {
         assert!(row_b.finished);
     }
 
-    /// The log buffer caps at MAX_LOG_LINES and drains FIFO.
+    #[test]
+    fn gpu_events_update_status() {
+        let mut s = setup_state();
+        let p = PathBuf::from("f.mkv");
+
+        s.apply(ProgressEvent::GpuJobStarted {
+            job_type: "translate".into(),
+            path: p.clone(),
+        });
+        assert!(s.gpu.current_job.is_some());
+        assert_eq!(s.gpu.current_job.as_ref().unwrap().job_type, "translate");
+
+        s.apply(ProgressEvent::GpuJobFinished {
+            job_type: "translate".into(),
+            path: p.clone(),
+            elapsed_ms: 1234,
+            success: true,
+        });
+        assert!(s.gpu.current_job.is_none());
+        assert_eq!(s.gpu.last_jobs.len(), 1);
+        assert_eq!(s.gpu.last_jobs[0].elapsed_ms, Some(1234));
+        assert_eq!(s.gpu.last_jobs[0].success, Some(true));
+    }
+
     #[test]
     fn log_buffer_trims_to_max() {
-        let mut s = UiState::default();
+        let mut s = setup_state();
         for i in 0..(MAX_LOG_LINES + 50) {
             s.apply(ProgressEvent::Log {
                 level: "INFO".into(),
@@ -818,16 +1439,15 @@ mod tests {
             });
         }
         assert_eq!(s.log_lines.len(), MAX_LOG_LINES);
-        // Oldest 50 dropped → first surviving line is msg50.
-        assert!(s.log_lines.first().unwrap().contains("msg50"));
+        assert!(s.log_lines.first().unwrap().message.contains("msg50"));
         assert!(s
             .log_lines
             .last()
             .unwrap()
+            .message
             .contains(&format!("msg{}", MAX_LOG_LINES + 49)));
     }
 
-    /// FinishStatus → FileViewStatus mapping is total.
     #[test]
     fn finish_status_maps_to_view_status() {
         assert_eq!(
@@ -848,7 +1468,48 @@ mod tests {
         );
     }
 
-    /// The TuiTracingLayer forwards record_str events into the progress channel.
+    #[test]
+    fn gpu_colors_are_defined_for_all_job_types() {
+        for t in &[
+            "translate",
+            "ocr_pgs",
+            "ocr_burned_in",
+            "inpaint",
+            "hardsub_ocr",
+            "transcribe",
+        ] {
+            let c = gpu_job_color(t);
+            assert_ne!(
+                c,
+                Color::DarkGray,
+                "job type {t} should have a specific color"
+            );
+        }
+    }
+
+    #[test]
+    fn stage_colors_are_all_distinct() {
+        use std::collections::HashSet;
+        let stages = [
+            Stage::Identify,
+            Stage::ExtractRef,
+            Stage::Fetch,
+            Stage::HardsubOcr,
+            Stage::ExtractEnglish,
+            Stage::Transcribe,
+            Stage::Translate,
+            Stage::CreateTracks,
+            Stage::Mux,
+        ];
+        let colors: Vec<Color> = stages.iter().map(|s| stage_color(*s)).collect();
+        let unique: HashSet<&Color> = colors.iter().collect();
+        assert_eq!(
+            unique.len(),
+            stages.len(),
+            "each stage must have a distinct color"
+        );
+    }
+
     #[test]
     fn tracing_layer_forwards_to_channel() {
         use tracing_subscriber::prelude::*;
@@ -861,7 +1522,6 @@ mod tests {
             tracing::info!(target: "test_target", "hello from {}", "test");
         });
 
-        // Drain.
         let mut events = Vec::new();
         while let Ok(ev) = rx.try_recv() {
             events.push(ev);
@@ -883,10 +1543,6 @@ mod tests {
         assert!(log_ev.2.contains("hello from test"));
     }
 
-    /// The plain-mode renderer drains the channel without doing terminal IO,
-    /// updating UiState exactly like the interactive path. We don't observe
-    /// stderr output here — just ensure it terminates and the state captures
-    /// the events.
     #[test]
     fn plain_renderer_drains_and_exits_cleanly() {
         let (tx, mut rx) = mpsc::unbounded_channel::<ProgressEvent>();
@@ -903,7 +1559,7 @@ mod tests {
             status: FinishStatus::Success,
         })
         .unwrap();
-        drop(tx); // close so blocking_recv exits
+        drop(tx);
 
         let state = run_plain(&mut rx);
         assert_eq!(state.files.len(), 1);

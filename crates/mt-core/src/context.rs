@@ -140,9 +140,15 @@ impl PipelineConfig {
     /// Whether burned-in (video-frame) OCR may run as the no-subtitle fallback.
     ///
     /// `--transcribe` supersedes it: the user chose the audio track as the
-    /// English source, and frame-OCR on clean video yields credit/typesetting
-    /// junk lines that would preempt ASR. PGS/image-track OCR is unaffected —
-    /// those are real subtitle tracks, not a fallback.
+    /// English source, and running frame-OCR on clean video would yield
+    /// credit/typesetting junk lines that would preempt ASR (the burned-in
+    /// extractor would find something — credits — and set it as
+    /// ``english_source`` before ASR runs).
+    ///
+    /// If both burned-in frame OCR AND ASR are desired, use ``--hardsub-ocr``
+    /// instead (it downloads hardsubbed Polish video and runs OCR on that,
+    /// independent of English source extraction). PGS/image-track OCR is
+    /// unaffected — those are real subtitle tracks, not a fallback.
     pub fn burned_in_fallback_allowed(&self) -> bool {
         !self.enable_transcription
     }

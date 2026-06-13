@@ -14,11 +14,12 @@ track doesn't exist, the engine is unavailable, or no usable lines came out.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from ..logging import logger
 from ..srt import write_srt
-from . import apple_backend, audio, postfilter, splitter, whisper_backend
+from . import apple_backend, audio, postfilter, splitter, vad, whisper_backend
 
 ENGINES = ('apple', 'whisper')
 
@@ -31,17 +32,39 @@ def is_available(engine: str) -> bool:
     return False
 
 
+def _suggest_engine_fallback(engine: str) -> str | None:
+    """Suggest an available fallback engine when `engine` is unavailable."""
+    for alt in ENGINES:
+        if alt != engine and is_available(alt):
+            return alt
+    return None
+
+
 def transcribe_to_srt(
     video_path: Path,
     output_dir: Path,
     language: str = 'en',
     engine: str = 'apple',
+    progress_callback: Callable[[int], None] | None = None,
 ) -> Path | None:
-    """Transcribe `video_path`'s `language` audio track to an SRT, or None."""
+    """Transcribe `video_path`'s `language` audio track to an SRT, or None.
+
+    Args:
+        progress_callback: Called with ``percent`` (0-100) during transcription
+            if the engine supports progress reporting. Not yet wired through
+            the Rust PyO3 bridge — added as a hook for future integration.
+    """
     if engine not in ENGINES:
         raise ValueError(f'unknown transcription engine {engine!r} (use {ENGINES})')
+
     if not is_available(engine):
-        logger.warning(f'transcription engine {engine!r} unavailable on this system')
+        fallback = _suggest_engine_fallback(engine)
+        msg = f'transcription engine {engine!r} unavailable on this system'
+        if fallback:
+            msg += f'; try --transcribe-engine {fallback}'
+            logger.warning(msg)
+        else:
+            logger.warning(f'{msg} and no fallback engine is available')
         return None
 
     stream = audio.find_audio_stream(video_path, language)
@@ -56,11 +79,45 @@ def transcribe_to_srt(
     try:
         if engine == 'apple':
             raw = apple_backend.transcribe(wav, language)
-            lines = splitter.split_segments(raw)
+            if progress_callback:
+                progress_callback(50)
+
+            # Use VAD pause boundaries to improve segmentation when available.
+            if vad.available():
+                pause_boundaries = vad.find_pause_boundaries(wav, min_pause_ms=300)
+                if pause_boundaries:
+                    lines = splitter.split_segments(raw, pause_boundaries)
+                else:
+                    lines = splitter.split_segments(raw)
+            else:
+                lines = splitter.split_segments(raw)
+
+            if progress_callback:
+                progress_callback(100)
         else:
-            raw = whisper_backend.transcribe(wav, language)
-            # Clamp against the real audio length (Whisper hallucinates past it).
-            lines = postfilter.clean_segments(raw, audio.wav_duration_ms(wav))
+            # Trim leading/trailing silence before Whisper to reduce
+            # ED/music hallucination, then transcribe.
+            if vad.available():
+                trimmed = vad.trim_silence(
+                    wav,
+                    out_path=output_dir / f'transcribe_{language}_trimmed.wav',
+                )
+                if progress_callback:
+                    progress_callback(15)
+            else:
+                trimmed = wav
+
+            raw = whisper_backend.transcribe(trimmed, language)
+            if progress_callback:
+                progress_callback(80)
+            duration_ms = audio.wav_duration_ms(trimmed)
+            lines = postfilter.clean_segments(raw, duration_ms)
+            if progress_callback:
+                progress_callback(100)
+
+            # Clean up trimmed copy if VAD ran.
+            if trimmed != wav:
+                trimmed.unlink(missing_ok=True)
     finally:
         wav.unlink(missing_ok=True)
 
