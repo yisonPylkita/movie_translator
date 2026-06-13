@@ -13,7 +13,32 @@ from ..logging import logger
 
 if TYPE_CHECKING:
     from .apple_backend import AppleTranslationBackend
+    from .mlx_backend import BidiMLXModel
     from .translator import SubtitleTranslator
+
+
+class _MlxTranslatorWrapper:
+    """Thin wrapper adapting BidiMLXModel to SubtitleTranslator-like interface.
+
+    Exposes translate_texts() so the pipeline can use it via the same
+    translate_dialogue_lines() dispatch without special-casing.
+    """
+
+    def __init__(self, model: BidiMLXModel, batch_size: int) -> None:
+        self.model = model
+        self.batch_size = batch_size
+        self.proper_nouns: set[str] = set()
+
+    def translate_texts(self, texts: list[str], progress_callback=None) -> list[str]:
+        return self.model.translate(
+            texts,
+            max_new_tokens=128,
+            progress_callback=progress_callback,
+            batch_size=self.batch_size,
+        )
+
+    def cleanup(self) -> None:
+        pass
 
 
 class ModelCache:
@@ -22,21 +47,34 @@ class ModelCache:
     Create one per pipeline run and pass it to translate_dialogue_lines(),
     TranslateStage, and TranslateTask.  The same instance should be reused
     across all files in a run so models are loaded only once.
+
+    Supports three backends:
+    - ``'allegro'`` (default): PyTorch-based SubtitleTranslator
+    - ``'apple'``: macOS Translation framework via Swift bridge
+    - ``'mlx'``: Apple Silicon MLX (Metal-native, best perf)
     """
 
     def __init__(self) -> None:
         self._translator: SubtitleTranslator | None = None
         self._apple_backend: AppleTranslationBackend | None = None
+        self._mlx_model: BidiMLXModel | None = None
 
     def get_translator(
         self, device: str, batch_size: int, model: str
-    ) -> tuple[SubtitleTranslator | None, bool]:
+    ) -> tuple[SubtitleTranslator | _MlxTranslatorWrapper | None, bool]:
         """Return a cached translator, reloading only when config changes.
 
         Returns (translator, cached) where cached is True if the model
         was already loaded with matching config.
+
+        When *model* is ``'mlx'``, returns a _MlxTranslatorWrapper instead
+        of a SubtitleTranslator.
         """
         from .translator import SubtitleTranslator
+
+        # MLX backend is handled separately
+        if model == 'mlx':
+            return self._get_mlx_wrapper(batch_size)
 
         if (
             self._translator is not None
@@ -56,6 +94,23 @@ class ModelCache:
             return None, False
         self._translator = translator
         return translator, False
+
+    def _get_mlx_wrapper(self, batch_size: int) -> tuple[_MlxTranslatorWrapper | None, bool]:
+        """Return a cached MLX model wrapper."""
+        from .mlx_backend import BidiMLXModel as BidiMLXModelCls
+
+        if self._mlx_model is not None:
+            return _MlxTranslatorWrapper(self._mlx_model, batch_size), True
+
+        model = BidiMLXModelCls()
+        try:
+            model.load_mlx_weights()
+        except Exception as e:
+            logger.error(f'Failed to load MLX model: {e}')
+            return None, False
+
+        self._mlx_model = model
+        return _MlxTranslatorWrapper(model, batch_size), False
 
     def get_apple_backend(self, batch_size: int) -> AppleTranslationBackend | None:
         """Return a cached Apple backend instance."""
@@ -81,3 +136,4 @@ class ModelCache:
         if self._apple_backend is not None:
             self._apple_backend.cleanup()
             self._apple_backend = None
+        self._mlx_model = None

@@ -11,11 +11,17 @@ class ModelConfig(TypedDict, total=False):
 
 
 # Only the seq2seq backend we actually ship lives here. Apple Translation is a
-# separate non-seq2seq backend handled in apple_backend.py.
+# separate non-seq2seq backend handled in apple_backend.py. MLX is a
+# separate non-PyTorch backend handled in mlx_backend.py.
 TRANSLATION_MODELS: dict[str, ModelConfig] = {
     'allegro': {
         'huggingface_id': 'allegro/BiDi-eng-pol',
-        'description': 'Allegro BiDi English-Polish',
+        'description': 'Allegro BiDi English-Polish (PyTorch)',
+        'max_length': 512,
+    },
+    'mlx': {
+        'huggingface_id': 'allegro/BiDi-eng-pol',
+        'description': 'Allegro BiDi English-Polish (MLX, Metal-native)',
         'max_length': 512,
     },
 }

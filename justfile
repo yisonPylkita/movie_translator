@@ -32,10 +32,20 @@ deps:
 submodules:
     git submodule update --init --recursive
 
-# Pull the translation model files via git-lfs (Allegro BiDi en↔pl).
+# Download + convert the translation model (Allegro BiDi en↔pl) to MLX INT8.
+#
+# Downloads the PyTorch model from HuggingFace (allegro/BiDi-eng-pol), converts
+# it to MLX, quantises to INT8, and saves to models/allegro/.
+#
+# On first run, use `--torch-dir` if you already have the model cached, or
+# omit it to download from HuggingFace automatically.
 model:
+    uv run python scripts/download_and_convert_model.py
+
+# Pull the pre-converted MLX INT8 model from Git LFS (faster than re-converting).
+model-pull:
     git lfs install
-    git lfs pull
+    git lfs pull --include="models/allegro/"
 
 # ─── Build ─────────────────────────────────────────────────────────────────
 

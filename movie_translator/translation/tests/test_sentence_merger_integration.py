@@ -36,7 +36,7 @@ MODEL_PATH = 'allegro/BiDi-eng-pol'
 
 _PIPE_RE = re.compile(r'\|')
 
-# Evaluate once at collection time so pytest-xdist can skip before distributing
+# Check if model is available locally (legacy PyTorch path) or use HF Hub
 _local_model_path = get_local_model_path('allegro')
 needs_model = pytest.mark.skipif(
     _local_model_path is None,
@@ -47,13 +47,11 @@ needs_model = pytest.mark.skipif(
 @pytest.fixture(scope='module')
 def model_and_tokenizer():
     """Load the BiDi model once for all tests in this module."""
-    assert _local_model_path is not None
-    path = str(_local_model_path)
-
     device = 'mps' if torch.backends.mps.is_available() else 'cpu'
-    tokenizer = AutoTokenizer.from_pretrained(path)
+    # Load from HuggingFace Hub (the local model is now MLX INT8)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
     model = AutoModelForSeq2SeqLM.from_pretrained(
-        path,
+        MODEL_PATH,
         torch_dtype=torch.float16 if device != 'cpu' else torch.float32,
         low_cpu_mem_usage=True,
     )

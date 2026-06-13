@@ -196,9 +196,7 @@ class SubtitleTranslator:
                 for text, mapping in zip(decoded, placeholder_mappings, strict=True)
             ]
 
-        return apply_fallbacks(
-            texts, decoded, skip_indices, cached_translations, logger=logger
-        )
+        return apply_fallbacks(texts, decoded, skip_indices, cached_translations, logger=logger)
 
     def _validate_inputs(self, texts: list[str]) -> None:
         """Log warnings for inputs that may produce poor translations."""
@@ -302,6 +300,13 @@ def translate_dialogue_lines(
             backend.proper_nouns = proper_nouns
         texts = [line.text for line in dialogue_lines]
         translated_texts = backend.translate_texts(texts, progress_callback)
+    elif model == 'mlx':
+        wrapper, _cached = model_cache.get_translator(device, batch_size, model)
+        if wrapper is None:
+            return []
+        texts = [line.text for line in dialogue_lines]
+        # MLX backend handles proper_nouns via tokenizer prefix
+        translated_texts = wrapper.translate_texts(texts, progress_callback)
     else:
         translator, _cached = model_cache.get_translator(device, batch_size, model)
         if translator is None:
