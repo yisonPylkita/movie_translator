@@ -81,7 +81,7 @@ fn apple_translation_available_uncached() -> bool {
         return false;
     }
     // macOS major version >= 26.
-    if !macos_major_at_least(26) {
+    if !mt_core::swift_bridge::macos_at_least(26) {
         return false;
     }
     // _ensure_binary: compile the bridge if missing or stale, then probe.
@@ -206,29 +206,6 @@ fn which_swiftc() -> Option<PathBuf> {
         }
     }
     None
-}
-
-/// Best-effort `platform.mac_ver()` major-version check via `sw_vers`.
-#[cfg(target_os = "macos")]
-fn macos_major_at_least(min_major: u32) -> bool {
-    Command::new("sw_vers")
-        .arg("-productVersion")
-        .output()
-        .ok()
-        .and_then(|o| {
-            if !o.status.success() {
-                return None;
-            }
-            let v = String::from_utf8_lossy(&o.stdout);
-            v.trim().split('.').next()?.parse::<u32>().ok()
-        })
-        .map(|major| major >= min_major)
-        .unwrap_or(false)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn macos_major_at_least(_min_major: u32) -> bool {
-    false
 }
 
 #[cfg(test)]

@@ -8,7 +8,6 @@
 //! The embedded CPython (PyO3) dependency has been removed entirely.
 //! No Python or venv is needed at build or runtime.
 
-pub mod apple_translate;
 pub mod hardsub;
 pub mod inpaint;
 pub mod ocr;

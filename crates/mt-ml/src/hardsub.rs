@@ -10,8 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use mt_core::{MtError, Result};
-#[cfg_attr(target_os = "macos", allow(unused_imports))]
-use tracing::{info, warn};
+use tracing::info;
 
 /// Default minimum height for OCR-legible download (480p).
 const DEFAULT_MIN_HEIGHT: u32 = 480;
@@ -202,7 +201,7 @@ pub fn hardsub_ocr_clean(video: &Path, out_dir: &Path, language: &str) -> Result
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (language, video, out_dir);
-        warn!("hardsub_ocr_clean requires macOS (Vision framework)");
+        tracing::warn!("hardsub_ocr_clean requires macOS (Vision framework)");
         Ok(None)
     }
 }
@@ -358,7 +357,6 @@ mod ocr_postprocess {
     }
 }
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()

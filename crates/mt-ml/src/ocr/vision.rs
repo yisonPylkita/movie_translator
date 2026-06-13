@@ -1,91 +1,25 @@
-//! Subtitle OCR — Rust-native, no Python.
+//! Apple Vision OCR backend (macOS only).
 //!
-//! On macOS, uses Apple Vision framework via a compiled Swift bridge binary.
+//! Uses the Apple Vision framework via a compiled Swift bridge binary.
 //! The Swift bridge is compiled on first use from an inline source.
 //!
 //! PGS binary parsing is in `mt_media::pgs_parser`; this module adds the OCR
 //! step on top of parsed PGS bitmaps, as well as burned-in subtitle extraction
 //! via frame-level change detection and OCR.
 
-#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use std::process::Command;
 
-#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
-use mt_core::{BoundingBox, OCRResult};
-use mt_core::{BurnedInResult, MtError, Result};
-#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
+use mt_core::{BoundingBox, BurnedInResult, DialogueLine, MtError, OCRResult, Result};
 use serde_json::{Value, from_slice};
-#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use tracing::{info, warn};
 
-// ── Public API ─────────────────────────────────────────────────────────────
+// ── Public API (called from ocr/mod.rs) ─────────────────────────────────────
 
-/// Extract a PGS subtitle track to SRT using Apple Vision OCR.
-pub fn ocr_pgs(video: &Path, track_index: u32, work_dir: &Path) -> Result<Option<PathBuf>> {
-    #[cfg(target_os = "macos")]
-    {
-        ocr_pgs_macos(video, track_index, work_dir)
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (video, track_index, work_dir);
-        warn!("PGS OCR requires macOS (Vision framework)");
-        Ok(None)
-    }
-}
-
-/// Extract burned-in subtitles via OCR.
-pub fn ocr_burned_in(
-    video: &Path,
-    output_dir: &Path,
-    crop_ratio: f64,
-    fps: u32,
-) -> Result<BurnedInResult> {
-    #[cfg(target_os = "macos")]
-    {
-        ocr_burned_in_macos(video, output_dir, crop_ratio, fps, "en")
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (video, output_dir, crop_ratio, fps);
-        let _ = (video, output_dir, crop_ratio, fps);
-        Err(MtError::Parse(
-            "Burned-in OCR requires macOS (Vision framework)".into(),
-        ))
-    }
-}
-
-/// Check whether Vision OCR is available on this system.
-pub fn is_vision_ocr_available() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        use std::path::Path;
-        Command::new("swiftc")
-            .arg("--version")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-            && Path::new("/System/Library/Frameworks/Vision.framework/Versions/Current/Vision")
-                .exists()
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        false
-    }
-}
-
-// ── macOS-only implementations ────────────────────────────────────────────
-// These are only compiled on macOS; the cfg gates above dispatch to them.
-
-#[cfg(target_os = "macos")]
-fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Option<PathBuf>> {
-    use std::process::Command;
-
+pub fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Option<PathBuf>> {
     let pgs_dir = work_dir.join("pgs_ocr");
     fs::create_dir_all(&pgs_dir).map_err(MtError::Io)?;
 
@@ -126,7 +60,7 @@ fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Opti
     let bridge = ensure_ocr_bridge()?;
     let mut prev_text = String::new();
     let mut line_start_ms: i64 = 0;
-    let mut dialogue_lines: Vec<mt_core::DialogueLine> = Vec::new();
+    let mut dialogue_lines: Vec<DialogueLine> = Vec::new();
 
     for (i, event) in events.iter().enumerate() {
         let img_path = pgs_dir.join(format!("sub_{:04}.pgm", i));
@@ -145,7 +79,7 @@ fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Opti
 
         if !text.is_empty() && text != prev_text {
             if !prev_text.is_empty() && line_start_ms > 0 {
-                dialogue_lines.push(mt_core::DialogueLine {
+                dialogue_lines.push(DialogueLine {
                     start_ms: line_start_ms,
                     end_ms: pts_ms,
                     text: prev_text.clone(),
@@ -154,7 +88,7 @@ fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Opti
             line_start_ms = pts_ms;
             prev_text = text;
         } else if text.is_empty() && !prev_text.is_empty() {
-            dialogue_lines.push(mt_core::DialogueLine {
+            dialogue_lines.push(DialogueLine {
                 start_ms: line_start_ms,
                 end_ms: pts_ms,
                 text: prev_text.clone(),
@@ -172,7 +106,7 @@ fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Opti
             .last()
             .map(|e| e.pts_ms as i64)
             .unwrap_or(line_start_ms);
-        dialogue_lines.push(mt_core::DialogueLine {
+        dialogue_lines.push(DialogueLine {
             start_ms: line_start_ms,
             end_ms: last_pts + 3000,
             text: prev_text,
@@ -230,8 +164,7 @@ fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Opti
     Ok(Some(srt_path))
 }
 
-#[cfg(target_os = "macos")]
-fn ocr_burned_in_macos(
+pub fn ocr_burned_in_macos(
     video: &Path,
     output_dir: &Path,
     crop_ratio: f64,
@@ -347,9 +280,17 @@ fn ocr_burned_in_macos(
     })
 }
 
-// ── OCR bridge (Swift) ────────────────────────────────────────────────────
+pub fn is_vision_ocr_available() -> bool {
+    Command::new("swiftc")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+        && Path::new("/System/Library/Frameworks/Vision.framework/Versions/Current/Vision").exists()
+}
 
-#[cfg(target_os = "macos")]
+// ── OCR bridge (Swift) ──────────────────────────────────────────────────────
+
 fn ocr_bridge_source() -> PathBuf {
     let candidates = [
         "crates/mt-ml/swift/ocr_bridge.swift",
@@ -380,14 +321,12 @@ fn ocr_bridge_source() -> PathBuf {
     fallback
 }
 
-#[cfg(target_os = "macos")]
 fn ocr_bridge_binary() -> PathBuf {
     let mut bin = ocr_bridge_source();
     bin.set_file_name("ocr_bridge");
     bin.with_extension("")
 }
 
-#[cfg(target_os = "macos")]
 fn ensure_ocr_bridge() -> Result<PathBuf> {
     let source = ocr_bridge_source();
     let binary = ocr_bridge_binary();
@@ -433,7 +372,6 @@ fn ensure_ocr_bridge() -> Result<PathBuf> {
     Ok(binary)
 }
 
-#[cfg(target_os = "macos")]
 fn ocr_image(bridge: &Path, image_path: &Path) -> Result<String> {
     let output = Command::new(bridge)
         .arg(image_path)
@@ -455,7 +393,6 @@ fn ocr_image(bridge: &Path, image_path: &Path) -> Result<String> {
         .to_string())
 }
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const INLINE_OCR_SWIFT: &str = r#"
 import Foundation
 import Vision
@@ -494,9 +431,8 @@ let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
 try? handler.perform([request])
 "#;
 
-// ── Frame extraction ──────────────────────────────────────────────────────
+// ── Frame extraction ────────────────────────────────────────────────────────
 
-#[cfg(target_os = "macos")]
 fn extract_subtitle_frames(
     video: &Path,
     out_dir: &Path,
@@ -504,8 +440,6 @@ fn extract_subtitle_frames(
     crop_ratio: f64,
     scale_width: u32,
 ) -> Result<Vec<(PathBuf, i64)>> {
-    use std::process::Command;
-
     let ffmpeg = find_ffmpeg()?;
     let ffprobe = find_ffprobe()?;
 
@@ -587,7 +521,6 @@ fn extract_subtitle_frames(
     Ok(frames)
 }
 
-#[cfg(target_os = "macos")]
 fn detect_transitions(
     frames: &[(PathBuf, i64)],
     _pixel_delta: u8,
@@ -626,18 +559,17 @@ fn detect_transitions(
     Ok(transition_frames)
 }
 
-// ── Dialogue line builder ─────────────────────────────────────────────────
+// ── Dialogue line builder ───────────────────────────────────────────────────
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-fn build_dialogue_lines(frame_texts: &[(i64, String)]) -> Vec<mt_core::DialogueLine> {
-    let mut lines: Vec<mt_core::DialogueLine> = Vec::new();
+fn build_dialogue_lines(frame_texts: &[(i64, String)]) -> Vec<DialogueLine> {
+    let mut lines: Vec<DialogueLine> = Vec::new();
     let mut prev_text = String::new();
     let mut start_ms: i64 = 0;
 
     for (ts, text) in frame_texts {
         if *text != prev_text {
             if !prev_text.is_empty() && prev_text.len() > 1 {
-                lines.push(mt_core::DialogueLine {
+                lines.push(DialogueLine {
                     start_ms,
                     end_ms: *ts,
                     text: prev_text.clone(),
@@ -650,7 +582,7 @@ fn build_dialogue_lines(frame_texts: &[(i64, String)]) -> Vec<mt_core::DialogueL
 
     if !prev_text.is_empty() && prev_text.len() > 1 {
         let last_ts = frame_texts.last().map(|f| f.0).unwrap_or(start_ms);
-        lines.push(mt_core::DialogueLine {
+        lines.push(DialogueLine {
             start_ms,
             end_ms: last_ts + 1000,
             text: prev_text,
@@ -660,9 +592,8 @@ fn build_dialogue_lines(frame_texts: &[(i64, String)]) -> Vec<mt_core::DialogueL
     lines
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn write_grayscale_pgm(path: &Path, pixels: &[u8], width: usize, height: usize) -> io::Result<()> {
     let mut data = Vec::new();
     data.extend_from_slice(b"P5\n");
@@ -671,7 +602,6 @@ fn write_grayscale_pgm(path: &Path, pixels: &[u8], width: usize, height: usize) 
     fs::write(path, data)
 }
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn find_ffmpeg() -> Result<PathBuf> {
     mt_core::exec::get_ffmpeg().map_err(|e| MtError::Subprocess {
         cmd: "ffmpeg".to_string(),
@@ -680,7 +610,6 @@ fn find_ffmpeg() -> Result<PathBuf> {
     })
 }
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn find_ffprobe() -> Result<PathBuf> {
     mt_core::exec::get_ffprobe().map_err(|e| MtError::Subprocess {
         cmd: "ffprobe".to_string(),
@@ -689,7 +618,6 @@ fn find_ffprobe() -> Result<PathBuf> {
     })
 }
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()

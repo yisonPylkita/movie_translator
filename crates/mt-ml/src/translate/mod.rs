@@ -33,6 +33,10 @@ pub struct TranslateResponse {
     pub lines: Vec<DialogueLine>,
 }
 
+/// Apple Translation backend (macOS only).
+#[cfg(target_os = "macos")]
+pub mod apple;
+
 /// Translate dialogue lines using the Apple Translation framework.
 ///
 /// This is the only backend — the MLX/Python backend has been removed.
@@ -49,7 +53,17 @@ pub fn translate(req: &TranslateRequest) -> Result<Vec<DialogueLine>> {
         req.lines.len()
     );
     let proper = req.proper_nouns.as_deref();
-    crate::apple_translate::translate(&req.lines, req.batch_size, proper)
+    #[cfg(target_os = "macos")]
+    {
+        apple::translate(&req.lines, req.batch_size, proper)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = proper;
+        Err(mt_core::MtError::Parse(
+            "Apple Translation requires macOS".into(),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -110,8 +124,11 @@ mod tests {
             let msg = e.to_string();
             // Should reference Swift-related issues, not Python
             assert!(
-                msg.contains("Swift") || msg.contains("swiftc") || msg.contains("bridge"),
-                "Apple backend error should mention Swift: {msg}"
+                msg.contains("Swift")
+                    || msg.contains("swiftc")
+                    || msg.contains("bridge")
+                    || msg.contains("requires macOS"),
+                "Apple backend error should mention Swift or macOS: {msg}"
             );
         }
     }
