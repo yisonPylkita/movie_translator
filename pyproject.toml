@@ -8,39 +8,40 @@ requires-python = ">=3.14,<3.15"
 authors = [{ name = "Movie Translator Team" }]
 keywords = ["subtitles", "translation", "video", "mkv", "mp4", "ai", "polish"]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: MacOS",
-    "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-    "Topic :: Multimedia :: Video",
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Multimedia :: Video",
 ]
 dependencies = [
-    "pysubs2~=1.8",
-    "transformers>=5.0.0rc3",
-    "torch~=2.7",
-    "sentencepiece~=0.2",
-    "protobuf>=3.20",
-    "rich~=14.0",
-    "static-ffmpeg~=2.7",
-    "fonttools>=4.61.0",
-    "pyobjc-framework-Vision>=11.0; sys_platform == 'darwin'",
-    "pyobjc-framework-Quartz>=11.0; sys_platform == 'darwin'",
-    "numpy>=1.26",
-    "Pillow>=10.0",
-    "simple-lama-inpainting>=0.1.0",
-    "opencv-python-headless>=4.8",
-    "guessit>=3.8",
-    "aniparse>=2.0",
-    "defusedxml>=0.7",
-    "yt-dlp>=2026.3.17",
-    "mlx-whisper>=0.4.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
+  "pysubs2~=1.8",
+  "transformers>=5.0.0rc3",
+  "torch~=2.7",
+  "sentencepiece~=0.2",
+  "protobuf>=3.20",
+  "rich~=14.0",
+  "static-ffmpeg~=2.7",
+  "fonttools>=4.61.0",
+  "pyobjc-framework-Vision>=11.0; sys_platform == 'darwin'",
+  "pyobjc-framework-Quartz>=11.0; sys_platform == 'darwin'",
+  "numpy>=1.26",
+  "Pillow>=10.0",
+  "simple-lama-inpainting>=0.1.0",
+  "opencv-python-headless>=4.8",
+  "guessit>=3.8",
+  "aniparse>=2.0",
+  "defusedxml>=0.7",
+  "yt-dlp>=2026.3.17",
+  "mlx-whisper>=0.4.2 ; platform_machine == 'arm64' and sys_platform == 'darwin'",
+  "webrtcvad>=2.0 ; sys_platform == 'darwin'",
 ]
 
 [build-system]
@@ -51,7 +52,13 @@ build-backend = "hatchling.build"
 packages = ["movie_translator"]
 
 [dependency-groups]
-dev = ["ruff>=0.14", "pytest>=9.0", "pytest-xdist>=3.5", "pytest-asyncio>=0.24", "ty"]
+dev = [
+  "ruff>=0.14",
+  "pytest>=9.0",
+  "pytest-xdist>=3.5",
+  "pytest-asyncio>=0.24",
+  "ty",
+]
 # `uv sync --group benchmarks` to install scoring deps used by
 # benchmarks/onepiece/strategies.py. Kept out of runtime + dev groups so
 # the production install stays lean.
@@ -80,8 +87,8 @@ python_functions = ["test_*"]
 addopts = "-n auto"
 asyncio_mode = "auto"
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks integration tests requiring FFmpeg",
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+  "integration: marks integration tests requiring FFmpeg",
 ]
 
 [tool.ty.src]
@@ -95,7 +102,10 @@ possibly-missing-import = "ignore"
 
 # Quartz/Vision are macOS-only (pyobjc); unresolved on Linux, ignore comments unused on Linux
 [[tool.ty.overrides]]
-include = ["movie_translator/ocr/vision_ocr.py", "movie_translator/ocr/pgs_extractor.py"]
+include = [
+  "movie_translator/ocr/vision_ocr.py",
+  "movie_translator/ocr/pgs_extractor.py",
+]
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
 unused-ignore-comment = "ignore"
