@@ -6,8 +6,7 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel in-flight runs for the same ref when a newer push lands — so a PR
-# rebase or a quick follow-up push doesn't stack redundant runs on the matrix.
+# Cancel in-flight runs for the same ref when a newer push lands.
 concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true
@@ -20,57 +19,16 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-26]
 
-    env:
-      # PyO3 embeds CPython into the binary. It needs to know which Python
-      # interpreter to link against at build time; we point it at the uv-managed
-      # venv so the embedded interpreter sees the same packages the Python code
-      # uses (torch, transformers, guessit, ...). The venv is created by
-      # `uv sync` below, before any cargo command runs.
-      PYO3_PYTHON: ${{ github.workspace }}/.venv/bin/python
-
     steps:
       - uses: actions/checkout@v4
         with:
-          # CI doesn't need the LFS-stored translation model: the real-model
-          # tests are #[ignore]'d and never run by default. Skipping LFS avoids
-          # tripping the repo's LFS bandwidth quota.
-          lfs: false
           submodules: true
 
-      # Install the exact toolchain pinned in rust-toolchain.toml (single source
-      # of truth for local + CI). `rustup show` reads the file and installs the
-      # pinned channel together with its declared components (rustfmt, clippy).
       - name: Install pinned Rust toolchain
         run: rustup show
 
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Set up Python 3.14
-        run: uv python install 3.14
-
-      # `uv sync` creates `.venv/` and installs runtime + dev deps. This MUST
-      # run before any cargo command — PyO3 reads `PYO3_PYTHON` (the venv's
-      # python) at link time and the venv must exist.
-      - name: Install Python ML-backend deps
-        run: uv sync --group dev
-        env:
-          UV_EXTRA_INDEX_URL: ${{ runner.os == 'Linux' && 'https://download.pytorch.org/whl/cpu' || '' }}
-
-      # PyO3 dynamically links to libpython from the uv-managed venv. On Linux,
-      # the dynamic loader needs LD_LIBRARY_PATH to find that libpython at
-      # runtime (macOS uses rpath and works without this).
-      - name: Configure libpython path (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          LIBPYTHON_DIR="$(uv run python -c 'import sysconfig; print(sysconfig.get_config_var("LIBDIR"))')"
-          echo "Resolved libpython dir: $LIBPYTHON_DIR"
-          echo "LD_LIBRARY_PATH=${LIBPYTHON_DIR}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
 
       - name: Rustfmt (check)
         run: cargo fmt --check
@@ -81,8 +39,8 @@ jobs:
       - name: Build workspace
         run: cargo build --workspace
 
+      - name: Cargo.toml dependency sorting
+        run: cargo sort -w --check
+
       - name: Run Rust tests
         run: cargo test --workspace
-
-      - name: Ruff (movie_translator package)
-        run: uv run ruff check movie_translator/
