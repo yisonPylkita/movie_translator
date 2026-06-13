@@ -6,6 +6,7 @@
 //! `hardsub_ocr_clean` is a Vision/GPU job — it OCRs burned-in subs from a
 //! downloaded video using the Rust-native OCR pipeline.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -45,7 +46,7 @@ pub fn hardsub_download(
 
     // Create output directory
     if let Some(parent) = out_path.parent() {
-        std::fs::create_dir_all(parent).map_err(MtError::Io)?;
+        fs::create_dir_all(parent).map_err(MtError::Io)?;
     }
 
     let out_str = out_path.to_string_lossy().to_string();
@@ -54,7 +55,7 @@ pub fn hardsub_download(
     cmd.arg("--quiet")
         .arg("--no-warnings")
         .arg("--no-progress")
-        .arg("--overwrites");
+        .arg("--force-overwrites");
 
     if best {
         // Best quality mode (for anime-dl / watch-it)

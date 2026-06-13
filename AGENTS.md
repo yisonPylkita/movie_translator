@@ -32,7 +32,7 @@ workflow, its name is in **bold**.
 ### Run the full gate (before any "done")
 
 `just check && just test`. `check` = `cargo clippy --workspace
---all-targets -D warnings` + `cargo fmt --check` + `just check-imports`
+--all-targets -D warnings` + `cargo +nightly fmt --check` + `just check-imports`
 (ast-grep import hygiene). `test` = `cargo test --workspace`. `just ci`
 runs `check + test`. Cite the output; never assert green without it.
 Subagent: **`gate-verify`**.
@@ -245,7 +245,7 @@ let val: serde_json::Value = serde_json::from_str(json)?;
 - `clap::Parser` / `thiserror::Error` / `serde::Deserialize` in derives
   (these are imported and used in derives, which is fine)
 
-**After adding ANY import, ALWAYS run `cargo fmt`.**
+**After adding ANY import, ALWAYS run `cargo +nightly fmt`.**
 rustfmt sorts imports into groups (std → external → crate) and
 alphabetically within groups. Skipping this step will produce
 format-check failures at the gate.
@@ -286,7 +286,7 @@ let mut rebuilt = Vec::with_capacity(argv.len());
   are destructive/outward — confirm, don't parallelize.
 - **Verify via the gate chain, cite evidence.** Run `just check` / `just test`
   and quote the output; never assert "done" without having run it.
-- **After any batch of edits that touches imports, run `cargo fmt` before
+- **After any batch of edits that touches imports, run `cargo +nightly fmt` before
   claiming done.** This fixes import ordering automatically and avoids
   the most common gate failure.
 - **No code index — plain grep/ripgrep is the default.** For structural Rust
