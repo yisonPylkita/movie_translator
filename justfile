@@ -93,9 +93,10 @@ fix-swift:
     fi
 
 # Format JSON files with jq (canonical sort-keys formatting).
+# Excludes .pi/ (pi-managed configs with intentional key ordering).
 fix-json:
     @if command -v jq >/dev/null 2>&1; then \
-        find . -name '*.json' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' \
+        find . -name '*.json' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' -not -path './.pi/*' \
             -not -name 'package-lock.json' -not -name 'Cargo.lock' \
             -exec sh -c 'jq --sort-keys . "{}" > "{}.tmp" && mv "{}.tmp" "{}"' \; 2>/dev/null || true; \
     fi
@@ -139,12 +140,13 @@ check-fmt-swift:
         find . -name '*.swift' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' -exec swift-format -m format {} + 2>/dev/null || true; \
     fi
 
-# Check JSON formatting (best-effort, no failure).
+# Check JSON formatting with jq --sort-keys (reports diff failures).
+# Excludes .pi/ (pi-managed configs with intentional key ordering).
 check-fmt-json:
     @if command -v jq >/dev/null 2>&1; then \
-        find . -name '*.json' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' \
+        find . -name '*.json' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' -not -path './.pi/*' \
             -not -name 'package-lock.json' -not -name 'Cargo.lock' \
-            -exec sh -c 'jq --sort-keys . "{}" | diff - "{}" >/dev/null 2>&1' \; 2>/dev/null || true; \
+            -print0 | xargs -0 -I{} sh -c 'jq --sort-keys . "{}" | diff - "{}" >/dev/null 2>&1 || { echo "JSON formatting issue: {}"; exit 1; }'; \
     fi
 
 # Lint import style: check for inline qualified paths that should be imports.
