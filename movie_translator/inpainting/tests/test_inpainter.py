@@ -24,7 +24,7 @@ class TestInpainter:
             for y in range(190, 250):
                 mask_pixels[x, y] = 255
 
-        inpainter = Inpainter(device='cpu')
+        inpainter = Inpainter()
         result = inpainter.inpaint(image, mask)
 
         assert isinstance(result, Image.Image)
@@ -41,7 +41,7 @@ class TestInpainter:
         image = Image.new('RGB', (128, 128), (100, 150, 200))
         mask = Image.new('L', (128, 128), 0)  # empty mask
 
-        inpainter = Inpainter(device='cpu')
+        inpainter = Inpainter()
         result = inpainter.inpaint(image, mask)
 
         # With empty mask, result should be very similar to input

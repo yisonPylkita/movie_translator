@@ -1371,6 +1371,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+ "tracing",
  "which",
 ]
 
@@ -1431,6 +1432,7 @@ name = "mt-ml"
 version = "0.1.0"
 dependencies = [
  "mt-core",
+ "mt-subtitles",
  "once_cell",
  "pyo3",
  "serde",
@@ -1463,7 +1465,9 @@ name = "mt-subtitles"
 version = "0.1.0"
 dependencies = [
  "encoding_rs",
+ "lazy_static",
  "mt-core",
+ "regex",
  "serde_json",
  "thiserror",
  "tracing",

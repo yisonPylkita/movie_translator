@@ -3,6 +3,7 @@
 pub mod extractor;
 pub mod ffmpeg;
 pub mod fonts;
+pub mod mask_generator;
 pub mod operations;
 
 // Re-export key public API at crate root.

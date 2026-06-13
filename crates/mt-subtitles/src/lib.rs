@@ -48,9 +48,14 @@
 
 pub mod ass;
 pub mod encoding;
+pub mod enhancements;
 pub mod error;
+pub mod hardsub_postprocess;
 pub mod model;
+pub mod postfilter;
 pub mod processor;
+pub mod sentence_merger;
+pub mod splitter;
 pub mod srt;
 
 #[cfg(test)]

@@ -10,6 +10,7 @@
 //! invoking cargo so PyO3 links against the venv interpreter (which has the
 //! `movie_translator` dependencies installed). The justfile + CI do this.
 
+pub mod apple_translate;
 pub mod backend;
 pub mod hardsub;
 pub mod inpaint;

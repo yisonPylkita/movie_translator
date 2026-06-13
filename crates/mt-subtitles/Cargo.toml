@@ -8,6 +8,8 @@ license.workspace = true
 mt-core = { path = "../mt-core" }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+regex = { workspace = true }
+lazy_static = "1"
 encoding_rs = "0.8"
 
 [dev-dependencies]
