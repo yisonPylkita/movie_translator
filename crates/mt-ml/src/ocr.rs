@@ -671,6 +671,7 @@ fn write_grayscale_pgm(path: &Path, pixels: &[u8], width: usize, height: usize) 
     fs::write(path, data)
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn find_ffmpeg() -> Result<PathBuf> {
     mt_core::exec::get_ffmpeg().map_err(|e| MtError::Subprocess {
         cmd: "ffmpeg".to_string(),
@@ -679,6 +680,7 @@ fn find_ffmpeg() -> Result<PathBuf> {
     })
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn find_ffprobe() -> Result<PathBuf> {
     mt_core::exec::get_ffprobe().map_err(|e| MtError::Subprocess {
         cmd: "ffprobe".to_string(),
@@ -687,6 +689,7 @@ fn find_ffprobe() -> Result<PathBuf> {
     })
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()

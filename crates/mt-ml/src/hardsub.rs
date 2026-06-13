@@ -358,6 +358,7 @@ mod ocr_postprocess {
     }
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
