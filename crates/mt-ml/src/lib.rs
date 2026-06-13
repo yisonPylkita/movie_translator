@@ -1,8 +1,9 @@
 //! ML inference drivers, embedded.
 //!
-//! ML inference itself stays in Python (PyTorch / Apple Vision / etc.). This
-//! crate embeds CPython via PyO3 and calls into the `movie_translator`
-//! Python package directly — no subprocesses, no JSON, no script files.
+//! ML inference that still runs in Python (Apple Vision, MLX model) is called
+//! through PyO3 embedding.  The Apple Translation backend has been rewritten
+//! in Rust-native code (see [`apple_translate`]) and calls the Swift bridge
+//! binary directly.
 //! Model objects (e.g. `SubtitleTranslator`) are loaded ONCE per binary run
 //! and reused across every file in a `run_all`.
 //!
