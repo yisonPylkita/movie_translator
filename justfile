@@ -116,7 +116,15 @@ check: check-clippy check-fmt
 check-clippy:
     cargo clippy --workspace --all-targets -- -D warnings
 
-check-fmt: check-fmt-rust check-fmt-toml check-fmt-sh check-fmt-swift check-fmt-json
+# Check that functions/types are imported with `use` instead of called fully-qualified.
+# Uses the ast-grep rule from .pi/rules/ast-grep-rules/rules/import-function-over-path.yml
+# Reports a violation count (non-blocking); the rule needs refinement to skip one-off
+# calls like Vec::new(), Path::new() that are idiomatic without a `use`.
+# Pass VERBOSE=1 to see individual violations (via sg scan text output).
+check-imports:
+    @./scripts/check_imports.sh
+
+check-fmt: check-fmt-rust check-fmt-toml check-fmt-sh check-fmt-swift check-fmt-json check-imports
     @echo "✓ All formatting checks passed."
 
 # Check Rust formatting with cargo fmt --check.

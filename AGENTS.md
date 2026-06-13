@@ -32,9 +32,9 @@ workflow, its name is in **bold**.
 ### Run the full gate (before any "done")
 
 `just check && just test`. `check` = `cargo clippy --workspace
---all-targets -D warnings` + `cargo fmt --check`. `test` = `cargo test
---workspace`. `just ci` runs `check + test`. Cite the output; never
-assert green without it.
+--all-targets -D warnings` + `cargo fmt --check` + `just check-imports`
+(ast-grep import hygiene). `test` = `cargo test --workspace`. `just ci`
+runs `check + test`. Cite the output; never assert green without it.
 Subagent: **`gate-verify`**.
 
 ### Translate / extract a video
@@ -88,9 +88,9 @@ stderr. There is no Python layer to debug.
 
 ### Debug an ML stage (translation / OCR / inpainting)
 
-All ML stages are pure Rust. Translation = `crates/mt-ml/src/apple_translate.rs`
+All ML stages are pure Rust. Translation = `crates/mt-ml/src/translate/apple.rs`
 (Apple Translation via Swift bridge + Rust sentence merger).
-OCR = `crates/mt-ml/src/ocr.rs` (Apple Vision via Swift bridge).
+OCR = `crates/mt-ml/src/ocr/vision.rs` (Apple Vision via Swift bridge).
 Inpainting = `crates/mt-ml/src/inpaint.rs` (pure Rust Telea algorithm).
 Subagent: **`ml-stage-debug`**.
 
@@ -115,7 +115,15 @@ Subagent: **`benchmark-runner`**.
 ### Auto-fix format + lint
 
 `just fix` formats all files, auto-fixes clippy warnings, and sorts Cargo.toml
-dependencies. `just check` validates everything without modifying.
+dependencies. `just check` validates everything without modifying (includes
+clippy, rustfmt, and import hygiene via ast-grep).
+
+### Check import hygiene
+
+`just check-imports` runs `sg scan` using the pi-lens ast-grep rule at
+`.pi/rules/ast-grep-rules/rules/import-function-over-path.yml`. Reports
+fully-qualified calls that should use `use` imports instead.
+Requires `sg` (ast-grep) to be installed.
 
 ## File map
 
@@ -241,6 +249,13 @@ let val: serde_json::Value = serde_json::from_str(json)?;
 rustfmt sorts imports into groups (std → external → crate) and
 alphabetically within groups. Skipping this step will produce
 format-check failures at the gate.
+
+**Import hygiene is checked automatically** by `just check` via the ast-grep
+rule at `.pi/rules/ast-grep-rules/rules/import-function-over-path.yml`. Run
+`just check-imports` directly to see all violations across the workspace.
+Note: the rule currently flags many one-off calls (`Vec::new()`,
+`Path::new()`) that are idiomatic — it will be refined to only flag
+repeat offenders.
 
 ### No unnecessary type annotations
 
