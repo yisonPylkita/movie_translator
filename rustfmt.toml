@@ -1,4 +1,4 @@
-# Stable rustfmt options only — no nightly-only features, since
-# `check_fast_gate` and other tools run stable `cargo fmt --check`.
-# The justfile's `fix-rust` uses `cargo +nightly fmt` for additional
-# nightly-only formatting (like merge_imports).
+# Enforce std → external → local crate import grouping.
+# The justfile's `fix-rust` and `check-fmt-rust` use `cargo +nightly fmt`
+# because this option is nightly-only.  CI also uses `+nightly`.
+group_imports = "StdExternalCrate"
