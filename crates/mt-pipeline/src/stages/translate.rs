@@ -157,14 +157,16 @@ pub fn run(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::gpu::DirectGpuExecutor;
-    use mt_core::{BurnedInResult, DialogueLine, OCRResult, PipelineConfig};
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::fs;
     use std::path::{Path, PathBuf};
+
+    use mt_core::{BurnedInResult, DialogueLine, OCRResult, PipelineConfig};
     use tempfile::tempdir;
+
+    use super::*;
+    use crate::gpu::DirectGpuExecutor;
 
     /// Fake executor returning canned translations per model.
     struct FakeGpu {

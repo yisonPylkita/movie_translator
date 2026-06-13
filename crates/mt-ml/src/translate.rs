@@ -54,8 +54,9 @@ pub fn translate(req: &TranslateRequest) -> Result<Vec<DialogueLine>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::to_value;
+
+    use super::*;
 
     #[test]
     fn translate_request_serialize_shape() {

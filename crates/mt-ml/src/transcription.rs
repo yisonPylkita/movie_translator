@@ -15,11 +15,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use serde_json::from_slice;
-
 use mt_core::swift_bridge::{ensure_compiled, macos_at_least};
 use mt_core::{DialogueLine, MtError, Result};
 use serde::Deserialize;
+use serde_json::from_slice;
 use tracing::{info, warn};
 
 // ── Paths for the transcription Swift bridge ─────────────────────────────────

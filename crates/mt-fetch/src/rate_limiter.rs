@@ -138,9 +138,10 @@ impl<C: Clock> RateLimiter<C> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::*;
 
     /// A fake monotonic clock: `now` is advanced by explicit `advance` calls;
     /// `sleep` advances `now` by the requested duration (deterministic).

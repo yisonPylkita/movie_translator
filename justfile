@@ -72,7 +72,7 @@ fix: fix-rust fix-toml fix-sh fix-swift fix-json
 
 # Format Rust code with rustfmt.
 fix-rust:
-    cargo fmt
+    cargo +nightly fmt
 
 # Format TOML files with taplo.
 fix-toml:
@@ -120,7 +120,7 @@ check-fmt: check-fmt-rust check-fmt-toml check-fmt-sh check-fmt-swift check-fmt-
 
 # Check Rust formatting with cargo fmt --check.
 check-fmt-rust:
-    cargo fmt --check
+    cargo +nightly fmt --check
 
 # Check TOML formatting with taplo.
 check-fmt-toml:
@@ -148,39 +148,6 @@ check-fmt-json:
             -not -name 'package-lock.json' -not -name 'Cargo.lock' \
             -print0 | xargs -0 -I{} sh -c 'jq --sort-keys . "{}" | diff - "{}" >/dev/null 2>&1 || { echo "JSON formatting issue: {}"; exit 1; }'; \
     fi
-
-# Lint import style: check for inline qualified paths that should be imports.
-# Flags patterns like `tracing::info!(...)` or `serde_json::from_str(...)`
-# where a top-level import would be cleaner.
-#
-# Exceptions: derive macros (`#[from] std::io::Error`), doc comments.
-check-import-style:
-    @# Check for inline tracing macro calls (should use imported short form)
-    @bad=$$(/opt/homebrew/bin/rg 'tracing::(info|warn|error|debug)!' --type rust crates/ | grep -v vendor/ | grep -v 'use tracing' || true); \
-    if [ -n "$$bad" ]; then \
-        echo "⚠️  Inline tracing:: calls found — use imported short form:"; \
-        echo "$$bad"; \
-        exit 1; \
-    fi
-    @# Check for inline serde_json function calls
-    @bad2=$$(/opt/homebrew/bin/rg 'serde_json::(from_str|from_slice|to_string|to_value|to_string_pretty)' --type rust crates/ | grep -v 'use serde_json' | grep -v vendor/ | grep -v '^\s*//' || true); \
-    if [ -n "$$bad2" ]; then \
-        echo "⚠️  Inline serde_json:: calls found — use imported short form:"; \
-        echo "$$bad2"; \
-        exit 1; \
-    fi
-    @# Check for unnecessary type annotations (constructor pattern)
-    @bad3=$$(/opt/homebrew/bin/rg 'let\s+\w+\s*:\s*(Vec|HashMap|String|PathBuf|Option|Result|HashSet)<' --type rust crates/ | grep -v vendor/ | grep -v '//' || true); \
-    if [ -n "$$bad3" ]; then \
-        echo "⚠️  Unnecessary type annotation:"; \
-        echo "$$bad3"; \
-        exit 1; \
-    fi
-    @echo "✓ Import style looks clean."
-
-# Combined style + type annotation check (no modifications).
-lint-style: check-import-style check-fmt check-clippy
-    @echo "✓ Style check passed."
 
 # ─── Tidy (fix + lint + ordering) ──────────────────────────────────────────
 

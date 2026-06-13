@@ -4,12 +4,12 @@
 //! discovery and mt-media share one binary-discovery path.
 
 use std::collections::HashMap;
+use std::path::Path;
+use std::process::Command;
 
 use mt_core::{MtError, Result};
 use serde::Deserialize;
 use serde_json::from_str;
-use std::path::Path;
-use std::process::Command;
 
 /// Metadata extracted from a video container's format tags.
 #[derive(Debug, Clone, PartialEq, Default)]

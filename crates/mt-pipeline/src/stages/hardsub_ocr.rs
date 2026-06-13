@@ -19,10 +19,10 @@ use std::collections::HashMap;
 
 use mt_core::{FetchedSubtitle, PipelineContext};
 use mt_fetch::ogladajanime::HardsubPlan;
+use tracing::{info, warn};
 
 use crate::error::Result;
 use crate::gpu::GpuExecutor;
-use tracing::{info, warn};
 
 /// Lowest stream height to accept for OCR legibility (matches the PoC default).
 const MIN_HEIGHT: u32 = 480;

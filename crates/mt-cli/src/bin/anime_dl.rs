@@ -220,8 +220,9 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::tempdir;
+
+    use super::*;
 
     #[test]
     fn episode_stem_zero_pads_to_two_digits() {

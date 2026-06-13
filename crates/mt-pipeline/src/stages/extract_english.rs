@@ -5,13 +5,12 @@ use std::path::PathBuf;
 use mt_core::{PendingOcr, PipelineContext};
 use mt_media::{SubtitleExtractor, SubtitleTrack};
 use mt_subtitles::extract_dialogue_lines;
+#[cfg(test)]
+use tempfile::tempdir;
+use tracing::info;
 
 use crate::error::{PipelineError, Result};
 use crate::vision::{VisionOcrProbe, default_vision_ocr_probe};
-use tracing::info;
-
-#[cfg(test)]
-use tempfile::tempdir;
 
 /// Stage role name.
 pub const NAME: &str = "extract";
@@ -143,11 +142,13 @@ fn extract_text_only(ctx: &PipelineContext) -> Result<Option<PathBuf>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use mt_core::{DialogueLine, FetchedSubtitle, PipelineConfig};
     use std::collections::HashMap;
     use std::fs;
     use std::path::Path;
+
+    use mt_core::{DialogueLine, FetchedSubtitle, PipelineConfig};
+
+    use super::*;
 
     fn base_ctx(tmp: &Path) -> PipelineContext {
         let video = tmp.join("ep01.mkv");

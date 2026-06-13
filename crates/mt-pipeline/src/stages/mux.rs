@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 
 use mt_core::{PipelineContext, SubtitleFile};
 use mt_media::VideoOperations;
+use tracing::{error, info};
 
 use crate::error::{PipelineError, Result};
 use crate::gpu::GpuExecutor;
-use tracing::{error, info};
 
 /// Stage role name.
 pub const NAME: &str = "mux";
@@ -291,14 +291,16 @@ fn replace_in_place(video_path: &Path, temp_video: &Path, ops: &dyn MuxOps) -> R
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::gpu::DirectGpuExecutor;
+    use std::cell::RefCell;
+    use std::fs;
+
     use mt_core::{
         BurnedInResult, DialogueLine, FontInfo, OCRResult, OriginalTrack, PipelineConfig,
     };
-    use std::cell::RefCell;
-    use std::fs;
     use tempfile::tempdir;
+
+    use super::*;
+    use crate::gpu::DirectGpuExecutor;
 
     // ── Fake GpuExecutor recording inpaint calls ──────────────────────────
     #[derive(Default)]

@@ -1,18 +1,15 @@
 //! Create subtitle track files and build the track list.
 use std::fs;
-
 use std::path::{Path, PathBuf};
 
 use mt_core::{MediaIdentity, PipelineContext, SubtitleFile};
 use mt_subtitles::{create_polish_subtitles, override_font_name};
-
 use serde_json::from_str;
-
-use crate::error::Result;
-use tracing::{info, warn};
-
 #[cfg(test)]
 use tempfile::tempdir;
+use tracing::{info, warn};
+
+use crate::error::Result;
 
 /// Stage role name.
 pub const NAME: &str = "create_tracks";
@@ -306,10 +303,12 @@ pub fn load_external_subs(external_dir: &Path, identity: &MediaIdentity) -> Vec<
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use mt_core::{DialogueLine, FetchedSubtitle, FontInfo, PipelineConfig};
     use std::collections::HashMap;
     use std::fs;
+
+    use mt_core::{DialogueLine, FetchedSubtitle, FontInfo, PipelineConfig};
+
+    use super::*;
 
     fn base_ctx(tmp: &Path) -> PipelineContext {
         let video = tmp.join("ep01.mkv");

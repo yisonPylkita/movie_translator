@@ -14,15 +14,14 @@ use std::time::Duration;
 use mt_core::MtError;
 use mt_core::swift_bridge::{ensure_compiled, macos_at_least};
 use mt_core::{DialogueLine, Result as MtResult};
-use serde::{Deserialize, Serialize};
-use serde_json::{from_slice, to_string};
-use tracing::info;
-
 use mt_subtitles::enhancements::{
     PLACEHOLDER_ONLY_RE, apply_fallbacks, extract_placeholders, postprocess_translation,
     restore_placeholders,
 };
 use mt_subtitles::sentence_merger::{merge_for_translation, unmerge_translations};
+use serde::{Deserialize, Serialize};
+use serde_json::{from_slice, to_string};
+use tracing::info;
 
 // ── Paths ───────────────────────────────────────────────────────────────────
 

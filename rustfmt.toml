@@ -1,0 +1,3 @@
+# Enforce std → external → local crate import grouping.
+# Uses `cargo +nightly fmt` (see justfile) since this option is nightly-only.
+group_imports = "StdExternalCrate"

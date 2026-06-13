@@ -3,6 +3,7 @@
 //! Inject a sleep function for deterministic testing.
 
 use std::io::{Error, ErrorKind};
+
 use tracing::debug;
 
 /// Error kinds that are worth retrying (transient network issues): network
@@ -86,8 +87,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::cell::Cell;
+
+    use super::*;
     // Error is imported at module level
 
     fn no_sleep(_: f64) {}

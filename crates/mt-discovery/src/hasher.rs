@@ -1,10 +1,11 @@
 //! File hashing utilities for media identification.
 
-use md5::{Digest, Md5};
-use mt_core::{MtError, Result};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+
+use md5::{Digest, Md5};
+use mt_core::{MtError, Result};
 
 const CHUNK_SIZE: u64 = 65536; // 64 KB
 const NAPIPROJEKT_READ_SIZE: usize = 10 * 1024 * 1024; // 10 MB
@@ -100,9 +101,11 @@ pub fn compute_napiprojekt_hash(path: &Path) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
     use tempfile::NamedTempFile;
+
+    use super::*;
 
     fn write_temp(bytes: &[u8]) -> NamedTempFile {
         let mut f = NamedTempFile::new().unwrap();

@@ -6,10 +6,10 @@ use clap::Parser;
 use mt_core::PipelineConfig;
 use mt_discovery::find_videos;
 use mt_pipeline::{FileStatus, ProgressSender, run_all_with_progress};
+use tracing::{error, info, warn};
 
 use crate::common::{check_dependencies, resolve_models};
 use crate::tui::{python_stderr_capture_path, spawn_tui, stdout_is_tty};
-use tracing::{error, info, warn};
 
 /// Default device per platform — `mps` on macOS, `cpu` elsewhere.
 fn default_device() -> String {

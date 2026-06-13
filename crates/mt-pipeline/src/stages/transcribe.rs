@@ -7,17 +7,17 @@
 //! source. A missing audio track / unavailable engine yields no source and the
 //! pipeline falls through to its normal `NoEnglishSource` skip.
 
+#[cfg(test)]
+use std::fs;
+
 use mt_core::PipelineContext;
 use mt_subtitles::extract_dialogue_lines;
+#[cfg(test)]
+use tempfile::tempdir;
+use tracing::{info, warn};
 
 use crate::error::Result;
 use crate::gpu::GpuExecutor;
-use tracing::{info, warn};
-
-#[cfg(test)]
-use std::fs;
-#[cfg(test)]
-use tempfile::tempdir;
 
 pub const NAME: &str = "transcribe";
 

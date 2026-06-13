@@ -36,8 +36,9 @@ pub fn parse_filename(filename: &str, folder: Option<&str>) -> mt_core::Result<P
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::from_str;
+
+    use super::*;
 
     /// Unit test: ParsedName JSON round-trip (no interpreter required).
     #[test]

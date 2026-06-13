@@ -7,11 +7,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use mt_core::POLISH_CHARS;
 use serde_json::{Value, from_str};
 use tempfile::Builder;
 use tracing::debug;
-
-use mt_core::POLISH_CHARS;
 
 use crate::ffmpeg::{VideoMuxError, get_ffmpeg, get_ffprobe};
 

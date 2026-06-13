@@ -750,13 +750,14 @@ fn process_video_file_inner(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::worker::{ConcurrencyProbe, GpuWorker};
-    use tokio::sync::mpsc;
-
     use std::sync::atomic::Ordering;
     use std::time::Duration;
+
     use tempfile::tempdir;
+    use tokio::sync::mpsc;
+
+    use super::*;
+    use crate::worker::{ConcurrencyProbe, GpuWorker};
 
     fn probe_off() -> bool {
         false

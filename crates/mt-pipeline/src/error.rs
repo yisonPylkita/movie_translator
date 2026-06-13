@@ -78,9 +78,10 @@ pub type Result<T> = std::result::Result<T, PipelineError>;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::error::Error;
     use std::io::{Error as IoError, ErrorKind};
+
+    use super::*;
 
     /// A wrapped lower-crate error must keep its cause reachable via
     /// `Error::source`, not be stringified into the message.

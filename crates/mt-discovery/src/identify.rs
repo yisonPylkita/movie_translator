@@ -3,12 +3,14 @@
 //! Combines filename parsing, container metadata, file hash, and optional
 //! TMDB enrichment into a [`mt_core::MediaIdentity`].
 
+use std::path::Path;
+
+use mt_core::{MediaIdentity, Result};
+
 use crate::hasher::compute_oshash;
 use crate::metadata::{ContainerMetadata, extract_container_metadata};
 use crate::parser::{ParsedName, parse_filename};
 use crate::tmdb::{TmdbResult, lookup_tmdb};
-use mt_core::{MediaIdentity, Result};
-use std::path::Path;
 
 /// Assemble a [`MediaIdentity`] from already-computed components.
 ///
@@ -123,11 +125,12 @@ pub fn identify_media(video_path: &Path) -> Result<MediaIdentity> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::metadata::ContainerMetadata;
     use crate::parser::ParsedName;
     use crate::tmdb::TmdbResult;
-    use std::path::Path;
 
     fn anime_parsed() -> ParsedName {
         ParsedName {

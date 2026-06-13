@@ -4,9 +4,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use tracing::info;
-
 use mt_core::{MtError, Result};
+use tracing::info;
 
 use crate::ffmpeg::{get_ffmpeg, get_video_info};
 

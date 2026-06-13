@@ -1,8 +1,9 @@
 //! Recursive video file discovery and working directory creation.
 
-use mt_core::Result;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+
+use mt_core::Result;
 
 /// Video file extensions considered valid inputs.
 const VIDEO_EXTENSIONS: &[&str] = &["mkv", "mp4"];
@@ -141,8 +142,9 @@ pub fn create_work_dir(video_path: &Path, root_input: &Path) -> Result<PathBuf> 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     fn touch(path: &Path) {
         std::fs::File::create(path).unwrap();

@@ -13,9 +13,9 @@ use std::path::{Path, PathBuf};
 use mt_core::{BurnedInResult, DialogueLine, OCRResult, PipelineContext};
 use mt_ml::TranslateRequest;
 use mt_subtitles::extract_dialogue_lines;
+use tracing::warn;
 
 use crate::error::{PipelineError, Result};
-use tracing::warn;
 
 /// Abstraction over GPU-bound ML work.
 ///
@@ -228,9 +228,11 @@ pub fn resolve_pending_ocr(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use mt_core::{OCRResult, PendingOcr, PipelineConfig};
     use std::cell::RefCell;
+
+    use mt_core::{OCRResult, PendingOcr, PipelineConfig};
+
+    use super::*;
 
     /// A fake executor that returns canned OCR results and records calls.
     #[derive(Default)]

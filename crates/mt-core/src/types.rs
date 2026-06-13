@@ -120,8 +120,9 @@ pub struct BurnedInResult {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::{from_str, to_string};
+
+    use super::*;
 
     #[test]
     fn replace_polish_chars_typical() {

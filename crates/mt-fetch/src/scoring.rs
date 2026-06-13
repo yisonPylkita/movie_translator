@@ -1,7 +1,8 @@
 //! Subtitle match scoring utilities.
 
-use regex::Regex;
 use std::collections::HashSet;
+
+use regex::Regex;
 
 /// Split a release name into lowercase tokens.
 fn tokenize(name: &str) -> HashSet<String> {

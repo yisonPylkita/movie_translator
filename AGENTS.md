@@ -138,6 +138,7 @@ check. `just check` validates everything without modifying.
 │   └── superpowers/{plans,specs}/  Historical design docs; rust-rewrite spec is the architecture record.
 ├── justfile                        Tooling entry point (`just` to list).
 ├── Cargo.toml / Cargo.lock         Rust workspace.
+├── rustfmt.toml                    Rustfmt configuration.
 ├── rust-toolchain.toml             Pinned Rust channel (single source of truth, local + CI).
 ├── Brewfile                        macOS system tools.
 ├── README.md                       User-facing docs.

@@ -8,11 +8,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use md5::{Digest, Md5};
+use mt_core::MediaIdentity;
+use tracing::{debug, info};
 
 use crate::retry::FetchError;
 use crate::types::SubtitleMatch;
-use mt_core::MediaIdentity;
-use tracing::{debug, info};
 
 pub const API_URL: &str = "http://napiprojekt.pl/unit_napisy/dl.php";
 pub const MAGIC_PREFIX: &str = "iBlm8NTigvXkI6";

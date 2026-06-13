@@ -183,8 +183,9 @@ impl PipelineContext {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::{from_str, to_string};
+
+    use super::*;
 
     #[test]
     fn config_defaults() {

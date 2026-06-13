@@ -13,10 +13,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use mt_core::{BoundingBox, BurnedInResult, MtError, OCRResult, Result};
 use serde_json::{Value, from_slice};
 use tracing::{info, warn};
-
-use mt_core::{BoundingBox, BurnedInResult, MtError, OCRResult, Result};
 
 // ── Public API ─────────────────────────────────────────────────────────────
 

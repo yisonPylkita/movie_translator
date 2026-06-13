@@ -8,15 +8,15 @@ use std::io::{Cursor, Read as _};
 use std::path::Path;
 
 use encoding_rs::ISO_8859_2;
+use mt_core::MediaIdentity;
 use regex::Regex;
 use reqwest::blocking::Client;
 use scraper::{Html, Selector};
+use tracing::{debug, info, warn};
 use zip::ZipArchive;
 
 use crate::retry::FetchError;
 use crate::types::SubtitleMatch;
-use mt_core::MediaIdentity;
-use tracing::{debug, info, warn};
 
 pub const BASE_URL: &str = "http://animesub.info";
 pub const USER_AGENT: &str = "Mozilla/5.0 (compatible; MovieTranslator/1.0)";
@@ -423,8 +423,9 @@ impl super::SubtitleProvider for AnimeSubProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::tempdir;
+
+    use super::*;
 
     const SAMPLE_HTML: &str = r#"
 <table class="Napisy">
@@ -809,6 +810,7 @@ mod tests {
     #[test]
     fn download_extracts_subtitle_from_zip() {
         use std::io::Write as _;
+
         use zip::write::SimpleFileOptions;
         use zip::{ZipArchive, ZipWriter};
         let dir = tempdir().unwrap();

@@ -7,11 +7,12 @@ pub mod podnapisi;
 
 use std::path::Path;
 
-use crate::retry::FetchError;
-use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
 use reqwest::blocking::Client;
 use tracing::warn;
+
+use crate::retry::FetchError;
+use crate::types::SubtitleMatch;
 
 /// Build a blocking reqwest client with the given user agent.
 ///

@@ -6,13 +6,13 @@ use std::io::{Cursor, Read as _};
 use std::path::Path;
 use std::str;
 
+use mt_core::MediaIdentity;
 use quick_xml::Reader;
 use quick_xml::events::Event;
+use tracing::{debug, info};
 
 use crate::retry::FetchError;
 use crate::types::SubtitleMatch;
-use mt_core::MediaIdentity;
-use tracing::{debug, info};
 
 pub const API_BASE: &str = "https://www.podnapisi.net";
 pub const SEARCH_URL: &str = "https://www.podnapisi.net/subtitles/search/old";
@@ -360,9 +360,10 @@ impl super::SubtitleProvider for PodnapisiProvider {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
     use crate::providers::SubtitleProvider;
-    use std::collections::HashSet;
 
     const SAMPLE_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <results>

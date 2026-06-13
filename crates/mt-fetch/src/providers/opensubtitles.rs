@@ -7,14 +7,15 @@ use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::rate_limiter::RateLimiter;
-use crate::retry::FetchError;
-use crate::scoring::compute_release_score;
-use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
 use reqwest::blocking::Client;
 use serde_json::{Value, json};
 use tracing::{debug, info, warn};
+
+use crate::rate_limiter::RateLimiter;
+use crate::retry::FetchError;
+use crate::scoring::compute_release_score;
+use crate::types::SubtitleMatch;
 
 pub const API_BASE: &str = "https://api.opensubtitles.com/api/v1";
 pub const USER_AGENT: &str = "MovieTranslator v1.0";

@@ -28,8 +28,9 @@ pub type Result<T> = std::result::Result<T, MtError>;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::{Error, ErrorKind};
+
+    use super::*;
 
     #[test]
     fn parse_error_display() {

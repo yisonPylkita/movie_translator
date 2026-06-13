@@ -623,9 +623,10 @@ impl GpuExecutor for ConcurrencyProbe {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::sync::atomic::Ordering;
     use std::time::Duration;
+
+    use super::*;
 
     /// Submitting several GPU jobs concurrently from many tasks must execute
     /// them ONE AT A TIME (the core serialisation property of `GpuQueue`).

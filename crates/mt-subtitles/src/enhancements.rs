@@ -5,8 +5,9 @@
 //! quality: protect proper nouns and numbers from translation, handle
 //! common phrases idiomatically, and clean up known bad translations.
 
-use regex::{Captures, Regex, escape as regex_escape};
 use std::collections::{HashMap, HashSet};
+
+use regex::{Captures, Regex, escape as regex_escape};
 use tracing::warn;
 
 lazy_static::lazy_static! {

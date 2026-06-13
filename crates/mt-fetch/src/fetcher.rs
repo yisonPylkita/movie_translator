@@ -7,11 +7,12 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
+use mt_core::MediaIdentity;
+use tracing::{debug, info, warn};
+
 use crate::providers::SubtitleProvider;
 use crate::retry::{FetchError, with_retry};
 use crate::types::SubtitleMatch;
-use mt_core::MediaIdentity;
-use tracing::{debug, info, warn};
 
 /// Orchestrates subtitle search across multiple providers.
 pub struct SubtitleFetcher {
@@ -171,12 +172,14 @@ fn panic_payload_message(payload: &(dyn Any + Send)) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::types::SubtitleMatch;
     use std::collections::HashSet;
     use std::fs;
     use std::sync::Mutex;
+
     use tempfile::tempdir;
+
+    use super::*;
+    use crate::types::SubtitleMatch;
 
     struct FakeProvider {
         provider_name: String,

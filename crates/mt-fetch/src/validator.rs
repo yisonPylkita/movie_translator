@@ -10,11 +10,11 @@ use std::path::{Path, PathBuf};
 
 use mt_subtitles::model::Event;
 use ndarray::Array1;
+use tracing::warn;
 
 use crate::retry::FetchError;
 use crate::style_classifier::classify_styles;
 use crate::types::SubtitleMatch;
-use tracing::warn;
 
 // ---------------------------------------------------------------------------
 // build_activity_vector
@@ -311,10 +311,12 @@ impl SubtitleValidator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
     use std::path::PathBuf;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     // Helper: write a file and return its path
     fn write_file(dir: &TempDir, name: &str, content: &str) -> PathBuf {

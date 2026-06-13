@@ -3,10 +3,9 @@
 
 use std::path::Path;
 
-use tracing::{info, warn};
-
 use mt_core::types::{DialogueLine, is_non_dialogue_style, replace_polish_chars};
 use thiserror::Error;
+use tracing::{info, warn};
 
 use crate::{
     ass::{load_ass, to_ass_string},

@@ -10,6 +10,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
 use tracing::{info, warn};
 
 // ---------------------------------------------------------------------------
@@ -147,8 +148,9 @@ pub fn align_to_reference(subtitle_path: &Path, reference_path: &Path, split_pen
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     // -----------------------------------------------------------------------
     // Tests for build_ilass_argv (pure function — always runnable)

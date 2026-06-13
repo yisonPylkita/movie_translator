@@ -1,9 +1,8 @@
 //! Fetch subtitles from online providers.
-use std::fs;
-
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::thread::sleep;
 use std::time::Duration;
@@ -243,9 +242,11 @@ pub fn validate_and_select(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
+
     use tempfile::tempdir;
+
+    use super::*;
 
     fn make_match(language: &str, source: &str, id: &str) -> SubtitleMatch {
         SubtitleMatch {

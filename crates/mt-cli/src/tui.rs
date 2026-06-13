@@ -1344,8 +1344,9 @@ fn render_footer(frame: &mut ratatui::Frame<'_>, area: Rect) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     fn setup_state() -> UiState {
         UiState {

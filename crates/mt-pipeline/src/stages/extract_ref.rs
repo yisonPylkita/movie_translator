@@ -3,13 +3,12 @@ use std::fs;
 
 use mt_core::{OriginalTrack, PendingOcr, PipelineContext};
 use mt_media::{SubtitleExtractor, SubtitleTrack};
+#[cfg(test)]
+use tempfile::tempdir;
+use tracing::{info, warn};
 
 use crate::error::Result;
 use crate::vision::{VisionOcrProbe, default_vision_ocr_probe};
-use tracing::{info, warn};
-
-#[cfg(test)]
-use tempfile::tempdir;
 
 /// Stage role name.
 pub const NAME: &str = "extract_reference";
@@ -119,10 +118,12 @@ pub fn run_with_probe(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use mt_core::PipelineConfig;
     use std::fs;
     use std::path::{Path, PathBuf};
+
+    use mt_core::PipelineConfig;
+
+    use super::*;
 
     fn ctx(tmp: &Path) -> PipelineContext {
         let video = tmp.join("ep01.mkv");

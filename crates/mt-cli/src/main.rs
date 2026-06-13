@@ -10,7 +10,6 @@ use std::env;
 use std::process::exit;
 
 use clap::Parser;
-
 use mt_cli::commands::{extract, translate};
 use tracing::error;
 

@@ -8,8 +8,9 @@
 //!  3. If the title is still missing and a `folder_name` is provided, try
 //!     extracting from the folder name.
 
-use regex::Regex;
 use std::sync::LazyLock;
+
+use regex::Regex;
 
 use crate::parser::ParsedName;
 

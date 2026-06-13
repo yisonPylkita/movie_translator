@@ -41,8 +41,9 @@ pub struct MediaIdentity {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::{from_str, to_string};
+
+    use super::*;
 
     fn minimal_identity() -> MediaIdentity {
         MediaIdentity {

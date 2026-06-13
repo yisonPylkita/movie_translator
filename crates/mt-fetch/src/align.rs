@@ -414,9 +414,11 @@ fn align_piecewise(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     fn fmt_srt_time(ms: i64) -> String {
         let ms = ms.max(0);

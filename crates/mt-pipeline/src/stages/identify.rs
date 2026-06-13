@@ -2,9 +2,9 @@
 
 use mt_core::PipelineContext;
 use mt_discovery::identify_media;
+use tracing::info;
 
 use crate::error::Result;
-use tracing::info;
 
 /// Stage role name.
 pub const NAME: &str = "identify";

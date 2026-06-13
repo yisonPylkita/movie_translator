@@ -5,11 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
+use mt_core::SubtitleFile;
 use serde::Deserialize;
 use serde_json::{Value, from_str};
 use thiserror::Error;
-
-use mt_core::SubtitleFile;
 
 mod binaries {
     //! Binary resolution, delegating to the shared `mt_core::exec` resolver so
