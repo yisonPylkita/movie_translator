@@ -3,19 +3,18 @@ language: Rust
 severity: warning
 message: "Use `use $CRATE::$FUNC;` instead of calling `$CRATE::$FUNC(...)` inline"
 note: |
-  Functions and macros used repeatedly in a file should be imported at the top
-  and called with their short name.
+  Functions with multi-segment paths (3+ segments like
+  `crate::module::func`) should be imported with `use` at the top
+  and called with their short name. Single-crate paths like `Vec::new()`
+  are idiomatic.
 
   Before:
-    tracing::info!("hello");
-    serde_json::from_str(json)?;
+    mt_core::swift_bridge::macos_at_least(26);
 
   After:
-    use tracing::info;
-    use serde_json::from_str;
+    use mt_core::swift_bridge::macos_at_least;
 
-    info!("hello");
-    from_str(json)?;
+    macos_at_least(26);
 rule:
   all:
     - kind: call_expression
@@ -23,3 +22,10 @@ rule:
         field: function
         kind: scoped_identifier
         pattern: $CRATE::$FUNC
+        # Only flag 3+ segment paths where the path itself is a
+        # scoped_identifier (e.g. mt_core::swift_bridge::func).
+        # 2-segment paths like Vec::new() or FetchError::Parse
+        # have `path: identifier` and are idiomatically fine.
+        has:
+          field: path
+          kind: scoped_identifier
