@@ -7,11 +7,11 @@ license.workspace = true
 [dependencies]
 encoding_rs = { workspace = true }
 lazy_static = { workspace = true }
+
+mt-core = { workspace = true }
 regex = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-
-mt-core = { workspace = true }
 
 [dev-dependencies]
 encoding_rs = { workspace = true }

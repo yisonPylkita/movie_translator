@@ -14,14 +14,14 @@ just check → cargo clippy --workspace --all-targets -D warnings
              + cargo fmt --check
 just test  → cargo test --workspace
 just ci    → check + test
-just tidy  → lint + tidy-check-deps
+just fix   → format + clippy-fix + cargo sort
 ```
 
 ## Flow
 
 1. **`just check`.** Bisect clippy vs fmt failures.
 2. **`just test`.** Report failing test names.
-3. **`bash scripts/check-deps-sorted.sh`.** Validate Cargo.toml ordering.
+3. **`cargo sort -w --check`.** Validate Cargo.toml dependency ordering.
 
 ## What you return
 

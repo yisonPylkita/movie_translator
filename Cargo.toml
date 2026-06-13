@@ -17,6 +17,16 @@ dirs = "6"
 encoding_rs = "0.8"
 lazy_static = "1"
 md-5 = "0.11"
+
+# ── Internal workspace crates ──────────────────────────────────────────────
+mt-cli = { path = "crates/mt-cli" }
+mt-core = { path = "crates/mt-core" }
+mt-discovery = { path = "crates/mt-discovery" }
+mt-fetch = { path = "crates/mt-fetch" }
+mt-media = { path = "crates/mt-media" }
+mt-ml = { path = "crates/mt-ml" }
+mt-pipeline = { path = "crates/mt-pipeline" }
+mt-subtitles = { path = "crates/mt-subtitles" }
 ndarray = "0.17"
 percent-encoding = "2"
 quick-xml = "0.40"
@@ -38,13 +48,3 @@ ttf-parser = "0.25"
 urlencoding = "2"
 which = "8"
 zip = "8"
-
-# ── Internal workspace crates ──────────────────────────────────────────────
-mt-cli = { path = "crates/mt-cli" }
-mt-core = { path = "crates/mt-core" }
-mt-discovery = { path = "crates/mt-discovery" }
-mt-fetch = { path = "crates/mt-fetch" }
-mt-media = { path = "crates/mt-media" }
-mt-ml = { path = "crates/mt-ml" }
-mt-pipeline = { path = "crates/mt-pipeline" }
-mt-subtitles = { path = "crates/mt-subtitles" }

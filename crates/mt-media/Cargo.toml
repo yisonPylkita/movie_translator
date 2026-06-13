@@ -6,14 +6,14 @@ license.workspace = true
 
 [dependencies]
 dirs = { workspace = true }
+
+mt-core = { workspace = true }
+mt-subtitles = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 ttf-parser = { workspace = true }
-
-mt-core = { workspace = true }
-mt-subtitles = { workspace = true }
 
 [dev-dependencies]

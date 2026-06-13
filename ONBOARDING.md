@@ -52,9 +52,8 @@ Run `just` (no args) for the live list. Key recipes:
 | `extract <input>`| Pull subtitles out (text + OCR), no translation.                           |                                |
 | `check`          | clippy `-D warnings` + `cargo fmt --check` (mirrors CI).                   |                                |
 | `test`           | Rust test suite (`cargo test --workspace`).                                |                                |
-| `fix`            | Auto-format Rust, TOML, shell, Swift, JSON.                                |                                |
+| `fix`            | Format all, auto-fix clippy, sort Cargo.toml dependencies.                  |                                |
 | `fix-clippy`     | Auto-fix clippy warnings.                                                  |                                |
-| `tidy`           | `fix` + `fix-clippy` + dependency ordering check.                          |                                |
 | `check`          | clippy + format checks for all file types (no modifications).              |                                |
 | `ci`             | `check` + `test` (CI equivalent).                                          |                                |
 

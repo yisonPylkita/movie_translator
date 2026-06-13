@@ -114,9 +114,8 @@ Subagent: **`benchmark-runner`**.
 
 ### Auto-fix format + lint
 
-`just fix` formats Rust, TOML, shell, Swift, and JSON files. `just fix-clippy`
-auto-fixes clippy warnings. `just tidy` runs fix + clippy + dependency ordering
-check. `just check` validates everything without modifying.
+`just fix` formats all files, auto-fixes clippy warnings, and sorts Cargo.toml
+dependencies. `just check` validates everything without modifying.
 
 ## File map
 
@@ -144,7 +143,7 @@ check. `just check` validates everything without modifying.
 ├── README.md                       User-facing docs.
 ├── AGENTS.md                       This file.
 ├── .pi/                            Pi-lens skills and agent definitions.
-├── scripts/                        Utility scripts (check-deps-sorted.sh).
+├── scripts/                        Utility scripts.
 ```
 
 ## Gotchas list

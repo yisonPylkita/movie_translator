@@ -5,13 +5,13 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-serde = { workspace = true }
-serde_json = { workspace = true }
-tracing = { workspace = true }
 
 mt-core = { workspace = true }
 mt-media = { workspace = true }
 mt-subtitles = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

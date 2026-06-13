@@ -7,6 +7,10 @@ license.workspace = true
 [dependencies]
 encoding_rs = { workspace = true }
 md-5 = { workspace = true }
+
+mt-core = { workspace = true }
+mt-discovery = { workspace = true }
+mt-subtitles = { workspace = true }
 ndarray = { workspace = true }
 quick-xml = { workspace = true }
 regex = { workspace = true }
@@ -18,10 +22,6 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 urlencoding = { workspace = true }
 zip = { workspace = true }
-
-mt-core = { workspace = true }
-mt-discovery = { workspace = true }
-mt-subtitles = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

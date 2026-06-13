@@ -94,8 +94,7 @@ frameworks are unavailable.
 | `just extract <input>` | Pull subtitles out (text + OCR), no translation                    |
 | `just test`        | Rust test suite (`cargo test --workspace`)                              |
 | `just check`       | Clippy `-D warnings` + `cargo fmt --check` (mirrors CI)                |
-| `just lint`        | Auto-fix clippy + format                                                |
-| `just tidy`        | `lint` + Cargo.toml dependency ordering check                           |
+| `just fix`         | Format all, auto-fix clippy, sort Cargo.toml dependencies                |
 | `just ci`          | `check` + `test` (CI equivalent)                                        |
 
 ## Gate Chain

@@ -19,10 +19,10 @@ setup: submodules build
 brew:
     brew bundle
 
-# Install development tools for formatting (taplo for TOML, shfmt for shell).
+# Install development tools for formatting (taplo for TOML, cargo-sort for deps, shfmt for shell).
 # Run this once to get all formatters.
 install-fmt-tools:
-    cargo install taplo-cli
+    cargo quickinstall taplo-cli cargo-sort
     @# shfmt: install via Go or brew
     @if command -v brew >/dev/null 2>&1; then \
         brew install shfmt shellcheck 2>/dev/null || true; \
@@ -64,11 +64,12 @@ anime-dl name *args:
 test *args:
     cargo test --workspace {{ args }}
 
-# ─── Fix (auto-format all file types) ──────────────────────────────────────
+# ─── Fix (auto-format, lint, sort deps) ─────────────────────────────────────
 
-# Fix all files in the repo: format Rust, TOML, shell scripts, Swift, JSON.
-fix: fix-rust fix-toml fix-sh fix-swift fix-json
-    @echo "✓ All files formatted."
+# Fix all files in the repo: format Rust, TOML, shell scripts, Swift, JSON,
+# auto-fix clippy warnings, and sort Cargo.toml dependencies.
+fix: fix-rust fix-toml fix-sh fix-swift fix-json fix-clippy tidy-check-deps
+    @echo "✓ All files formatted, linted, and dependencies sorted."
 
 # Format Rust code with rustfmt.
 fix-rust:
@@ -149,20 +150,14 @@ check-fmt-json:
             -print0 | xargs -0 -I{} sh -c 'jq --sort-keys . "{}" | diff - "{}" >/dev/null 2>&1 || { echo "JSON formatting issue: {}"; exit 1; }'; \
     fi
 
-# ─── Tidy (fix + lint + ordering) ──────────────────────────────────────────
-
-# Full tidy: fix all formatting, clippy, and check dependency ordering.
-tidy: fix fix-clippy tidy-check-deps
-    @echo "✓ Tidy: all files formatted, linted, and dependencies sorted."
+# ─── Misc ──────────────────────────────────────────────────────────────────
 
 # Check that Cargo.toml [dependencies] entries are alphabetically sorted.
 tidy-check-deps:
-    bash scripts/check-deps-sorted.sh
-
-# ─── Misc ──────────────────────────────────────────────────────────────────
+    cargo sort -w --check
 
 # Install a git pre-commit hook that runs formatting fixes + checks.
 install-hooks:
-    @printf '#!/bin/sh\njust fix && just check && just tidy-check-deps\n' > .git/hooks/pre-commit
+    @printf '#!/bin/sh\njust fix && just check\n' > .git/hooks/pre-commit
     @chmod +x .git/hooks/pre-commit
-    @echo 'Pre-commit hook installed (runs just fix + just check + tidy-check-deps).'
+    @echo 'Pre-commit hook installed (runs just fix + just check).'
