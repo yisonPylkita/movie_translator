@@ -15,7 +15,7 @@ tracing = { workspace = true }
 # `auto-initialize` so PyO3 sets up the interpreter on first
 # `Python::with_gil`. Do NOT enable `extension-module` — we link against
 # libpython and embed it, we do not build a Python extension.
-pyo3 = { version = "0.28", features = ["auto-initialize"] }
+pyo3 = { version = "0.29", features = ["auto-initialize"] }
 once_cell = "1"
 
 [dev-dependencies]
