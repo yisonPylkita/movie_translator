@@ -52,6 +52,9 @@ async function runFastGates(pi: ExtensionAPI, dirty: string): Promise<string> {
 }
 
 export default function (pi: ExtensionAPI) {
+	// Track gate failure state to avoid flooding repeated failures across turns.
+	let lastGateFailed = false;
+
 	// ─── AUTO-FORMAT on edit/write ────────────────────────────────────────
 	pi.on("tool_result", async (event, _ctx) => {
 		if (event.toolName !== "edit" && event.toolName !== "write") return;
@@ -84,10 +87,17 @@ export default function (pi: ExtensionAPI) {
 		const r = await pi.exec("git", ["status", "--porcelain"]);
 		if (r.code !== 0) return;
 		const dirty = r.stdout.trim();
-		if (!dirty) return;
+
+		if (!dirty) {
+			// Tree is clean — reset gate state.
+			lastGateFailed = false;
+			return;
+		}
 
 		const fail = await runFastGates(pi, dirty);
-		if (fail) {
+		if (fail && !lastGateFailed) {
+			// Only send the failure message ONCE per failure cycle, not every turn.
+			lastGateFailed = true;
 			pi.sendMessage(
 				{
 					customType: "gate",
@@ -101,6 +111,8 @@ Fix it (\`just lint\` covers formatting), then run the full
 				},
 				{ deliverAs: "nextTurn" },
 			);
+		} else if (!fail) {
+			lastGateFailed = false;
 		}
 	});
 
@@ -137,8 +149,7 @@ Fix it (\`just lint\` covers formatting), then run the full
 		label: "Check Fast Gate",
 		description:
 			"Run the fast format-check gate (cargo +nightly fmt --check) to verify the repo is clean. Does NOT run clippy, tests — those are the slow gates.",
-		promptSnippet:
-			"Run cargo +nightly fmt --check to verify formatting",
+		promptSnippet: "Run cargo +nightly fmt --check to verify formatting",
 		promptGuidelines: [
 			"Use check_fast_gate before claiming work is complete to verify formatting passes.",
 		],
