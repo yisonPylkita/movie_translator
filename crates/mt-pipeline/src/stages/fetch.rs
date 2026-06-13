@@ -8,6 +8,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use mt_core::{FetchedSubtitle, PipelineContext};
+use mt_fetch::align_ilass::is_available;
 use mt_fetch::providers::{
     SubtitleProvider, animesub::AnimeSubProvider, napiprojekt::NapiProjektProvider,
     opensubtitles::OpenSubtitlesProvider, podnapisi::PodnapisiProvider,
@@ -155,7 +156,7 @@ fn download_all(
 /// Returns `(method, offset_ms)`
 /// where `offset_ms` is `None` for the ilass path.
 pub fn align_subtitle(subtitle_path: &Path, reference_path: &Path) -> (&'static str, Option<i64>) {
-    if mt_fetch::align_ilass::is_available() {
+    if is_available() {
         if mt_fetch::align_ilass(subtitle_path, reference_path, ILASS_SPLIT_PENALTY) {
             return ("ilass", None);
         }

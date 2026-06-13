@@ -1507,13 +1507,14 @@ mod tests {
 
     #[test]
     fn tracing_layer_forwards_to_channel() {
+        use tracing::subscriber::with_default;
         use tracing_subscriber::prelude::*;
 
         let (tx, mut rx) = mpsc::unbounded_channel::<ProgressEvent>();
         let layer = TuiTracingLayer::new(ProgressSender::new(tx));
         let subscriber = tracing_subscriber::registry().with(layer);
 
-        tracing::subscriber::with_default(subscriber, || {
+        with_default(subscriber, || {
             tracing::info!(target: "test_target", "hello from {}", "test");
         });
 

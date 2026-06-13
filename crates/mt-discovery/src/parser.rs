@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::rust_parser::parse_filename as rust_parse_filename;
+
 /// Parsed filename metadata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParsedName {
@@ -31,7 +33,7 @@ pub struct ParsedName {
 /// Returns a `ParsedName` with all available fields filled in.  Missing fields
 /// are `None`.  Never fails (returns a best-effort result for any input).
 pub fn parse_filename(filename: &str, folder: Option<&str>) -> mt_core::Result<ParsedName> {
-    Ok(crate::rust_parser::parse_filename(filename, folder))
+    Ok(rust_parse_filename(filename, folder))
 }
 
 #[cfg(test)]

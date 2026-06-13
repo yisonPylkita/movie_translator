@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use mt_core::PipelineConfig;
 use mt_discovery::find_videos;
+use mt_pipeline::stages::mux::in_place_temp_path;
 use mt_pipeline::{FileStatus, ProgressSender, run_all_with_progress};
+use tokio::sync::mpsc::unbounded_channel;
 use tracing::{error, info, warn};
 
 use crate::common::{check_dependencies, resolve_models};
@@ -183,7 +185,7 @@ pub fn format_summary(results: &[(PathBuf, FileStatus)], dry_run: bool) -> Strin
 pub fn cleanup_in_place_orphans(video_files: &[PathBuf]) -> usize {
     let mut removed = 0;
     for vp in video_files {
-        let orphan = mt_pipeline::stages::mux::in_place_temp_path(vp);
+        let orphan = in_place_temp_path(vp);
         if orphan.exists() {
             match std::fs::remove_file(&orphan) {
                 Ok(()) => {
@@ -266,7 +268,7 @@ pub async fn run(args: TranslateArgs) -> anyhow::Result<i32> {
     // (and tracing events via the TuiTracingLayer) to a renderer thread. In
     // plain (no-TTY) mode the same channel is drained by a one-line-per-event
     // printer instead.
-    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (event_tx, event_rx) = unbounded_channel();
     let sender = ProgressSender::new(event_tx);
 
     // Tracing must be initialised AFTER the sender exists so the layer can

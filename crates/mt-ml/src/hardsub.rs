@@ -12,6 +12,8 @@ use std::process::Command;
 use mt_core::{MtError, Result};
 use tracing::info;
 
+use crate::ocr::ocr_burned_in;
+
 /// Default minimum height for OCR-legible download (480p).
 const DEFAULT_MIN_HEIGHT: u32 = 480;
 
@@ -159,7 +161,7 @@ pub fn hardsub_ocr_clean(video: &Path, out_dir: &Path, language: &str) -> Result
         use ocr_postprocess::{postprocess_ocr_results, render_to_srt};
 
         let _ = language; // Vision OCR uses en by default; language support TBD in Rust port
-        let result = crate::ocr::ocr_burned_in(video, out_dir, 0.25, 6)?;
+        let result = ocr_burned_in(video, out_dir, 0.25, 6)?;
 
         if result.ocr_results.is_empty() {
             info!("No burned-in OCR results for {}", video.display());

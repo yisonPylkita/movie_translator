@@ -12,6 +12,7 @@ use std::collections::BinaryHeap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use mt_core::exec::{get_ffmpeg, get_ffprobe};
 use mt_core::{MtError, OCRResult, Result};
 use serde_json::{Value, from_slice};
 use tracing::info;
@@ -496,7 +497,7 @@ fn build_subtitle_mask(width: u32, height: u32, ocr_results: &[OCRResult]) -> Ve
 // ── Utility functions ─────────────────────────────────────────────────────
 
 fn find_ffmpeg() -> Result<PathBuf> {
-    mt_core::exec::get_ffmpeg().map_err(|e| MtError::Subprocess {
+    get_ffmpeg().map_err(|e| MtError::Subprocess {
         cmd: "ffmpeg".to_string(),
         code: None,
         stderr: e.to_string(),
@@ -504,7 +505,7 @@ fn find_ffmpeg() -> Result<PathBuf> {
 }
 
 fn find_ffprobe() -> Result<PathBuf> {
-    mt_core::exec::get_ffprobe().map_err(|e| MtError::Subprocess {
+    get_ffprobe().map_err(|e| MtError::Subprocess {
         cmd: "ffprobe".to_string(),
         code: None,
         stderr: e.to_string(),

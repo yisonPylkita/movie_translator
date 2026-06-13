@@ -13,7 +13,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use mt_core::exec::{get_ffmpeg, get_ffprobe};
 use mt_core::{BoundingBox, BurnedInResult, DialogueLine, MtError, OCRResult, Result};
+use mt_media::pgs_parser::parse_sup;
+use mt_subtitles::srt::to_srt_string;
 use serde_json::{Value, from_slice};
 use tracing::{info, warn};
 
@@ -46,7 +49,7 @@ pub fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<
     // Step 2: Parse PGS binary format
     info!("Parsing PGS subtitle stream...");
     let data = fs::read(&sup_path).map_err(MtError::Io)?;
-    let events = mt_media::pgs_parser::parse_sup(&data);
+    let events = parse_sup(&data);
 
     if events.is_empty() {
         warn!("No subtitle images found in PGS track");
@@ -157,7 +160,7 @@ pub fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<
             .collect(),
         post_events_sections: vec![],
     };
-    let srt_content = mt_subtitles::srt::to_srt_string(&subs);
+    let srt_content = to_srt_string(&subs);
     fs::write(&srt_path, srt_content).map_err(MtError::Io)?;
 
     let _ = fs::remove_file(&sup_path);
@@ -254,7 +257,7 @@ pub fn ocr_burned_in_macos(
             .collect(),
         post_events_sections: vec![],
     };
-    let srt_content = mt_subtitles::srt::to_srt_string(&subs);
+    let srt_content = to_srt_string(&subs);
     std::fs::write(&srt_path, srt_content).map_err(MtError::Io)?;
 
     let _ = std::fs::remove_dir_all(&ocr_dir);
@@ -603,7 +606,7 @@ fn write_grayscale_pgm(path: &Path, pixels: &[u8], width: usize, height: usize) 
 }
 
 fn find_ffmpeg() -> Result<PathBuf> {
-    mt_core::exec::get_ffmpeg().map_err(|e| MtError::Subprocess {
+    get_ffmpeg().map_err(|e| MtError::Subprocess {
         cmd: "ffmpeg".to_string(),
         code: None,
         stderr: e.to_string(),
@@ -611,7 +614,7 @@ fn find_ffmpeg() -> Result<PathBuf> {
 }
 
 fn find_ffprobe() -> Result<PathBuf> {
-    mt_core::exec::get_ffprobe().map_err(|e| MtError::Subprocess {
+    get_ffprobe().map_err(|e| MtError::Subprocess {
         cmd: "ffprobe".to_string(),
         code: None,
         stderr: e.to_string(),

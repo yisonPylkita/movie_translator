@@ -10,6 +10,8 @@ use std::io::stderr;
 use std::sync::Once;
 
 use mt_pipeline::ProgressSender;
+use tracing_subscriber::EnvFilter;
+use tui::TuiTracingLayer;
 
 static TRACING_INIT: Once = Once::new();
 
@@ -62,15 +64,15 @@ pub fn init_tracing_with(verbose: bool, tui_sender: Option<ProgressSender>) {
     TRACING_INIT.call_once(|| {
         use tracing_subscriber::prelude::*;
 
-        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_filter(verbose)));
+        let filter = EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new(default_filter(verbose)));
 
         match tui_sender {
             Some(sender) => {
                 // TUI-active mode: send tracing into the TUI log pane ONLY.
                 // Writing to stderr concurrently with the alternate-screen
                 // ratatui draws would paint over the TUI.
-                let layer = tui::TuiTracingLayer::new(sender);
+                let layer = TuiTracingLayer::new(sender);
                 let _ = tracing_subscriber::registry()
                     .with(filter)
                     .with(layer)

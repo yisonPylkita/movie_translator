@@ -16,7 +16,7 @@ use mt_core::swift_bridge::{ensure_compiled, macos_at_least};
 use mt_core::{DialogueLine, Result as MtResult};
 use mt_subtitles::enhancements::{
     PLACEHOLDER_ONLY_RE, apply_fallbacks, extract_placeholders, postprocess_translation,
-    restore_placeholders,
+    preprocess_for_translation, restore_placeholders,
 };
 use mt_subtitles::sentence_merger::{merge_for_translation, unmerge_translations};
 use serde::{Deserialize, Serialize};
@@ -230,8 +230,7 @@ pub fn translate(
             continue;
         }
 
-        let (preprocessed, was_mapped) =
-            mt_subtitles::enhancements::preprocess_for_translation(&protected);
+        let (preprocessed, was_mapped) = preprocess_for_translation(&protected);
         if was_mapped {
             let cache_text = preprocessed.clone();
             processed_texts.push(preprocessed);

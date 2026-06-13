@@ -21,6 +21,7 @@ use std::time::{Duration, SystemTime};
 
 use mt_core::{PipelineConfig, PipelineContext};
 use mt_discovery::create_work_dir;
+use mt_discovery::parser::parse_filename;
 use mt_fetch::ogladajanime::{self, Discovery, HardsubPlan};
 use mt_media::SubtitleExtractor;
 use tokio::sync::Semaphore;
@@ -30,7 +31,10 @@ use tracing::{debug, error, info, warn};
 use crate::error::{PipelineError, Result};
 use crate::gpu::{DirectGpuExecutor, GpuExecutor, OcrStageLabel, resolve_pending_ocr};
 use crate::progress::{FinishStatus, ProgressEvent, ProgressSender, Stage};
-use crate::stages;
+use crate::stages::{
+    create_tracks, extract_english, extract_ref, fetch, hardsub_ocr, identify, mux, transcribe,
+    translate,
+};
 use crate::vision::{VisionOcrProbe, default_vision_ocr_probe};
 use crate::worker::{GpuWorker, GpuWorkerHandle};
 
@@ -167,11 +171,11 @@ async fn process_file_inner(
 
     // Stage 1 — Identify (IO).
     emit_stage(Stage::Identify);
-    ctx = run_blocking(move || stages::identify::run(ctx)).await?;
+    ctx = run_blocking(move || identify::run(ctx)).await?;
 
     // Stage 2 — Extract Reference (IO + deferred OCR).
     emit_stage(Stage::ExtractRef);
-    ctx = run_blocking(move || stages::extract_ref::run_with_probe(ctx, vision_probe)).await?;
+    ctx = run_blocking(move || extract_ref::run_with_probe(ctx, vision_probe)).await?;
     if ctx.pending_ocr.is_some() {
         ctx =
             resolve_pending_ocr_blocking(ctx, executor.clone(), OcrStageLabel::ExtractRef).await?;
@@ -179,11 +183,11 @@ async fn process_file_inner(
 
     // Stage 3 — Fetch (IO).
     emit_stage(Stage::Fetch);
-    ctx = run_blocking(move || stages::fetch::run(ctx)).await?;
+    ctx = run_blocking(move || fetch::run(ctx)).await?;
 
     // Stage 4 — Extract English (IO + deferred OCR).
     emit_stage(Stage::ExtractEnglish);
-    ctx = run_blocking(move || stages::extract_english::run_with_probe(ctx, vision_probe)).await?;
+    ctx = run_blocking(move || extract_english::run_with_probe(ctx, vision_probe)).await?;
     if ctx.pending_ocr.is_some() {
         ctx = resolve_pending_ocr_blocking(ctx, executor.clone(), OcrStageLabel::ExtractEnglish)
             .await?;
@@ -194,7 +198,7 @@ async fn process_file_inner(
     if ctx.english_source.is_none() && ctx.config.enable_transcription {
         emit_stage(Stage::Transcribe);
         let exec = executor.clone();
-        ctx = run_blocking(move || stages::transcribe::run(ctx, &exec)).await?;
+        ctx = run_blocking(move || transcribe::run(ctx, &exec)).await?;
     }
 
     if ctx.english_source.is_none() {
@@ -218,7 +222,7 @@ async fn process_file_inner(
     if let Some(plan) = hardsub_plan.clone() {
         emit_stage(Stage::HardsubOcr);
         let exec = executor.clone();
-        ctx = run_blocking(move || stages::hardsub_ocr::run(ctx, &exec, &plan)).await?;
+        ctx = run_blocking(move || hardsub_ocr::run(ctx, &exec, &plan)).await?;
     }
 
     // Stage 5 — Translate (font check + GPU translation).
@@ -230,7 +234,7 @@ async fn process_file_inner(
     // the observable result is identical.)
     emit_stage(Stage::Translate);
     let exec = executor.clone();
-    ctx = run_blocking(move || stages::translate::run(ctx, &exec, None)).await?;
+    ctx = run_blocking(move || translate::run(ctx, &exec, None)).await?;
     if ctx.translated_lines.as_ref().is_none_or(|l| l.is_empty()) {
         return Err(PipelineError::Stage(
             "Translation failed -- empty result".into(),
@@ -239,13 +243,13 @@ async fn process_file_inner(
 
     // Stage 6 — Create Tracks (IO).
     emit_stage(Stage::CreateTracks);
-    ctx = run_blocking(move || stages::create_tracks::run(ctx)).await?;
+    ctx = run_blocking(move || create_tracks::run(ctx)).await?;
 
     // Stage 7 — Mux (optional inpaint GPU + IO). The mux stage performs the
     // inpaint through the executor internally (serialised through the worker).
     emit_stage(Stage::Mux);
     let exec = executor.clone();
-    ctx = run_blocking(move || stages::mux::run(ctx, &exec)).await?;
+    ctx = run_blocking(move || mux::run(ctx, &exec)).await?;
 
     let _ = ctx;
     Ok(())
@@ -460,7 +464,7 @@ async fn prepare_hardsub_plan(
 fn hardsub_title(path: &Path) -> String {
     let filename = path.file_name().map(|n| n.to_string_lossy().to_string());
     if let Some(name) = filename.as_deref()
-        && let Ok(parsed) = mt_discovery::parser::parse_filename(name, None)
+        && let Ok(parsed) = parse_filename(name, None)
         && let Some(title) = parsed.title.filter(|t| !t.is_empty())
     {
         return title;
@@ -726,23 +730,23 @@ fn process_video_file_inner(
 ) -> Result<()> {
     let mut ctx = PipelineContext::new(video_path.to_path_buf(), work_dir.to_path_buf(), config);
 
-    ctx = stages::identify::run(ctx)?;
+    ctx = identify::run(ctx)?;
 
-    ctx = stages::extract_ref::run_with_probe(ctx, vision_probe)?;
+    ctx = extract_ref::run_with_probe(ctx, vision_probe)?;
     if ctx.pending_ocr.is_some() {
         resolve_pending_ocr(&mut ctx, executor, OcrStageLabel::ExtractRef)?;
     }
 
-    ctx = stages::fetch::run(ctx)?;
+    ctx = fetch::run(ctx)?;
 
-    ctx = stages::extract_english::run_with_probe(ctx, vision_probe)?;
+    ctx = extract_english::run_with_probe(ctx, vision_probe)?;
     if ctx.pending_ocr.is_some() {
         resolve_pending_ocr(&mut ctx, executor, OcrStageLabel::ExtractEnglish)?;
     }
 
-    ctx = stages::translate::run(ctx, executor, None)?;
-    ctx = stages::create_tracks::run(ctx)?;
-    ctx = stages::mux::run(ctx, executor)?;
+    ctx = translate::run(ctx, executor, None)?;
+    ctx = create_tracks::run(ctx)?;
+    ctx = mux::run(ctx, executor)?;
 
     let _ = ctx;
     Ok(())

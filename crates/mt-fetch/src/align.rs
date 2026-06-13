@@ -19,6 +19,8 @@ use std::fs;
 use std::io::Error;
 use std::path::Path;
 
+use mt_subtitles::ass::to_ass_string;
+use mt_subtitles::srt::to_srt_string;
 use ndarray::{Array1, s};
 
 use crate::validator::{build_activity_vector, extract_timestamps};
@@ -259,8 +261,8 @@ fn save_subs(subs: &mt_subtitles::model::Subtitles, path: &Path) -> Result<(), A
         .map(|s| s.to_ascii_lowercase())
         .as_deref()
     {
-        Some("srt") => mt_subtitles::srt::to_srt_string(subs),
-        _ => mt_subtitles::ass::to_ass_string(subs),
+        Some("srt") => to_srt_string(subs),
+        _ => to_ass_string(subs),
     };
     fs::write(path, content).map_err(|source| AlignError::Write {
         path: path.display().to_string(),

@@ -13,6 +13,8 @@ use std::process::Command;
 
 use tracing::{info, warn};
 
+use crate::align::align_to_reference as cross_correlate;
+
 // ---------------------------------------------------------------------------
 // ilass binary path
 // ---------------------------------------------------------------------------
@@ -81,11 +83,7 @@ pub fn align_to_reference(subtitle_path: &Path, reference_path: &Path, split_pen
             "ilass binary not found at {}, falling back to cross-correlation",
             ilass_binary_path().display()
         );
-        let offset = crate::align::align_to_reference(
-            subtitle_path,
-            reference_path,
-            crate::align::MIN_OFFSET_MS,
-        );
+        let offset = cross_correlate(subtitle_path, reference_path, crate::align::MIN_OFFSET_MS);
         info!("Fallback cross-correlation applied offset: {offset:+}ms");
         return offset != 0;
     }

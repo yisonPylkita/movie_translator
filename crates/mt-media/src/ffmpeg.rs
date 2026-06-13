@@ -6,6 +6,7 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 use mt_core::SubtitleFile;
+use mt_core::exec::find_binary;
 use serde::Deserialize;
 use serde_json::{Value, from_str};
 use thiserror::Error;
@@ -13,15 +14,17 @@ use thiserror::Error;
 mod binaries {
     //! Binary resolution, delegating to the shared `mt_core::exec` resolver so
     //! `mt-media` and `mt-discovery` find the same `ffmpeg`/`ffprobe`.
+    use mt_core::exec::{get_ffmpeg, get_ffprobe};
+
     use super::*;
 
     /// Resolve `ffmpeg` and `ffprobe`, returning a [`VideoMuxError`] on failure.
     pub(super) fn ffmpeg() -> Result<PathBuf, VideoMuxError> {
-        mt_core::exec::get_ffmpeg().map_err(|e| VideoMuxError::FfmpegNotFound(e.to_string()))
+        get_ffmpeg().map_err(|e| VideoMuxError::FfmpegNotFound(e.to_string()))
     }
 
     pub(super) fn ffprobe() -> Result<PathBuf, VideoMuxError> {
-        mt_core::exec::get_ffprobe().map_err(|e| VideoMuxError::FfmpegNotFound(e.to_string()))
+        get_ffprobe().map_err(|e| VideoMuxError::FfmpegNotFound(e.to_string()))
     }
 }
 
@@ -85,7 +88,7 @@ pub fn get_ffprobe() -> Result<PathBuf, VideoMuxError> {
 pub fn get_mkvmerge() -> Option<&'static PathBuf> {
     MKVMERGE_PATH
         .get_or_init(|| {
-            if let Ok(p) = mt_core::exec::find_binary("mkvmerge") {
+            if let Ok(p) = find_binary("mkvmerge") {
                 return Some(p);
             }
             let homebrew = PathBuf::from("/opt/homebrew/bin/mkvmerge");

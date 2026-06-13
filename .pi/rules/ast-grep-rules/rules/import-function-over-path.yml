@@ -29,3 +29,12 @@ rule:
         has:
           field: path
           kind: scoped_identifier
+    # std::core::alloc:: functions are idiomatic fully-qualified
+    - not:
+        any:
+          - pattern: std::$A::$B($$$)
+          - pattern: std::$A::$B::$C($$$)
+          - pattern: core::$A::$B($$$)
+          - pattern: core::$A::$B::$C($$$)
+          - pattern: alloc::$A::$B($$$)
+          - pattern: alloc::$A::$B::$C($$$)

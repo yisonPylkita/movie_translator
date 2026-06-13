@@ -11,6 +11,7 @@ use mt_core::POLISH_CHARS;
 use serde_json::{Value, from_str};
 use tempfile::Builder;
 use tracing::debug;
+use ttf_parser::Face;
 
 use crate::ffmpeg::{VideoMuxError, get_ffmpeg, get_ffprobe};
 
@@ -160,7 +161,7 @@ pub fn font_supports_polish(font_path: &Path) -> bool {
 /// Extracted for unit testing without file I/O.
 pub fn font_data_supports_polish(data: &[u8]) -> bool {
     // Try as a regular TTF/OTF first; if that fails try as TTC (font collection, face 0).
-    let face = ttf_parser::Face::parse(data, 0);
+    let face = Face::parse(data, 0);
     let face = match face {
         Ok(f) => f,
         Err(_) => return false,
@@ -323,7 +324,7 @@ pub fn get_font_family_name(font_path: &Path) -> Option<String> {
 /// - nameID 1 = Font Family Name
 /// - prefer platformID 3 (Windows) for broadest compat
 pub fn font_family_name_from_data(data: &[u8]) -> Option<String> {
-    let face = ttf_parser::Face::parse(data, 0).ok()?;
+    let face = Face::parse(data, 0).ok()?;
     // Try platform 3 (Windows) first, then platform 0 (Unicode), then any
     let name_by_platform = |platform_id: ttf_parser::PlatformId| -> Option<String> {
         face.names()

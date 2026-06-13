@@ -17,6 +17,10 @@ use std::time::Duration;
 
 use mt_core::swift_bridge::{ensure_compiled, macos_at_least};
 use mt_core::{DialogueLine, MtError, Result};
+use mt_media::audio::{extract_wav, find_audio_stream, wav_duration_ms};
+use mt_subtitles::postfilter::clean_segments;
+use mt_subtitles::splitter::split_segments;
+use mt_subtitles::srt::to_srt_string;
 use serde::Deserialize;
 use serde_json::from_slice;
 use tracing::{info, warn};
@@ -420,7 +424,7 @@ pub fn transcribe_to_srt(
     }
 
     // Find audio stream via ffprobe (pure Rust, mt-media)
-    let stream = match mt_media::audio::find_audio_stream(video, language)? {
+    let stream = match find_audio_stream(video, language)? {
         Some(s) => s,
         None => {
             info!(
@@ -434,10 +438,10 @@ pub fn transcribe_to_srt(
     // Extract WAV via ffmpeg (pure Rust, mt-media)
     fs::create_dir_all(output_dir).map_err(MtError::Io)?;
     let wav = output_dir.join(format!("transcribe_{language}.wav"));
-    mt_media::audio::extract_wav(video, stream, &wav)?;
+    extract_wav(video, stream, &wav)?;
 
     // Get WAV duration before cleaning up
-    let wav_dur = mt_media::audio::wav_duration_ms(&wav).unwrap_or(0);
+    let wav_dur = wav_duration_ms(&wav).unwrap_or(0);
 
     // Transcribe
     let raw_lines = match engine {
@@ -446,7 +450,7 @@ pub fn transcribe_to_srt(
 
             // Use VAD pause boundaries to improve segmentation
             let boundaries = find_pause_boundaries(&wav, 300).ok();
-            let split_lines = mt_subtitles::splitter::split_segments(&lines, boundaries.as_deref());
+            let split_lines = split_segments(&lines, boundaries.as_deref());
 
             // Clean up WAV
             let _ = fs::remove_file(&wav);
@@ -460,7 +464,7 @@ pub fn transcribe_to_srt(
             let _ = fs::remove_file(&wav);
 
             // Post-filter
-            mt_subtitles::postfilter::clean_segments(&lines, wav_dur)
+            clean_segments(&lines, wav_dur)
         }
         _ => unreachable!(),
     };
@@ -498,7 +502,7 @@ pub fn transcribe_to_srt(
             .collect(),
         post_events_sections: vec![],
     };
-    let srt_content = mt_subtitles::srt::to_srt_string(&subs);
+    let srt_content = to_srt_string(&subs);
     fs::write(&srt_path, srt_content).map_err(MtError::Io)?;
     info!(
         "{engine} transcription: {} lines -> {}",

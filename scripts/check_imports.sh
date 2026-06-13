@@ -13,8 +13,12 @@ fi
 json=$(sg scan --rule "$RULE" "$TARGET" --json 2>/dev/null || echo "[]")
 count=$(echo "$json" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d))' 2>/dev/null || echo "?")
 
-echo "  Import hygiene: $count fully-qualified calls found (VERBOSE=1 to list)"
-
-if [ "${VERBOSE:-0}" = "1" ] && [ "$count" -gt 0 ] 2>/dev/null; then
-	sg scan --rule "$RULE" "$TARGET"
+if [ "$count" -gt 0 ] 2>/dev/null; then
+	echo "  Import hygiene: $count violations found — use 'use' imports instead of fully-qualified paths"
+	if [ "${VERBOSE:-0}" = "1" ]; then
+		sg scan --rule "$RULE" "$TARGET"
+	fi
+	exit 1
+else
+	echo "  Import hygiene: 0 violations"
 fi

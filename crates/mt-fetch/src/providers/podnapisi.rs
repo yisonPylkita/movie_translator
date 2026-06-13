@@ -8,8 +8,10 @@ use std::str;
 
 use mt_core::MediaIdentity;
 use quick_xml::Reader;
+use quick_xml::escape::resolve_predefined_entity;
 use quick_xml::events::Event;
 use tracing::{debug, info};
+use zip::ZipArchive;
 
 use crate::retry::FetchError;
 use crate::types::SubtitleMatch;
@@ -111,9 +113,7 @@ pub fn parse_xml_response(xml: &str) -> Result<Vec<PodnapisiSubtitle>, FetchErro
                         c.to_string()
                     } else {
                         let name = e.decode().unwrap_or_default();
-                        quick_xml::escape::resolve_predefined_entity(&name)
-                            .unwrap_or("")
-                            .to_string()
+                        resolve_predefined_entity(&name).unwrap_or("").to_string()
                     };
                     append_to_field(sub, &current_tag, &resolved);
                 }
@@ -312,7 +312,7 @@ impl super::SubtitleProvider for PodnapisiProvider {
 
         // Podnapisi returns a ZIP or raw subtitle content
         let cursor = Cursor::new(&content[..]);
-        if let Ok(mut archive) = zip::ZipArchive::new(cursor) {
+        if let Ok(mut archive) = ZipArchive::new(cursor) {
             // Record (index, name) so we can re-open by index — this is
             // UTF-8-safe (by_name breaks on non-UTF8 entry names) and avoids
             // an O(n^2) re-scan.

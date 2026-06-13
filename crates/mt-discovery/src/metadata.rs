@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
+use mt_core::exec::get_ffprobe;
 use mt_core::{MtError, Result};
 use serde::Deserialize;
 use serde_json::from_str;
@@ -73,7 +74,7 @@ pub fn extract_container_metadata(video_path: &Path) -> ContainerMetadata {
 fn run_ffprobe(video_path: &Path) -> Result<String> {
     // Resolve ffprobe through the shared resolver so discovery and mt-media
     // agree on the same binary (instead of shelling a bare `ffprobe` from PATH).
-    let ffprobe = mt_core::exec::get_ffprobe()?;
+    let ffprobe = get_ffprobe()?;
     let output = Command::new(&ffprobe)
         .args([
             "-v",
