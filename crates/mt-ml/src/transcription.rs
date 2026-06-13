@@ -9,9 +9,13 @@
 //! VAD), sentence splitting, and post-processing (hallucination filtering) are
 //! handled in Rust with zero Python dependencies.
 
+use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
+
+use serde_json::from_slice;
 
 use mt_core::swift_bridge::{ensure_compiled, macos_at_least};
 use mt_core::{DialogueLine, MtError, Result};
@@ -33,14 +37,14 @@ fn transcribe_source() -> PathBuf {
             return p;
         }
     }
-    if let Ok(root) = std::env::var("MT_REPO_ROOT") {
+    if let Ok(root) = env::var("MT_REPO_ROOT") {
         let p = PathBuf::from(root)
             .join("movie_translator/transcription/swift/transcribe_bridge.swift");
         if p.exists() {
             return p;
         }
     }
-    if let Ok(cwd) = std::env::current_dir() {
+    if let Ok(cwd) = env::current_dir() {
         for ancestor in cwd.ancestors() {
             let p = ancestor.join("movie_translator/transcription/swift/transcribe_bridge.swift");
             if p.exists() {
@@ -113,7 +117,7 @@ fn transcribe_apple(wav: &Path, language: &str) -> Result<Vec<DialogueLine>> {
         });
     }
 
-    let response: TranscribeResponse = serde_json::from_slice(&output.stdout).map_err(|e| {
+    let response: TranscribeResponse = from_slice(&output.stdout).map_err(|e| {
         let out = String::from_utf8_lossy(&output.stdout);
         MtError::Parse(format!(
             "Invalid JSON from transcribe_bridge: {e}\nOutput: {}",
@@ -186,12 +190,12 @@ fn transcribe_whisper(wav: &Path, language: &str) -> Result<Vec<DialogueLine>> {
     }
 
     // Parse the SRT output back into DialogueLines
-    let srt_content = std::fs::read_to_string(&output_srt).map_err(MtError::Io)?;
-    let _ = std::fs::remove_file(&output_srt);
+    let srt_content = fs::read_to_string(&output_srt).map_err(MtError::Io)?;
+    let _ = fs::remove_file(&output_srt);
 
     // Simple SRT parser
     let mut lines = Vec::new();
-    let srt_lines: Vec<&str> = srt_content.lines().collect();
+    let srt_lines: Vec<_> = srt_content.lines().collect();
     let mut i = 0;
 
     while i + 2 < srt_lines.len() {
@@ -203,7 +207,7 @@ fn transcribe_whisper(wav: &Path, language: &str) -> Result<Vec<DialogueLine>> {
         }
         // Check for timestamp line: 00:01:23,456 --> 00:01:25,789
         if srt_lines[i].contains("-->") {
-            let time_parts: Vec<&str> = srt_lines[i].split("-->").collect();
+            let time_parts: Vec<_> = srt_lines[i].split("-->").collect();
             if time_parts.len() == 2 {
                 let start_ms = parse_srt_time(time_parts[0]);
                 let end_ms = parse_srt_time(time_parts[1]);
@@ -236,11 +240,11 @@ fn transcribe_whisper(wav: &Path, language: &str) -> Result<Vec<DialogueLine>> {
 
 fn parse_srt_time(s: &str) -> i64 {
     let s = s.trim();
-    let parts: Vec<&str> = s.split(':').collect();
+    let parts: Vec<_> = s.split(':').collect();
     if parts.len() == 3 {
         let h: i64 = parts[0].parse().unwrap_or(0);
         let m: i64 = parts[1].parse().unwrap_or(0);
-        let sec_parts: Vec<&str> = parts[2].split(',').collect();
+        let sec_parts: Vec<_> = parts[2].split(',').collect();
         let sec: i64 = sec_parts[0].parse().unwrap_or(0);
         let ms: i64 = sec_parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
         h * 3_600_000 + m * 60_000 + sec * 1000 + ms
@@ -250,7 +254,7 @@ fn parse_srt_time(s: &str) -> i64 {
 }
 
 fn find_whisper_model() -> Result<PathBuf> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let candidates = [
         format!("{home}/.cache/whisper/ggml-large-v3.bin"),
         format!("{home}/.cache/whisper/ggml-medium.bin"),
@@ -283,7 +287,7 @@ fn find_whisper_model() -> Result<PathBuf> {
 ///
 /// Uses RMS energy-based voice activity detection — no Python/webrtcvad needed.
 fn find_pause_boundaries(wav: &Path, min_pause_ms: i64) -> Result<Vec<i64>> {
-    let data = std::fs::read(wav).map_err(MtError::Io)?;
+    let data = fs::read(wav).map_err(MtError::Io)?;
 
     // Parse WAV header
     if data.len() < 44 {
@@ -429,7 +433,7 @@ pub fn transcribe_to_srt(
     };
 
     // Extract WAV via ffmpeg (pure Rust, mt-media)
-    std::fs::create_dir_all(output_dir).map_err(MtError::Io)?;
+    fs::create_dir_all(output_dir).map_err(MtError::Io)?;
     let wav = output_dir.join(format!("transcribe_{language}.wav"));
     mt_media::audio::extract_wav(video, stream, &wav)?;
 
@@ -446,7 +450,7 @@ pub fn transcribe_to_srt(
             let split_lines = mt_subtitles::splitter::split_segments(&lines, boundaries.as_deref());
 
             // Clean up WAV
-            let _ = std::fs::remove_file(&wav);
+            let _ = fs::remove_file(&wav);
 
             split_lines
         }
@@ -454,7 +458,7 @@ pub fn transcribe_to_srt(
             let lines = transcribe_whisper(&wav, language)?;
 
             // Clean up WAV
-            let _ = std::fs::remove_file(&wav);
+            let _ = fs::remove_file(&wav);
 
             // Post-filter
             mt_subtitles::postfilter::clean_segments(&lines, wav_dur)
@@ -496,7 +500,7 @@ pub fn transcribe_to_srt(
         post_events_sections: vec![],
     };
     let srt_content = mt_subtitles::srt::to_srt_string(&subs);
-    std::fs::write(&srt_path, srt_content).map_err(MtError::Io)?;
+    fs::write(&srt_path, srt_content).map_err(MtError::Io)?;
     info!(
         "{engine} transcription: {} lines -> {}",
         raw_lines.len(),

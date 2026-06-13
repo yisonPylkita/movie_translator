@@ -1,13 +1,20 @@
 //! OpenSubtitles.com REST API v2 provider.
 
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
+use std::env;
+use std::fs;
 use std::path::Path;
+use std::sync::Mutex;
 
 use crate::rate_limiter::RateLimiter;
 use crate::retry::FetchError;
 use crate::scoring::compute_release_score;
 use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
+use reqwest::blocking::Client;
+use serde_json::{Value, json};
+use tracing::{debug, info, warn};
 
 pub const API_BASE: &str = "https://api.opensubtitles.com/api/v1";
 pub const USER_AGENT: &str = "MovieTranslator v1.0";
@@ -33,11 +40,7 @@ pub fn lang_from_os(code: &str) -> &str {
 }
 
 /// Parse OpenSubtitles API `/subtitles` response JSON into SubtitleMatch list.
-pub fn parse_results(
-    data: &serde_json::Value,
-    languages: &[&str],
-    raw_filename: &str,
-) -> Vec<SubtitleMatch> {
+pub fn parse_results(data: &Value, languages: &[&str], raw_filename: &str) -> Vec<SubtitleMatch> {
     let mut matches = Vec::new();
     let items = match data.get("data").and_then(|d| d.as_array()) {
         Some(arr) => arr,
@@ -129,9 +132,9 @@ pub struct OpenSubtitlesProvider {
     api_key: String,
     username: String,
     password: String,
-    token: std::sync::Mutex<Option<String>>,
+    token: Mutex<Option<String>>,
     rate_limiter: RateLimiter,
-    client: reqwest::blocking::Client,
+    client: Client,
 }
 
 impl OpenSubtitlesProvider {
@@ -141,13 +144,13 @@ impl OpenSubtitlesProvider {
         password: Option<String>,
     ) -> Self {
         let api_key = api_key
-            .or_else(|| std::env::var("OPENSUBTITLES_API_KEY").ok())
+            .or_else(|| env::var("OPENSUBTITLES_API_KEY").ok())
             .unwrap_or_default();
         let username = username
-            .or_else(|| std::env::var("OPENSUBTITLES_USERNAME").ok())
+            .or_else(|| env::var("OPENSUBTITLES_USERNAME").ok())
             .unwrap_or_default();
         let password = password
-            .or_else(|| std::env::var("OPENSUBTITLES_PASSWORD").ok())
+            .or_else(|| env::var("OPENSUBTITLES_PASSWORD").ok())
             .unwrap_or_default();
 
         let client = super::build_blocking_client(USER_AGENT);
@@ -156,7 +159,7 @@ impl OpenSubtitlesProvider {
             api_key,
             username,
             password,
-            token: std::sync::Mutex::new(None),
+            token: Mutex::new(None),
             rate_limiter: RateLimiter::new(0.25),
             client,
         }
@@ -168,8 +171,8 @@ impl OpenSubtitlesProvider {
         method: &str,
         endpoint: &str,
         params: Option<&[(&str, String)]>,
-        body: Option<&serde_json::Value>,
-    ) -> Result<serde_json::Value, FetchError> {
+        body: Option<&Value>,
+    ) -> Result<Value, FetchError> {
         self.rate_limiter.wait();
 
         let url = match params {
@@ -235,7 +238,7 @@ impl OpenSubtitlesProvider {
             });
         }
         if status == 406 {
-            tracing::warn!("OpenSubtitles daily download quota exceeded");
+            warn!("OpenSubtitles daily download quota exceeded");
             return Err(FetchError::QuotaExceeded);
         }
         if status >= 400 {
@@ -243,7 +246,7 @@ impl OpenSubtitlesProvider {
             // error detail instead of a generic "API error" placeholder.
             let body_text = resp.text().unwrap_or_default();
             let trimmed = body_text.trim();
-            let snippet: String = trimmed.chars().take(200).collect();
+            let snippet = trimmed.chars().take(200).collect::<String>();
             let body = if snippet.is_empty() {
                 "API error".to_string()
             } else {
@@ -252,7 +255,7 @@ impl OpenSubtitlesProvider {
             return Err(FetchError::Http { status, body });
         }
 
-        let json: serde_json::Value = resp.json().map_err(|e| FetchError::Parse(e.to_string()))?;
+        let json: Value = resp.json().map_err(|e| FetchError::Parse(e.to_string()))?;
         Ok(json)
     }
 
@@ -267,7 +270,7 @@ impl OpenSubtitlesProvider {
                     .to_string(),
             ));
         }
-        let body = serde_json::json!({
+        let body = json!({
             "username": self.username,
             "password": self.password,
         });
@@ -298,11 +301,11 @@ impl super::SubtitleProvider for OpenSubtitlesProvider {
         languages: &[&str],
     ) -> Result<Vec<SubtitleMatch>, FetchError> {
         if self.api_key.is_empty() {
-            tracing::debug!("OpenSubtitles: no API key configured, skipping");
+            debug!("OpenSubtitles: no API key configured, skipping");
             return Ok(vec![]);
         }
 
-        let os_langs: Vec<String> = languages
+        let os_langs: Vec<_> = languages
             .iter()
             .map(|l| lang_to_os(l).unwrap_or(l).to_string())
             .collect();
@@ -320,7 +323,7 @@ impl super::SubtitleProvider for OpenSubtitlesProvider {
                 Ok(data) => {
                     matches = parse_results(&data, languages, &identity.raw_filename);
                 }
-                Err(e) => tracing::debug!("OpenSubtitles hash search failed: {e}"),
+                Err(e) => debug!("OpenSubtitles hash search failed: {e}"),
             }
         }
 
@@ -351,22 +354,17 @@ impl super::SubtitleProvider for OpenSubtitlesProvider {
         match self.api_request("GET", "/subtitles", Some(&query_params), None) {
             Ok(data) => {
                 let query_matches = parse_results(&data, languages, &identity.raw_filename);
-                let seen_ids: std::collections::HashSet<_> =
-                    matches.iter().map(|m| m.subtitle_id.clone()).collect();
+                let seen_ids: HashSet<_> = matches.iter().map(|m| m.subtitle_id.clone()).collect();
                 for m in query_matches {
                     if !seen_ids.contains(&m.subtitle_id) {
                         matches.push(m);
                     }
                 }
             }
-            Err(e) => tracing::debug!("OpenSubtitles query search failed: {e}"),
+            Err(e) => debug!("OpenSubtitles query search failed: {e}"),
         }
 
-        matches.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        matches.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
         Ok(matches)
     }
 
@@ -377,7 +375,7 @@ impl super::SubtitleProvider for OpenSubtitlesProvider {
             .subtitle_id
             .parse()
             .map_err(|_| FetchError::Parse(format!("invalid file_id: {}", match_.subtitle_id)))?;
-        let body = serde_json::json!({ "file_id": file_id });
+        let body = json!({ "file_id": file_id });
         let data = self.api_request("POST", "/download", None, Some(&body))?;
 
         let link = data
@@ -400,8 +398,8 @@ impl super::SubtitleProvider for OpenSubtitlesProvider {
             .bytes()
             .map_err(|e| FetchError::Network(e.to_string()))?;
 
-        std::fs::write(output_path, &content[..]).map_err(FetchError::Io)?;
-        tracing::info!(
+        fs::write(output_path, &content[..]).map_err(FetchError::Io)?;
+        info!(
             "Downloaded subtitle: {} (opensubtitles)",
             output_path.display()
         );
@@ -425,7 +423,7 @@ mod tests {
     #[test]
     fn search_returns_empty_without_api_key() {
         // Ensure env var is not set
-        unsafe { std::env::remove_var("OPENSUBTITLES_API_KEY") };
+        unsafe { env::remove_var("OPENSUBTITLES_API_KEY") };
         let p = OpenSubtitlesProvider::new(Some(String::new()), None, None);
         // Without a live server this tests the early-return path only
         // We can't hit the real API, but we can test the guard
@@ -434,7 +432,7 @@ mod tests {
 
     #[test]
     fn parse_results_hash_match_score_1() {
-        let api_response = serde_json::json!({
+        let api_response = json!({
             "data": [{
                 "attributes": {
                     "language": "en",
@@ -454,7 +452,7 @@ mod tests {
 
     #[test]
     fn parse_results_query_match_lower_score() {
-        let api_response = serde_json::json!({
+        let api_response = json!({
             "data": [{
                 "attributes": {
                     "language": "en",
@@ -471,7 +469,7 @@ mod tests {
 
     #[test]
     fn parse_results_filters_by_language() {
-        let api_response = serde_json::json!({
+        let api_response = json!({
             "data": [
                 {
                     "attributes": {
@@ -526,7 +524,7 @@ mod tests {
 
     #[test]
     fn extension_extracted_from_file_name() {
-        let api_response = serde_json::json!({
+        let api_response = json!({
             "data": [{
                 "attributes": {
                     "language": "en",
@@ -542,7 +540,7 @@ mod tests {
 
     #[test]
     fn no_extension_defaults_to_srt() {
-        let api_response = serde_json::json!({
+        let api_response = json!({
             "data": [{
                 "attributes": {
                     "language": "en",
@@ -560,7 +558,7 @@ mod tests {
 
     #[test]
     fn empty_data_array_returns_empty() {
-        let api_response = serde_json::json!({"data": []});
+        let api_response = json!({"data": []});
         let matches = parse_results(&api_response, &["eng"], "test.mkv");
         assert!(matches.is_empty());
     }
@@ -569,7 +567,7 @@ mod tests {
 
     #[test]
     fn matching_release_name_increases_score() {
-        let api_response_matching = serde_json::json!({
+        let api_response_matching = json!({
             "data": [{
                 "attributes": {
                     "language": "en",
@@ -579,7 +577,7 @@ mod tests {
                 }
             }]
         });
-        let api_response_nonmatching = serde_json::json!({
+        let api_response_nonmatching = json!({
             "data": [{
                 "attributes": {
                     "language": "en",

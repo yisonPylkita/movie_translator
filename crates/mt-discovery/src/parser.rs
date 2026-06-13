@@ -37,6 +37,7 @@ pub fn parse_filename(filename: &str, folder: Option<&str>) -> mt_core::Result<P
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::from_str;
 
     /// Unit test: ParsedName JSON round-trip (no interpreter required).
     #[test]
@@ -50,7 +51,7 @@ mod tests {
             "is_anime": true,
             "release_group": "HorribleSubs"
         }"#;
-        let parsed: ParsedName = serde_json::from_str(json).expect("deserialize");
+        let parsed = from_str::<ParsedName>(json).expect("deserialize");
         assert_eq!(parsed.title.as_deref(), Some("One Piece"));
         assert_eq!(parsed.episode, Some(1000));
         assert!(parsed.is_anime);
@@ -72,7 +73,7 @@ mod tests {
             "is_anime": false,
             "release_group": null
         }"#;
-        let parsed: ParsedName = serde_json::from_str(json).expect("deserialize");
+        let parsed = from_str::<ParsedName>(json).expect("deserialize");
         assert_eq!(parsed.title.as_deref(), Some("Spirited Away"));
         assert_eq!(parsed.year, Some(2001));
         assert!(!parsed.is_anime);

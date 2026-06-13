@@ -10,6 +10,8 @@ use std::path::Path;
 use crate::retry::FetchError;
 use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
+use reqwest::blocking::Client;
+use tracing::warn;
 
 /// Build a blocking reqwest client with the given user agent.
 ///
@@ -17,13 +19,13 @@ use mt_core::MediaIdentity;
 /// fall back to a bare `Client::new()` rather than panicking at construction
 /// time. Provider constructors are infallible, so a build failure must not
 /// abort the whole process.
-pub(crate) fn build_blocking_client(user_agent: &str) -> reqwest::blocking::Client {
-    reqwest::blocking::Client::builder()
+pub(crate) fn build_blocking_client(user_agent: &str) -> Client {
+    Client::builder()
         .user_agent(user_agent)
         .build()
         .unwrap_or_else(|e| {
-            tracing::warn!("failed to build configured HTTP client ({e}); using default client");
-            reqwest::blocking::Client::new()
+            warn!("failed to build configured HTTP client ({e}); using default client");
+            Client::new()
         })
 }
 

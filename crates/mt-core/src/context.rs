@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -114,12 +115,12 @@ pub struct PipelineContext {
     pub identity: Option<MediaIdentity>,
     pub reference_path: Option<PathBuf>,
     pub original_english_track: Option<OriginalTrack>,
-    pub fetched_subtitles: Option<std::collections::HashMap<String, Vec<FetchedSubtitle>>>,
+    pub fetched_subtitles: Option<HashMap<String, Vec<FetchedSubtitle>>>,
     pub english_source: Option<PathBuf>,
     pub dialogue_lines: Option<Vec<DialogueLine>>,
     pub translated_lines: Option<Vec<DialogueLine>>,
     /// Translations from `extra_models`, keyed by model name.
-    pub extra_translations: std::collections::HashMap<String, Vec<DialogueLine>>,
+    pub extra_translations: HashMap<String, Vec<DialogueLine>>,
     pub font_info: Option<FontInfo>,
     pub subtitle_tracks: Option<Vec<SubtitleFile>>,
     pub ocr_results: Option<Vec<OCRResult>>,
@@ -168,7 +169,7 @@ impl PipelineContext {
             english_source: None,
             dialogue_lines: None,
             translated_lines: None,
-            extra_translations: std::collections::HashMap::new(),
+            extra_translations: HashMap::new(),
             font_info: None,
             subtitle_tracks: None,
             ocr_results: None,
@@ -183,6 +184,7 @@ impl PipelineContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{from_str, to_string};
 
     #[test]
     fn config_defaults() {
@@ -205,8 +207,8 @@ mod tests {
     #[test]
     fn pipeline_config_serde_round_trip() {
         let cfg = PipelineConfig::default();
-        let json = serde_json::to_string(&cfg).expect("serialize");
-        let back: PipelineConfig = serde_json::from_str(&json).expect("deserialize");
+        let json = to_string(&cfg).expect("serialize");
+        let back = from_str::<PipelineConfig>(&json).expect("deserialize");
         assert_eq!(cfg, back);
     }
 

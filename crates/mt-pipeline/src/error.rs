@@ -80,12 +80,13 @@ pub type Result<T> = std::result::Result<T, PipelineError>;
 mod tests {
     use super::*;
     use std::error::Error;
+    use std::io::{Error as IoError, ErrorKind};
 
     /// A wrapped lower-crate error must keep its cause reachable via
     /// `Error::source`, not be stringified into the message.
     #[test]
     fn carries_source_chain_for_io() {
-        let io = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let io = IoError::new(ErrorKind::PermissionDenied, "denied");
         let err: PipelineError = io.into();
         assert!(
             err.source().is_some(),

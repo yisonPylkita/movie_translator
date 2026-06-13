@@ -5,7 +5,7 @@
 //! quality: protect proper nouns and numbers from translation, handle
 //! common phrases idiomatically, and clean up known bad translations.
 
-use regex::Regex;
+use regex::{Captures, Regex, escape as regex_escape};
 use std::collections::{HashMap, HashSet};
 use tracing::warn;
 
@@ -289,7 +289,7 @@ fn normalize_punctuation(text: &str) -> String {
     // Collapse repeated punctuation: "!!" -> "!", "??" -> "?"
     let re = Regex::new(r"[.!?]{2,}").unwrap();
     let text = re
-        .replace_all(text, |caps: &regex::Captures| {
+        .replace_all(text, |caps: &Captures| {
             let m = caps.get(0).unwrap().as_str();
             m.chars().next().unwrap().to_string()
         })
@@ -346,7 +346,7 @@ pub fn extract_placeholders(
         sorted.sort_by_key(|a| std::cmp::Reverse(a.len()));
 
         for name in &sorted {
-            let escaped = regex::escape(name);
+            let escaped = regex_escape(name);
             // Use word boundary matching
             let re = Regex::new(&format!(r"\b{}\b", escaped)).unwrap();
             // Replace one at a time to handle each occurrence properly

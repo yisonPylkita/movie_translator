@@ -1,8 +1,11 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use serde_json::{Value, from_str};
+use tracing::warn;
 
 use crate::ass::{load_ass, to_ass_string};
 
-fn ground_truth_path() -> std::path::PathBuf {
+fn ground_truth_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -11,14 +14,14 @@ fn ground_truth_path() -> std::path::PathBuf {
         .join("benchmarks/onepiece/ground_truth/ground_truth.json")
 }
 
-fn ground_truth() -> serde_json::Value {
+fn ground_truth() -> Value {
     let path = ground_truth_path();
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|_| panic!("ground_truth.json not found at {}", path.display()));
-    serde_json::from_str(&content).expect("parse ground_truth.json")
+    from_str(&content).expect("parse ground_truth.json")
 }
 
-fn corpus_path(filename: &str) -> std::path::PathBuf {
+fn corpus_path(filename: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -48,7 +51,7 @@ fn corpus_round_trip_all_11_files() {
     // directory (local benchmark data). When it's absent — e.g. on CI — skip:
     // the inline-fixture tests in this module provide committed coverage.
     if !ground_truth_path().exists() {
-        eprintln!("skipping corpus_round_trip: benchmarks/onepiece corpus not present");
+        warn!("skipping corpus_round_trip: benchmarks/onepiece corpus not present");
         return;
     }
     let gt = ground_truth();
@@ -183,7 +186,7 @@ fn round_trip_stability() {
 
     // Untracked local corpus; skip on CI (see corpus_round_trip_all_11_files).
     if !corpus_path(files[0]).exists() {
-        eprintln!("skipping round_trip_stability: benchmarks/onepiece corpus not present");
+        warn!("skipping round_trip_stability: benchmarks/onepiece corpus not present");
         return;
     }
 

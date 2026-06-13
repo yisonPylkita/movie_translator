@@ -3,15 +3,20 @@
 //! Scrapes animesub.info for subtitle files.
 //! Search by anime title, download as ZIP, extract subtitle files.
 
-use std::io::Read as _;
+use std::fs;
+use std::io::{Cursor, Read as _};
 use std::path::Path;
 
+use encoding_rs::ISO_8859_2;
 use regex::Regex;
+use reqwest::blocking::Client;
 use scraper::{Html, Selector};
+use zip::ZipArchive;
 
 use crate::retry::FetchError;
 use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
+use tracing::{debug, info, warn};
 
 pub const BASE_URL: &str = "http://animesub.info";
 pub const USER_AGENT: &str = "Mozilla/5.0 (compatible; MovieTranslator/1.0)";
@@ -175,7 +180,7 @@ pub fn entry_matches(title: &str, base_title: &str, season: Option<i32>, episode
     if !has_range {
         // No range — check individual episode numbers
         let ep_re = Regex::new(r"(?:ep|episode\s*|e)(\d+)").unwrap();
-        let patterns: Vec<i32> = ep_re
+        let patterns: Vec<_> = ep_re
             .captures_iter(&title_lower)
             .filter_map(|c| c[1].parse().ok())
             .collect();
@@ -215,7 +220,7 @@ pub fn build_download_body(sub_id: &str, sh: &str) -> String {
 
 /// AnimeSub.info subtitle provider.
 pub struct AnimeSubProvider {
-    client: reqwest::blocking::Client,
+    client: Client,
 }
 
 impl Default for AnimeSubProvider {
@@ -228,15 +233,13 @@ impl AnimeSubProvider {
     pub fn new() -> Self {
         // Fall back to a bare client rather than panicking if the configured
         // builder fails (e.g. transient TLS backend init failure).
-        let client = reqwest::blocking::Client::builder()
+        let client = Client::builder()
             .user_agent(USER_AGENT)
             .cookie_store(true)
             .build()
             .unwrap_or_else(|e| {
-                tracing::warn!(
-                    "failed to build configured HTTP client ({e}); using default client"
-                );
-                reqwest::blocking::Client::new()
+                warn!("failed to build configured HTTP client ({e}); using default client");
+                Client::new()
             });
         Self { client }
     }
@@ -257,7 +260,7 @@ impl AnimeSubProvider {
             .bytes()
             .map_err(|e| FetchError::Network(e.to_string()))?;
         // AnimeSub uses ISO-8859-2 encoding
-        let (text, _, _) = encoding_rs::ISO_8859_2.decode(&bytes);
+        let (text, _, _) = ISO_8859_2.decode(&bytes);
         Ok(parse_search_html(&text))
     }
 }
@@ -320,7 +323,7 @@ impl super::SubtitleProvider for AnimeSubProvider {
                     }
                 }
                 Err(e) => {
-                    tracing::debug!("AnimeSub search failed ({title_type}): {e}");
+                    debug!("AnimeSub search failed ({title_type}): {e}");
                 }
             }
         }
@@ -355,11 +358,11 @@ impl super::SubtitleProvider for AnimeSubProvider {
         // this up front so we surface a clear error instead of "not a ZIP".
         let looks_like_zip = zip_bytes.starts_with(b"PK");
         if !status.is_success() || !looks_like_zip {
-            let snippet: String = String::from_utf8_lossy(&zip_bytes)
+            let snippet = String::from_utf8_lossy(&zip_bytes)
                 .chars()
                 .take(200)
-                .collect();
-            tracing::warn!(
+                .collect::<String>();
+            warn!(
                 "AnimeSub download for id={sub_id} returned non-ZIP response (status={}): {}",
                 status.as_u16(),
                 snippet.trim()
@@ -370,13 +373,13 @@ impl super::SubtitleProvider for AnimeSubProvider {
             });
         }
 
-        let cursor = std::io::Cursor::new(&zip_bytes[..]);
-        let mut archive = zip::ZipArchive::new(cursor)
-            .map_err(|e| FetchError::Parse(format!("not a ZIP: {e}")))?;
+        let cursor = Cursor::new(&zip_bytes[..]);
+        let mut archive =
+            ZipArchive::new(cursor).map_err(|e| FetchError::Parse(format!("not a ZIP: {e}")))?;
 
         // Find subtitle files in the ZIP, recording the index so we can re-open
         // by index (UTF-8-safe and avoids an O(n^2) by_name re-scan).
-        let sub_entries: Vec<(usize, String)> = (0..archive.len())
+        let sub_entries: Vec<_> = (0..archive.len())
             .filter_map(|i| {
                 let f = archive.by_index(i).ok()?;
                 let name = f.name().to_lowercase();
@@ -407,8 +410,8 @@ impl super::SubtitleProvider for AnimeSubProvider {
         let mut content = Vec::new();
         file.read_to_end(&mut content).map_err(FetchError::Io)?;
 
-        std::fs::write(output_path, &content).map_err(FetchError::Io)?;
-        tracing::info!(
+        fs::write(output_path, &content).map_err(FetchError::Io)?;
+        info!(
             "Downloaded subtitle: {} (animesub.info)",
             output_path.display()
         );
@@ -421,6 +424,7 @@ impl super::SubtitleProvider for AnimeSubProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     const SAMPLE_HTML: &str = r#"
 <table class="Napisy">
@@ -693,7 +697,7 @@ mod tests {
             ("Naruto 3 ep01", false),
             ("Naruto ep01", true),
         ];
-        let accepted: Vec<&str> = candidates
+        let accepted: Vec<_> = candidates
             .iter()
             .filter(|(t, _)| entry_matches(t, base, Some(1), 1))
             .map(|(t, _)| *t)
@@ -714,7 +718,7 @@ mod tests {
     fn accepts_correct_season_via_entry_matches() {
         let base = "Naruto";
         let candidates = ["Naruto 2 ep01", "Naruto ep01"];
-        let accepted: Vec<&str> = candidates
+        let accepted: Vec<_> = candidates
             .iter()
             .copied()
             .filter(|t| entry_matches(t, base, Some(2), 1))
@@ -805,30 +809,32 @@ mod tests {
     #[test]
     fn download_extracts_subtitle_from_zip() {
         use std::io::Write as _;
-        let dir = tempfile::tempdir().unwrap();
+        use zip::write::SimpleFileOptions;
+        use zip::{ZipArchive, ZipWriter};
+        let dir = tempdir().unwrap();
         let output = dir.path().join("subtitle.ass");
 
         // Build a minimal ZIP with one ASS file
         let mut buf = Vec::new();
         {
-            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
-            zip.start_file("Naruto_01.ass", zip::write::SimpleFileOptions::default())
+            let mut zip = ZipWriter::new(Cursor::new(&mut buf));
+            zip.start_file("Naruto_01.ass", SimpleFileOptions::default())
                 .unwrap();
             zip.write_all(b"[Script Info]\nTitle: Naruto").unwrap();
             zip.finish().unwrap();
         }
 
         // Unzip manually to simulate what download() does
-        let cursor = std::io::Cursor::new(&buf);
-        let mut archive = zip::ZipArchive::new(cursor).unwrap();
+        let cursor = Cursor::new(&buf);
+        let mut archive = ZipArchive::new(cursor).unwrap();
         let mut content = Vec::new();
         {
             let mut file = archive.by_index(0).unwrap();
             file.read_to_end(&mut content).unwrap();
         }
-        std::fs::write(&output, &content).unwrap();
+        fs::write(&output, &content).unwrap();
 
-        let text = std::fs::read_to_string(&output).unwrap();
+        let text = fs::read_to_string(&output).unwrap();
         assert!(text.contains("Naruto"));
     }
 }

@@ -1,15 +1,20 @@
+use std::env;
+use std::fs;
+use std::path::PathBuf;
+use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use encoding_rs::{ISO_8859_2, WINDOWS_1250};
+
 use crate::encoding::normalize_encoding;
 
-fn tempfile_path() -> std::path::PathBuf {
-    let id = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+fn tempfile_path() -> PathBuf {
+    let id = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let p = std::env::temp_dir().join(format!(
-        "mt_enc_test_{id}_{:?}",
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&p).unwrap();
+    let p = env::temp_dir().join(format!("mt_enc_test_{id}_{:?}", thread::current().id()));
+    fs::create_dir_all(&p).unwrap();
     p
 }
 
@@ -30,7 +35,7 @@ fn cp1250_converted_to_utf8() {
     let tmp = tempfile_path();
     let p = tmp.join("test.srt");
     let text = "Półka z książkami";
-    let (encoded, _, _) = encoding_rs::WINDOWS_1250.encode(text);
+    let (encoded, _, _) = WINDOWS_1250.encode(text);
     std::fs::write(&p, &*encoded).unwrap();
 
     normalize_encoding(&p).unwrap();
@@ -46,7 +51,7 @@ fn iso_8859_2_converted_to_utf8() {
     let tmp = tempfile_path();
     let p = tmp.join("test.srt");
     let text = "Źródło świata";
-    let (encoded, _, _) = encoding_rs::ISO_8859_2.encode(text);
+    let (encoded, _, _) = ISO_8859_2.encode(text);
     std::fs::write(&p, &*encoded).unwrap();
 
     normalize_encoding(&p).unwrap();

@@ -4,6 +4,7 @@
 //! routes through the pipeline GPU worker (`mt_ml::ocr_burned_in` via the
 //! serialised worker).
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
@@ -11,7 +12,8 @@ use mt_core::MediaIdentity;
 use mt_discovery::{find_videos, identify_media};
 use mt_media::SubtitleExtractor;
 use mt_pipeline::GpuWorker;
-use serde_json::json;
+use serde_json::{Value, json, to_string_pretty};
+use tracing::{error, info, warn};
 
 /// Image-based subtitle codecs that need OCR.
 const IMAGE_CODECS: &[&str] = &["hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle"];
@@ -50,7 +52,7 @@ fn build_output_stem(identity: &MediaIdentity) -> String {
     } else {
         "Unknown"
     };
-    let title: String = raw
+    let title = raw
         .chars()
         .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_')
         .collect::<String>()
@@ -88,11 +90,11 @@ fn extract_text_tracks(
     output_dir: &Path,
     extractor: &SubtitleExtractor,
     output_stem: &str,
-) -> Vec<serde_json::Value> {
+) -> Vec<Value> {
     let track_info = match extractor.get_track_info(video_path) {
         Ok(ti) => ti,
         Err(e) => {
-            tracing::warn!("Failed to read track info: {e}");
+            warn!("Failed to read track info: {e}");
             return Vec::new();
         }
     };
@@ -135,7 +137,7 @@ fn extract_text_tracks(
         ) {
             Ok(()) => {
                 let line_count = count_subtitle_lines(&out_path);
-                tracing::info!("Extracted {out_lang} text track: {out_file} ({line_count} lines)");
+                info!("Extracted {out_lang} text track: {out_file} ({line_count} lines)");
                 results.push(json!({
                     "file": out_file,
                     "language": out_lang,
@@ -143,7 +145,7 @@ fn extract_text_tracks(
                     "line_count": line_count,
                 }));
             }
-            Err(e) => tracing::warn!("Failed to extract track {}: {e}", track.id),
+            Err(e) => warn!("Failed to extract track {}: {e}", track.id),
         }
     }
     results
@@ -156,7 +158,7 @@ async fn extract_ocr(
     output_dir: &Path,
     output_stem: &str,
     language: &str,
-) -> Vec<serde_json::Value> {
+) -> Vec<Value> {
     let work_dir = output_dir.join("_ocr_work");
     if std::fs::create_dir_all(&work_dir).is_err() {
         return Vec::new();
@@ -178,9 +180,7 @@ async fn extract_ocr(
             let out_path = output_dir.join(&out_file);
             if std::fs::copy(&r.srt_path, &out_path).is_ok() {
                 let line_count = count_subtitle_lines(&out_path);
-                tracing::info!(
-                    "Extracted {language} OCR subtitles: {out_file} ({line_count} lines)"
-                );
+                info!("Extracted {language} OCR subtitles: {out_file} ({line_count} lines)");
                 vec![json!({
                     "file": out_file,
                     "language": language,
@@ -192,7 +192,7 @@ async fn extract_ocr(
             }
         }
         Err(_) => {
-            tracing::warn!(
+            warn!(
                 "No burned-in subtitles found in {}",
                 video_path
                     .file_name()
@@ -207,7 +207,7 @@ async fn extract_ocr(
     out
 }
 
-fn identity_to_json(identity: &MediaIdentity) -> serde_json::Value {
+fn identity_to_json(identity: &MediaIdentity) -> Value {
     json!({
         "title": identity.title,
         "parsed_title": identity.parsed_title,
@@ -227,7 +227,7 @@ pub async fn run(args: ExtractArgs) -> anyhow::Result<i32> {
 
     let input_path = PathBuf::from(&args.input);
     if !input_path.exists() {
-        eprintln!("Not found: {}", input_path.display());
+        error!("Not found: {}", input_path.display());
         return Ok(1);
     }
 
@@ -248,7 +248,7 @@ pub async fn run(args: ExtractArgs) -> anyhow::Result<i32> {
 
     let video_files = find_videos(&input_path);
     if video_files.is_empty() {
-        eprintln!("No video files found in {}", input_path.display());
+        error!("No video files found in {}", input_path.display());
         return Ok(1);
     }
 
@@ -258,11 +258,11 @@ pub async fn run(args: ExtractArgs) -> anyhow::Result<i32> {
     let extractor = SubtitleExtractor::new();
     let worker = GpuWorker::spawn();
 
-    let mut entries: Vec<serde_json::Value> = Vec::new();
-    eprintln!("Extracting subtitles from {} file(s)...", video_files.len());
+    let mut entries: Vec<Value> = Vec::new();
+    info!("Extracting subtitles from {} file(s)...", video_files.len());
 
     for video_path in &video_files {
-        eprintln!(
+        info!(
             "\n{}",
             video_path
                 .file_name()
@@ -273,12 +273,12 @@ pub async fn run(args: ExtractArgs) -> anyhow::Result<i32> {
         let identity = match identify_media(video_path) {
             Ok(id) => id,
             Err(e) => {
-                tracing::warn!("Identification failed: {e}");
+                warn!("Identification failed: {e}");
                 continue;
             }
         };
         let output_stem = build_output_stem(&identity);
-        eprintln!(
+        info!(
             "  Identified: {} (S{:?}E{:?})",
             identity.title, identity.season, identity.episode
         );
@@ -295,10 +295,10 @@ pub async fn run(args: ExtractArgs) -> anyhow::Result<i32> {
         subtitles.extend(ocr);
 
         if subtitles.is_empty() {
-            eprintln!("  No subtitles extracted");
+            info!("  No subtitles extracted");
         } else {
             for sub in &subtitles {
-                eprintln!(
+                info!(
                     "  {} ({}, {}, {} lines)",
                     sub["file"].as_str().unwrap_or(""),
                     sub["language"].as_str().unwrap_or(""),
@@ -323,11 +323,10 @@ pub async fn run(args: ExtractArgs) -> anyhow::Result<i32> {
         "entries": entries,
     });
     let manifest_path = output_dir.join("manifest.json");
-    let manifest_json =
-        serde_json::to_string_pretty(&manifest).context("serializing extract manifest")?;
-    std::fs::write(&manifest_path, manifest_json)
+    let manifest_json = to_string_pretty(&manifest).context("serializing extract manifest")?;
+    fs::write(&manifest_path, manifest_json)
         .with_context(|| format!("writing manifest {}", manifest_path.display()))?;
-    eprintln!("\nManifest written to {}", manifest_path.display());
+    info!("\nManifest written to {}", manifest_path.display());
     Ok(0)
 }
 

@@ -1,12 +1,17 @@
 //! Subtitle fetcher — orchestrates search across multiple providers.
 
+use std::any::Any;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 use crate::providers::SubtitleProvider;
-use crate::retry::{FetchError, with_retry};
+use crate::retry::{with_retry, FetchError};
 use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
+use tracing::{debug, info, warn};
 
 /// Orchestrates subtitle search across multiple providers.
 pub struct SubtitleFetcher {
@@ -21,7 +26,7 @@ impl SubtitleFetcher {
     /// Search all providers in parallel, return ALL plausible matches sorted by score.
     pub fn search_all(&self, identity: &MediaIdentity, languages: &[&str]) -> Vec<SubtitleMatch> {
         // Use threads to query providers in parallel.
-        let results: Vec<_> = std::thread::scope(|scope| {
+        let results: Vec<_> = thread::scope(|scope| {
             let handles: Vec<_> = self
                 .providers
                 .iter()
@@ -33,7 +38,7 @@ impl SubtitleFetcher {
                             1,
                             2.0,
                             &name,
-                            |secs| std::thread::sleep(std::time::Duration::from_secs_f64(secs)),
+                            |secs| thread::sleep(Duration::from_secs_f64(secs)),
                         );
                         (name, result)
                     })
@@ -47,26 +52,23 @@ impl SubtitleFetcher {
         for result in results {
             match result {
                 Ok((name, Ok(matches))) => {
-                    tracing::debug!("{name}: found {} matches", matches.len());
+                    debug!("{name}: found {} matches", matches.len());
                     all_matches.extend(matches);
                 }
                 Ok((name, Err(e))) => {
-                    tracing::warn!("{name} search failed: {e}");
+                    warn!("{name} search failed: {e}");
                 }
                 Err(payload) => {
                     let msg = panic_payload_message(&*payload);
-                    tracing::warn!("provider thread panicked: {msg}");
+                    warn!("provider thread panicked: {msg}");
                 }
             }
         }
 
         // Sort by (score, hash_match) descending.
         all_matches.sort_by(|a, b| {
-            let score_ord = b
-                .score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal);
-            if score_ord == std::cmp::Ordering::Equal {
+            let score_ord = b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal);
+            if score_ord == Ordering::Equal {
                 b.hash_match.cmp(&a.hash_match)
             } else {
                 score_ord
@@ -106,7 +108,7 @@ impl SubtitleFetcher {
         let all_matches = self.search_all(identity, languages);
 
         if all_matches.is_empty() {
-            tracing::info!("No subtitles found from any provider");
+            info!("No subtitles found from any provider");
             return HashMap::new();
         }
 
@@ -124,7 +126,7 @@ impl SubtitleFetcher {
             let output_path = output_dir.join(format!("fetched_{lang}.{}", match_.format));
             match self.download_candidate(match_, &output_path) {
                 Ok(path) => {
-                    tracing::info!(
+                    info!(
                         "Fetched {} subtitles: {} ({} match, {})",
                         lang,
                         match_.release_name,
@@ -134,7 +136,7 @@ impl SubtitleFetcher {
                     result.insert(lang.clone(), path);
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to download {lang} subtitle: {e}");
+                    warn!("Failed to download {lang} subtitle: {e}");
                 }
             }
         }
@@ -155,7 +157,7 @@ impl SubtitleFetcher {
 /// Panic payloads are `Box<dyn Any>`; the common cases produced by `panic!`
 /// are `&'static str` and `String`. Downcasting recovers the message instead
 /// of discarding it.
-fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+fn panic_payload_message(payload: &(dyn Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&'static str>() {
         (*s).to_string()
     } else if let Some(s) = payload.downcast_ref::<String>() {
@@ -171,7 +173,10 @@ fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
 mod tests {
     use super::*;
     use crate::types::SubtitleMatch;
+    use std::collections::HashSet;
+    use std::fs;
     use std::sync::Mutex;
+    use tempfile::tempdir;
 
     struct FakeProvider {
         provider_name: String,
@@ -208,7 +213,7 @@ mod tests {
         }
 
         fn download(&self, match_: &SubtitleMatch, output_path: &Path) -> Result<(), FetchError> {
-            std::fs::write(
+            fs::write(
                 output_path,
                 format!("subtitle content from {}", self.provider_name),
             )
@@ -255,11 +260,11 @@ mod tests {
 
     #[test]
     fn panic_payload_message_recovers_str_and_string() {
-        let s: Box<dyn std::any::Any + Send> = Box::new("static panic");
+        let s = Box::new("static panic");
         assert_eq!(panic_payload_message(&*s), "static panic");
-        let s: Box<dyn std::any::Any + Send> = Box::new(String::from("owned panic"));
+        let s = Box::new(String::from("owned panic"));
         assert_eq!(panic_payload_message(&*s), "owned panic");
-        let s: Box<dyn std::any::Any + Send> = Box::new(42u32);
+        let s = Box::new(42u32);
         assert_eq!(panic_payload_message(&*s), "unknown panic payload");
     }
 
@@ -286,7 +291,7 @@ mod tests {
 
     #[test]
     fn fetch_subtitles_downloads_best_per_language() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let provider = FakeProvider::new(
             "fake",
             vec![
@@ -329,7 +334,7 @@ mod tests {
 
     #[test]
     fn fetch_subtitles_returns_empty_when_no_matches() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let provider = FakeProvider::new("fake", vec![]);
         let fetcher = SubtitleFetcher::new(vec![Box::new(provider)]);
         let result = fetcher.fetch_subtitles(&make_identity(), &["eng"], dir.path());
@@ -338,7 +343,7 @@ mod tests {
 
     #[test]
     fn fetch_subtitles_tries_multiple_providers() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let p1 = FakeProvider::new("p1", vec![]);
         let p2 = FakeProvider::new(
             "p2",
@@ -393,7 +398,7 @@ mod tests {
         );
         let fetcher = SubtitleFetcher::new(vec![Box::new(provider)]);
         let results = fetcher.search_all(&make_identity(), &["eng", "pol"]);
-        let scores: Vec<f64> = results.iter().map(|m| m.score).collect();
+        let scores: Vec<_> = results.iter().map(|m| m.score).collect();
         let mut sorted = scores.clone();
         sorted.sort_by(|a, b| b.partial_cmp(a).unwrap());
         assert_eq!(scores, sorted);
@@ -440,8 +445,7 @@ mod tests {
         let results = fetcher.search_all(&make_identity(), &["eng", "pol"]);
 
         assert_eq!(results.len(), 3);
-        let ids: std::collections::HashSet<_> =
-            results.iter().map(|m| m.subtitle_id.as_str()).collect();
+        let ids: HashSet<_> = results.iter().map(|m| m.subtitle_id.as_str()).collect();
         assert!(ids.contains("a"));
         assert!(ids.contains("b"));
         assert!(ids.contains("c"));
@@ -500,7 +504,7 @@ mod tests {
 
     #[test]
     fn download_candidate_delegates_to_correct_provider() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let provider = FakeProvider::new("myprovider", vec![]);
         let fetcher = SubtitleFetcher::new(vec![Box::new(provider)]);
         let match_ = SubtitleMatch {
@@ -513,6 +517,7 @@ mod tests {
             hash_match: true,
         };
         let output_path = dir.path().join("output.srt");
+
         let result = fetcher.download_candidate(&match_, &output_path);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), output_path);
@@ -520,7 +525,7 @@ mod tests {
 
     #[test]
     fn download_candidate_raises_when_provider_not_found() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let provider = FakeProvider::new("only_provider", vec![]);
         let fetcher = SubtitleFetcher::new(vec![Box::new(provider)]);
         let match_ = SubtitleMatch {
@@ -540,7 +545,7 @@ mod tests {
 
     #[test]
     fn download_candidate_picks_correct_provider_by_name() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
 
         struct TrackingProvider {
             provider_name: String,
@@ -563,7 +568,7 @@ mod tests {
                 output_path: &Path,
             ) -> Result<(), FetchError> {
                 *self.call_count.lock().unwrap() += 1;
-                std::fs::write(output_path, "content").map_err(FetchError::Io)
+                fs::write(output_path, "content").map_err(FetchError::Io)
             }
         }
 

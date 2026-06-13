@@ -6,14 +6,16 @@
 //! `mt-subtitles::sentence_merger` and `mt-subtitles::enhancements`).
 
 use std::collections::{HashMap, HashSet};
+use std::env;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use mt_core::MtError;
 use mt_core::swift_bridge::{ensure_compiled, macos_at_least};
 use mt_core::{DialogueLine, Result as MtResult};
 use serde::{Deserialize, Serialize};
+use serde_json::{from_slice, to_string};
 use tracing::info;
 
 use mt_subtitles::enhancements::{
@@ -42,14 +44,14 @@ fn swift_source() -> PathBuf {
         }
     }
     // Fallback: check MT_REPO_ROOT
-    if let Ok(root) = std::env::var("MT_REPO_ROOT") {
+    if let Ok(root) = env::var("MT_REPO_ROOT") {
         let p = PathBuf::from(root).join("crates/mt-ml/swift/translate_bridge.swift");
         if p.exists() {
             return p;
         }
     }
     // Look in the standard repo structure from the repo root
-    if let Ok(cwd) = std::env::current_dir() {
+    if let Ok(cwd) = env::current_dir() {
         for ancestor in cwd.ancestors() {
             let p = ancestor.join("crates/mt-ml/swift/translate_bridge.swift");
             if p.exists() {
@@ -125,13 +127,13 @@ fn call_swift_binary(binary: &Path, texts: &[String]) -> MtResult<Vec<String>> {
         target: "pl".to_string(),
     };
 
-    let request_json = serde_json::to_string(&request)
+    let request_json = to_string(&request)
         .map_err(|e| MtError::Parse(format!("failed to serialize request: {e}")))?;
 
     let mut child = Command::new(binary)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(MtError::Io)?;
 
@@ -154,7 +156,7 @@ fn call_swift_binary(binary: &Path, texts: &[String]) -> MtResult<Vec<String>> {
         )));
     }
 
-    let response: TranslateResponse = serde_json::from_slice(&result.stdout).map_err(|e| {
+    let response: TranslateResponse = from_slice(&result.stdout).map_err(|e| {
         let out = String::from_utf8_lossy(&result.stdout);
         MtError::Parse(format!(
             "Invalid JSON from Swift bridge: {e}\nOutput: {}",
@@ -204,16 +206,16 @@ pub fn translate(
     let binary = ensure_translation_bridge()?;
     info!("Apple Translation backend using: {}", binary.display());
 
-    let texts: Vec<String> = lines.iter().map(|l| l.text.clone()).collect();
-    let proper_set: Option<HashSet<String>> = proper_nouns.map(|n| n.iter().cloned().collect());
+    let texts: Vec<_> = lines.iter().map(|l| l.text.clone()).collect();
+    let proper_set = proper_nouns.map(|n| n.iter().cloned().collect());
 
     // Step 1: Sentence merging
     let (merged_texts, groups) = merge_for_translation(&texts);
 
     // Step 2: Apply enhancements (placeholders, preprocessing)
-    let mut placeholder_mappings: Vec<HashMap<String, String>> = Vec::new();
-    let mut skip_indices: HashSet<usize> = HashSet::new();
-    let mut cached_translations: HashMap<usize, String> = HashMap::new();
+    let mut placeholder_mappings = Vec::new();
+    let mut skip_indices = HashSet::new();
+    let mut cached_translations = HashMap::new();
     let mut processed_texts: Vec<String> = Vec::new();
 
     for (i, text) in merged_texts.iter().enumerate() {
@@ -242,10 +244,10 @@ pub fn translate(
     }
 
     // Step 3: Collect texts that need actual translation
-    let texts_to_translate: Vec<usize> = (0..processed_texts.len())
+    let texts_to_translate: Vec<_> = (0..processed_texts.len())
         .filter(|i| !skip_indices.contains(i))
         .collect();
-    let translate_only: Vec<String> = texts_to_translate
+    let translate_only: Vec<_> = texts_to_translate
         .iter()
         .map(|&i| processed_texts[i].clone())
         .collect();
@@ -262,7 +264,7 @@ pub fn translate(
         let bs = batch_size as usize;
         for chunk_start in (0..translate_only.len()).step_by(bs) {
             let chunk_end = (chunk_start + bs).min(translate_only.len());
-            let batch: Vec<String> = translate_only[chunk_start..chunk_end].to_vec();
+            let batch: Vec<_> = translate_only[chunk_start..chunk_end].to_vec();
             let batch_results = call_swift_binary(&binary, &batch)?;
             for (j, translated) in batch_results.iter().enumerate() {
                 let original_idx = texts_to_translate[chunk_start + j];

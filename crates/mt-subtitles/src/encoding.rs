@@ -5,6 +5,8 @@
 
 use std::path::Path;
 
+use encoding_rs::{Encoding, ISO_8859_2, WINDOWS_1250};
+
 /// Polish diacritical characters.
 const POLISH_CHARS: &str = "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ";
 
@@ -38,8 +40,7 @@ pub fn normalize_encoding(path: &Path) -> Result<(), Box<dyn std::error::Error>>
     }
 
     // Try CP1250 and ISO-8859-2, pick by Polish char score.
-    let ambiguous: &[&'static encoding_rs::Encoding] =
-        &[encoding_rs::WINDOWS_1250, encoding_rs::ISO_8859_2];
+    let ambiguous: &[&'static Encoding] = &[WINDOWS_1250, ISO_8859_2];
 
     let mut best_text: Option<String> = None;
     let mut best_score: i64 = -1;

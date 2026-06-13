@@ -3,8 +3,11 @@
 //! The ffprobe binary is resolved via `mt_core::exec::get_ffprobe()` so
 //! discovery and mt-media share one binary-discovery path.
 
+use std::collections::HashMap;
+
 use mt_core::{MtError, Result};
 use serde::Deserialize;
+use serde_json::from_str;
 use std::path::Path;
 use std::process::Command;
 
@@ -28,7 +31,7 @@ struct FfprobeOutput {
 #[derive(Deserialize, Default)]
 struct FfprobeFormat {
     #[serde(default)]
-    tags: std::collections::HashMap<String, String>,
+    tags: HashMap<String, String>,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,7 +40,7 @@ struct FfprobeFormat {
 ///
 /// Factored out from the subprocess call to allow unit testing.
 pub(crate) fn parse_ffprobe_output(json: &str) -> ContainerMetadata {
-    let probe: FfprobeOutput = match serde_json::from_str(json) {
+    let probe = match from_str::<FfprobeOutput>(json) {
         Ok(p) => p,
         Err(_) => return ContainerMetadata::default(),
     };

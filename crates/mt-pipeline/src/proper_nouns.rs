@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use regex::Regex;
+use tracing::info;
 
 // Tokens used to detect lowercase occurrences in the corpus.
 static TOKEN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[a-zA-Z']+").unwrap());
@@ -354,7 +355,7 @@ pub fn extract_proper_nouns_from_subtitles(dialogue_texts: &[String]) -> HashSet
     if !names.is_empty() {
         let mut sorted: Vec<&String> = names.iter().collect();
         sorted.sort();
-        tracing::info!("Detected proper nouns for translation protection: {sorted:?}");
+        info!("Detected proper nouns for translation protection: {sorted:?}");
     }
 
     names
@@ -365,7 +366,7 @@ mod tests {
     use super::*;
 
     fn run(lines: &[&str]) -> Vec<String> {
-        let owned: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
+        let owned: Vec<_> = lines.iter().map(|s| s.to_string()).collect();
         let mut v: Vec<String> = extract_proper_nouns_from_subtitles(&owned)
             .into_iter()
             .collect();

@@ -7,8 +7,16 @@
 //! step on top of parsed PGS bitmaps, as well as burned-in subtitle extraction
 //! via frame-level change detection and OCR.
 
-use mt_core::{BoundingBox, BurnedInResult, MtError, OCRResult, Result};
+use std::env;
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use serde_json::{Value, from_slice};
+use tracing::{info, warn};
+
+use mt_core::{BoundingBox, BurnedInResult, MtError, OCRResult, Result};
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -21,7 +29,7 @@ pub fn ocr_pgs(video: &Path, track_index: u32, work_dir: &Path) -> Result<Option
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (video, track_index, work_dir);
-        tracing::warn!("PGS OCR requires macOS (Vision framework)");
+        warn!("PGS OCR requires macOS (Vision framework)");
         Ok(None)
     }
 }
@@ -52,7 +60,7 @@ pub fn is_vision_ocr_available() -> bool {
     #[cfg(target_os = "macos")]
     {
         use std::path::Path;
-        std::process::Command::new("swiftc")
+        Command::new("swiftc")
             .arg("--version")
             .output()
             .map(|o| o.status.success())
@@ -74,11 +82,11 @@ fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Opti
     use std::process::Command;
 
     let pgs_dir = work_dir.join("pgs_ocr");
-    std::fs::create_dir_all(&pgs_dir).map_err(MtError::Io)?;
+    fs::create_dir_all(&pgs_dir).map_err(MtError::Io)?;
 
     // Step 1: Extract .sup stream from MKV
     let sup_path = pgs_dir.join("track.sup");
-    tracing::info!(
+    info!(
         "Extracting PGS track {track_index} from {}",
         video.display()
     );
@@ -92,22 +100,22 @@ fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Opti
 
     if !result.status.success() || !sup_path.exists() {
         let stderr = String::from_utf8_lossy(&result.stderr);
-        tracing::warn!("Failed to extract PGS track: {stderr}");
+        warn!("Failed to extract PGS track: {stderr}");
         return Ok(None);
     }
 
     // Step 2: Parse PGS binary format
-    tracing::info!("Parsing PGS subtitle stream...");
-    let data = std::fs::read(&sup_path).map_err(MtError::Io)?;
+    info!("Parsing PGS subtitle stream...");
+    let data = fs::read(&sup_path).map_err(MtError::Io)?;
     let events = mt_media::pgs_parser::parse_sup(&data);
 
     if events.is_empty() {
-        tracing::warn!("No subtitle images found in PGS track");
-        let _ = std::fs::remove_file(&sup_path);
+        warn!("No subtitle images found in PGS track");
+        let _ = fs::remove_file(&sup_path);
         return Ok(None);
     }
 
-    tracing::info!("Found {} subtitle images, running OCR...", events.len());
+    info!("Found {} subtitle images, running OCR...", events.len());
 
     // Step 3: OCR each image
     let bridge = ensure_ocr_bridge()?;
@@ -126,7 +134,7 @@ fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Opti
         .map_err(MtError::Io)?;
 
         let text = ocr_image(&bridge, &img_path)?;
-        let _ = std::fs::remove_file(&img_path);
+        let _ = fs::remove_file(&img_path);
 
         let pts_ms = event.pts_ms as i64;
 
@@ -150,7 +158,7 @@ fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Opti
         }
 
         if (i + 1) % 100 == 0 {
-            tracing::info!("OCR progress: {}/{}", i + 1, events.len());
+            info!("OCR progress: {}/{}", i + 1, events.len());
         }
     }
 
@@ -167,12 +175,12 @@ fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Opti
     }
 
     if dialogue_lines.is_empty() {
-        tracing::warn!("OCR produced no text from PGS images");
-        let _ = std::fs::remove_file(&sup_path);
+        warn!("OCR produced no text from PGS images");
+        let _ = fs::remove_file(&sup_path);
         return Ok(None);
     }
 
-    tracing::info!(
+    info!(
         "Extracted {} dialogue lines from PGS track",
         dialogue_lines.len()
     );
@@ -211,9 +219,9 @@ fn ocr_pgs_macos(video: &Path, track_index: u32, work_dir: &Path) -> Result<Opti
         post_events_sections: vec![],
     };
     let srt_content = mt_subtitles::srt::to_srt_string(&subs);
-    std::fs::write(&srt_path, srt_content).map_err(MtError::Io)?;
+    fs::write(&srt_path, srt_content).map_err(MtError::Io)?;
 
-    let _ = std::fs::remove_file(&sup_path);
+    let _ = fs::remove_file(&sup_path);
     Ok(Some(srt_path))
 }
 
@@ -226,7 +234,7 @@ fn ocr_burned_in_macos(
     _language: &str,
 ) -> Result<BurnedInResult> {
     let ocr_dir = output_dir.join("_ocr_frames");
-    std::fs::create_dir_all(&ocr_dir).map_err(MtError::Io)?;
+    fs::create_dir_all(&ocr_dir).map_err(MtError::Io)?;
 
     let scale_width = 1280u32;
     let pixel_delta: u8 = 25;
@@ -246,7 +254,7 @@ fn ocr_burned_in_macos(
         return Err(MtError::Parse("No subtitle transitions detected".into()));
     }
 
-    tracing::info!(
+    info!(
         "Change detection: {} transitions out of {} frames",
         transition_frames.len(),
         frames.len()
@@ -261,7 +269,7 @@ fn ocr_burned_in_macos(
         frame_texts.push((*timestamp_ms, text));
 
         if (i + 1) % 100 == 0 {
-            tracing::info!("  OCR progress: {}/{}", i + 1, transition_frames.len());
+            info!("  OCR progress: {}/{}", i + 1, transition_frames.len());
         }
     }
 
@@ -273,7 +281,7 @@ fn ocr_burned_in_macos(
         ));
     }
 
-    tracing::info!("Extracted {} subtitle lines via OCR", lines.len());
+    info!("Extracted {} subtitle lines via OCR", lines.len());
 
     let srt_path = output_dir.join(format!(
         "{}_ocr.srt",
@@ -314,7 +322,7 @@ fn ocr_burned_in_macos(
     let _ = std::fs::remove_dir_all(&ocr_dir);
 
     // Build OCR results
-    let ocr_results: Vec<OCRResult> = frame_texts
+    let ocr_results: Vec<_> = frame_texts
         .into_iter()
         .map(|(ts, text)| OCRResult {
             timestamp_ms: ts,
@@ -350,7 +358,7 @@ fn ocr_bridge_source() -> PathBuf {
             return p;
         }
     }
-    if let Ok(root) = std::env::var("MT_REPO_ROOT") {
+    if let Ok(root) = env::var("MT_REPO_ROOT") {
         let p = PathBuf::from(root).join("crates/mt-ml/swift/ocr_bridge.swift");
         if p.exists() {
             return p;
@@ -360,9 +368,9 @@ fn ocr_bridge_source() -> PathBuf {
     let fallback = PathBuf::from(".translate_temp/ocr_bridge.swift");
     if !fallback.exists() {
         if let Some(parent) = fallback.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            let _ = fs::create_dir_all(parent);
         }
-        let _ = std::fs::write(&fallback, INLINE_OCR_SWIFT);
+        let _ = fs::write(&fallback, INLINE_OCR_SWIFT);
     }
     fallback
 }
@@ -391,12 +399,12 @@ fn ensure_ocr_bridge() -> Result<PathBuf> {
     }
 
     // Compile
-    tracing::info!("Compiling OCR Swift bridge: {}", source.display());
+    info!("Compiling OCR Swift bridge: {}", source.display());
     if let Some(parent) = binary.parent() {
-        std::fs::create_dir_all(parent).map_err(MtError::Io)?;
+        fs::create_dir_all(parent).map_err(MtError::Io)?;
     }
 
-    let output = std::process::Command::new("swiftc")
+    let output = Command::new("swiftc")
         .arg("-O")
         .arg(&source)
         .arg("-o")
@@ -416,13 +424,13 @@ fn ensure_ocr_bridge() -> Result<PathBuf> {
         )));
     }
 
-    tracing::info!("Compiled: {}", binary.display());
+    info!("Compiled: {}", binary.display());
     Ok(binary)
 }
 
 #[cfg(target_os = "macos")]
 fn ocr_image(bridge: &Path, image_path: &Path) -> Result<String> {
-    let output = std::process::Command::new(bridge)
+    let output = Command::new(bridge)
         .arg(image_path)
         .output()
         .map_err(MtError::Io)?;
@@ -506,8 +514,7 @@ fn extract_subtitle_frames(
         .output()
         .map_err(MtError::Io)?;
 
-    let info: serde_json::Value =
-        serde_json::from_slice(&info_output.stdout).map_err(|e| MtError::Parse(e.to_string()))?;
+    let info: Value = from_slice(&info_output.stdout).map_err(|e| MtError::Parse(e.to_string()))?;
 
     let streams = info["streams"]
         .as_array()
@@ -556,7 +563,7 @@ fn extract_subtitle_frames(
 
     // Collect frames
     let mut frames: Vec<(PathBuf, i64)> = Vec::new();
-    let mut dir = std::fs::read_dir(out_dir).map_err(MtError::Io)?;
+    let mut dir = fs::read_dir(out_dir).map_err(MtError::Io)?;
     while let Some(entry) = dir.next().transpose().map_err(MtError::Io)? {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("png") {
@@ -648,17 +655,12 @@ fn build_dialogue_lines(frame_texts: &[(i64, String)]) -> Vec<mt_core::DialogueL
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-fn write_grayscale_pgm(
-    path: &Path,
-    pixels: &[u8],
-    width: usize,
-    height: usize,
-) -> std::io::Result<()> {
+fn write_grayscale_pgm(path: &Path, pixels: &[u8], width: usize, height: usize) -> io::Result<()> {
     let mut data = Vec::new();
     data.extend_from_slice(b"P5\n");
     data.extend_from_slice(format!("{} {}\n255\n", width, height).as_bytes());
     data.extend_from_slice(pixels);
-    std::fs::write(path, data)
+    fs::write(path, data)
 }
 
 fn find_ffmpeg() -> Result<PathBuf> {

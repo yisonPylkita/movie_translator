@@ -1,7 +1,10 @@
 //! Podnapisi.net provider — multilingual subtitle search via REST/XML API.
 
-use std::io::Read as _;
+use std::collections::HashSet;
+use std::fs;
+use std::io::{Cursor, Read as _};
 use std::path::Path;
+use std::str;
 
 use quick_xml::Reader;
 use quick_xml::events::Event;
@@ -9,6 +12,7 @@ use quick_xml::events::Event;
 use crate::retry::FetchError;
 use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
+use tracing::{debug, info};
 
 pub const API_BASE: &str = "https://www.podnapisi.net";
 pub const SEARCH_URL: &str = "https://www.podnapisi.net/subtitles/search/old";
@@ -81,9 +85,7 @@ pub fn parse_xml_response(xml: &str) -> Result<Vec<PodnapisiSubtitle>, FetchErro
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
-                let tag = std::str::from_utf8(e.name().as_ref())
-                    .unwrap_or("")
-                    .to_string();
+                let tag = str::from_utf8(e.name().as_ref()).unwrap_or("").to_string();
                 if tag == "subtitle" {
                     current = Some(PodnapisiSubtitle {
                         id: String::new(),
@@ -118,7 +120,7 @@ pub fn parse_xml_response(xml: &str) -> Result<Vec<PodnapisiSubtitle>, FetchErro
             }
             Ok(Event::End(e)) => {
                 let name_bytes = e.name();
-                let tag = std::str::from_utf8(name_bytes.as_ref()).unwrap_or("");
+                let tag = str::from_utf8(name_bytes.as_ref()).unwrap_or("");
                 if tag == "subtitle"
                     && let Some(sub) = current.take()
                     && !sub.id.is_empty()
@@ -234,7 +236,7 @@ impl super::SubtitleProvider for PodnapisiProvider {
         identity: &MediaIdentity,
         languages: &[&str],
     ) -> Result<Vec<SubtitleMatch>, FetchError> {
-        let podnapi_langs: Vec<&str> = languages
+        let podnapi_langs: Vec<_> = languages
             .iter()
             .filter_map(|l| lang_to_podnapi(l))
             .collect();
@@ -263,9 +265,9 @@ impl super::SubtitleProvider for PodnapisiProvider {
             match self.fetch_xml(&url) {
                 Ok(xml) => match parse_results(&xml, languages, true) {
                     Ok(m) => matches = m,
-                    Err(e) => tracing::debug!("Podnapisi hash search parse error: {e}"),
+                    Err(e) => debug!("Podnapisi hash search parse error: {e}"),
                 },
-                Err(e) => tracing::debug!("Podnapisi hash search failed: {e}"),
+                Err(e) => debug!("Podnapisi hash search failed: {e}"),
             }
         }
 
@@ -281,7 +283,7 @@ impl super::SubtitleProvider for PodnapisiProvider {
         match self.fetch_xml(&url) {
             Ok(xml) => match parse_results(&xml, languages, false) {
                 Ok(query_matches) => {
-                    let seen_ids: std::collections::HashSet<_> =
+                    let seen_ids: HashSet<_> =
                         matches.iter().map(|m| m.subtitle_id.clone()).collect();
                     for m in query_matches {
                         if !seen_ids.contains(&m.subtitle_id) {
@@ -289,9 +291,9 @@ impl super::SubtitleProvider for PodnapisiProvider {
                         }
                     }
                 }
-                Err(e) => tracing::debug!("Podnapisi query parse error: {e}"),
+                Err(e) => debug!("Podnapisi query parse error: {e}"),
             },
-            Err(e) => tracing::debug!("Podnapisi search failed: {e}"),
+            Err(e) => debug!("Podnapisi search failed: {e}"),
         }
 
         Ok(matches)
@@ -309,12 +311,12 @@ impl super::SubtitleProvider for PodnapisiProvider {
             .map_err(|e| FetchError::Network(e.to_string()))?;
 
         // Podnapisi returns a ZIP or raw subtitle content
-        let cursor = std::io::Cursor::new(&content[..]);
+        let cursor = Cursor::new(&content[..]);
         if let Ok(mut archive) = zip::ZipArchive::new(cursor) {
             // Record (index, name) so we can re-open by index — this is
             // UTF-8-safe (by_name breaks on non-UTF8 entry names) and avoids
             // an O(n^2) re-scan.
-            let sub_entries: Vec<(usize, String)> = (0..archive.len())
+            let sub_entries: Vec<_> = (0..archive.len())
                 .filter_map(|i| {
                     let f = archive.by_index(i).ok()?;
                     let name = f.name().to_lowercase();
@@ -343,13 +345,13 @@ impl super::SubtitleProvider for PodnapisiProvider {
                 .map_err(|e| FetchError::Parse(format!("cannot read zip entry: {e}")))?;
             let mut data = Vec::new();
             file.read_to_end(&mut data).map_err(FetchError::Io)?;
-            std::fs::write(output_path, &data).map_err(FetchError::Io)?;
+            fs::write(output_path, &data).map_err(FetchError::Io)?;
         } else {
             // Raw subtitle content
-            std::fs::write(output_path, &content[..]).map_err(FetchError::Io)?;
+            fs::write(output_path, &content[..]).map_err(FetchError::Io)?;
         }
 
-        tracing::info!("Downloaded subtitle: {} (podnapisi)", output_path.display());
+        info!("Downloaded subtitle: {} (podnapisi)", output_path.display());
         Ok(())
     }
 }
@@ -360,6 +362,7 @@ impl super::SubtitleProvider for PodnapisiProvider {
 mod tests {
     use super::*;
     use crate::providers::SubtitleProvider;
+    use std::collections::HashSet;
 
     const SAMPLE_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <results>
@@ -393,8 +396,7 @@ mod tests {
     fn parse_xml_two_entries() {
         let matches = parse_results(SAMPLE_XML, &["eng", "pol"], false).unwrap();
         assert_eq!(matches.len(), 2);
-        let langs: std::collections::HashSet<_> =
-            matches.iter().map(|m| m.language.as_str()).collect();
+        let langs: HashSet<_> = matches.iter().map(|m| m.language.as_str()).collect();
         assert!(langs.contains("eng"));
         assert!(langs.contains("pol"));
         assert!(matches.iter().all(|m| m.source == "podnapisi"));
@@ -439,8 +441,7 @@ mod tests {
 
         // Simulate deduplication logic from the provider:
         // hash results are added first; query results with duplicate IDs are skipped.
-        let seen: std::collections::HashSet<&str> =
-            matches1.iter().map(|m| m.subtitle_id.as_str()).collect();
+        let seen: HashSet<&str> = matches1.iter().map(|m| m.subtitle_id.as_str()).collect();
         let merged: Vec<_> = matches1
             .iter()
             .chain(
@@ -452,7 +453,7 @@ mod tests {
 
         // Assert all IDs in merged are unique
         let ids: Vec<_> = merged.iter().map(|m| &m.subtitle_id).collect();
-        let unique: std::collections::HashSet<_> = ids.iter().collect();
+        let unique: HashSet<_> = ids.iter().collect();
         assert_eq!(ids.len(), unique.len());
     }
 

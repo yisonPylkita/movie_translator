@@ -1,6 +1,11 @@
 //! Shared CLI utilities: dependency checks and model resolution.
 
+use std::env;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use serde_json::{Value, from_slice};
+use tracing::{error, info, warn};
 
 /// Verify required external tools are present.
 ///
@@ -8,11 +13,11 @@ use std::path::{Path, PathBuf};
 /// must be discoverable (via `mt_media`). Returns `true` if all satisfied.
 pub fn check_dependencies() -> bool {
     if mt_media::get_ffmpeg_version().is_err() {
-        eprintln!("FFmpeg not available. Run ./setup.sh first.");
+        error!("FFmpeg not available. Run ./setup.sh first.");
         return false;
     }
     if mt_media::get_ffprobe().is_err() {
-        eprintln!("ffprobe not available. Run ./setup.sh first.");
+        error!("ffprobe not available. Run ./setup.sh first.");
         return false;
     }
     true
@@ -37,7 +42,7 @@ pub fn resolve_models_with(
     }
 
     if apple_available() {
-        tracing::info!("Apple Translation available — using Apple (fastest, zero memory)");
+        info!("Apple Translation available — using Apple (fastest, zero memory)");
         return ("apple".to_string(), Vec::new());
     }
 
@@ -122,7 +127,7 @@ fn bridge_test_translation_ok(binary: &Path) -> bool {
     };
     // Success = valid JSON response carrying a non-empty `translations` array and
     // no `error` field (mirrors Python's AppleTranslationError checks).
-    match serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+    match from_slice::<Value>(&output.stdout) {
         Ok(v) => {
             let no_error = v.get("error").map(|e| e.is_null()).unwrap_or(true);
             let has_translation = v
@@ -159,8 +164,8 @@ fn ensure_apple_bridge(source: &Path, binary: &Path) -> Option<PathBuf> {
 
     if needs_compile {
         let swiftc = which_swiftc()?;
-        tracing::info!("Compiling Apple Translation bridge...");
-        let status = std::process::Command::new(swiftc)
+        info!("Compiling Apple Translation bridge...");
+        let status = Command::new(swiftc)
             .args(["-parse-as-library", "-O", "-framework", "Translation"])
             .arg(source)
             .arg("-o")
@@ -168,17 +173,17 @@ fn ensure_apple_bridge(source: &Path, binary: &Path) -> Option<PathBuf> {
             .output();
         match status {
             Ok(out) if out.status.success() => {
-                tracing::info!("Compiled Apple Translation bridge: {}", binary.display());
+                info!("Compiled Apple Translation bridge: {}", binary.display());
             }
             Ok(out) => {
-                tracing::warn!(
+                warn!(
                     "Failed to compile Apple Translation bridge: {}",
                     String::from_utf8_lossy(&out.stderr).trim()
                 );
                 return None;
             }
             Err(e) => {
-                tracing::warn!("Failed to invoke swiftc for Apple Translation bridge: {e}");
+                warn!("Failed to invoke swiftc for Apple Translation bridge: {e}");
                 return None;
             }
         }
@@ -193,8 +198,8 @@ fn ensure_apple_bridge(source: &Path, binary: &Path) -> Option<PathBuf> {
 
 /// Locate `swiftc` on PATH (equivalent to Python's `shutil.which('swiftc')`).
 fn which_swiftc() -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
+    let path = env::var_os("PATH")?;
+    for dir in env::split_paths(&path) {
         let candidate = dir.join("swiftc");
         if candidate.is_file() {
             return Some(candidate);
@@ -206,7 +211,7 @@ fn which_swiftc() -> Option<PathBuf> {
 /// Best-effort `platform.mac_ver()` major-version check via `sw_vers`.
 #[cfg(target_os = "macos")]
 fn macos_major_at_least(min_major: u32) -> bool {
-    std::process::Command::new("sw_vers")
+    Command::new("sw_vers")
         .arg("-productVersion")
         .output()
         .ok()

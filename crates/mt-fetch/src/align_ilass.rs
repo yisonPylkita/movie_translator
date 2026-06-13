@@ -7,7 +7,10 @@
 //! ilass is built from source in vendor/ilass and must be compiled before use.
 //! See: <https://github.com/SandroHc/ilass>
 
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use tracing::{info, warn};
 
 // ---------------------------------------------------------------------------
 // ilass binary path
@@ -16,7 +19,7 @@ use std::path::{Path, PathBuf};
 /// Return the path to the ilass binary (resolved relative to the project root).
 pub fn ilass_binary_path() -> PathBuf {
     // Resolve from this source file: src/align_ilass.rs → crates/mt-fetch → project root
-    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
         .join("..") // crates/
         .join("..") // project root
@@ -73,7 +76,7 @@ pub fn build_ilass_argv(
 /// aligner in `align.rs`.
 pub fn align_to_reference(subtitle_path: &Path, reference_path: &Path, split_penalty: f64) -> bool {
     if !is_available() {
-        tracing::warn!(
+        warn!(
             "ilass binary not found at {}, falling back to cross-correlation",
             ilass_binary_path().display()
         );
@@ -82,7 +85,7 @@ pub fn align_to_reference(subtitle_path: &Path, reference_path: &Path, split_pen
             reference_path,
             crate::align::MIN_OFFSET_MS,
         );
-        tracing::info!("Fallback cross-correlation applied offset: {offset:+}ms");
+        info!("Fallback cross-correlation applied offset: {offset:+}ms");
         return offset != 0;
     }
 
@@ -103,22 +106,20 @@ pub fn align_to_reference(subtitle_path: &Path, reference_path: &Path, split_pen
         split_penalty,
     );
 
-    let result = std::process::Command::new(&argv[0])
-        .args(&argv[1..])
-        .output();
+    let result = Command::new(&argv[0]).args(&argv[1..]).output();
 
     let result = match result {
         Ok(r) => r,
         Err(e) => {
-            tracing::warn!("ilass error: {e}");
+            warn!("ilass error: {e}");
             return false;
         }
     };
 
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
-        tracing::warn!("ilass failed (exit {:?}): {}", result.status.code(), stderr);
-        let _ = std::fs::remove_file(&output_path);
+        warn!("ilass failed (exit {:?}): {}", result.status.code(), stderr);
+        let _ = fs::remove_file(&output_path);
         return false;
     }
 
@@ -126,14 +127,14 @@ pub fn align_to_reference(subtitle_path: &Path, reference_path: &Path, split_pen
     let stderr = String::from_utf8_lossy(&result.stderr);
     for line in stderr.lines() {
         if line.starts_with("shifted block") {
-            tracing::info!("ilass: {}", line);
+            info!("ilass: {}", line);
         }
     }
 
     // Replace original with aligned output
-    if let Err(e) = std::fs::rename(&output_path, subtitle_path) {
-        tracing::warn!("failed to replace subtitle with ilass output: {e}");
-        let _ = std::fs::remove_file(&output_path);
+    if let Err(e) = fs::rename(&output_path, subtitle_path) {
+        warn!("failed to replace subtitle with ilass output: {e}");
+        let _ = fs::remove_file(&output_path);
         return false;
     }
 
@@ -147,6 +148,7 @@ pub fn align_to_reference(subtitle_path: &Path, reference_path: &Path, split_pen
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     // -----------------------------------------------------------------------
     // Tests for build_ilass_argv (pure function — always runnable)
@@ -258,8 +260,6 @@ mod tests {
     #[test]
     #[ignore]
     fn align_ilass_live_aligns_shifted_srt() {
-        use tempfile::TempDir;
-
         let tmp = TempDir::new().unwrap();
 
         let ref_content =
@@ -269,14 +269,14 @@ mod tests {
 
         let ref_path = tmp.path().join("ref.srt");
         let cand_path = tmp.path().join("cand.srt");
-        std::fs::write(&ref_path, ref_content).unwrap();
-        std::fs::write(&cand_path, cand_content).unwrap();
+        fs::write(&ref_path, ref_content).unwrap();
+        fs::write(&cand_path, cand_content).unwrap();
 
         let ok = align_to_reference(&cand_path, &ref_path, 7.0);
         assert!(ok, "ilass alignment should succeed");
 
         // After alignment, cand should be close to ref timing
-        let aligned = std::fs::read_to_string(&cand_path).unwrap();
+        let aligned = fs::read_to_string(&cand_path).unwrap();
         assert!(
             aligned.contains("00:00:01") || aligned.contains("00:00:02"),
             "expected aligned timing near reference: {aligned}"

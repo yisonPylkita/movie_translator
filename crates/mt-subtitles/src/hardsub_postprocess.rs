@@ -56,8 +56,8 @@ fn similar(a: &str, b: &str) -> f64 {
     }
 
     // Use character bigram similarity as a proxy for SequenceMatcher
-    let bigrams_a: Vec<&[u8]> = na.as_bytes().windows(2).collect();
-    let bigrams_b: Vec<&[u8]> = nb.as_bytes().windows(2).collect();
+    let bigrams_a = na.as_bytes().windows(2).collect::<Vec<_>>();
+    let bigrams_b = nb.as_bytes().windows(2).collect::<Vec<_>>();
 
     if bigrams_a.is_empty() || bigrams_b.is_empty() {
         return 0.0;
@@ -108,7 +108,7 @@ fn best_variant(variants: &[String]) -> String {
         *counts.entry(v.as_str()).or_insert(0) += 1;
     }
     let top_count = counts.values().copied().max().unwrap_or(0);
-    let tied: Vec<&str> = counts
+    let tied: Vec<_> = counts
         .into_iter()
         .filter(|(_, c)| *c == top_count)
         .map(|(k, _)| k)

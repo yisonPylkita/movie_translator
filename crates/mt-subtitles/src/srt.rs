@@ -173,7 +173,7 @@ fn parse_srt_time(s: &str, line_no: usize) -> Result<i64, ParseError> {
 
     let ms: i64 = ms_str.parse().map_err(|_| bad())?;
 
-    let parts: Vec<&str> = hms.split(':').collect();
+    let parts = hms.split(':').collect::<Vec<_>>();
     if parts.len() != 3 {
         return Err(bad());
     }

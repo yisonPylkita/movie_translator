@@ -14,6 +14,7 @@
 //! the worker's reply. The block is safe precisely because it happens on a
 //! `spawn_blocking` thread, never on a runtime worker thread.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -23,6 +24,8 @@ use mt_discovery::create_work_dir;
 use mt_fetch::ogladajanime::{self, Discovery, HardsubPlan};
 use mt_media::SubtitleExtractor;
 use tokio::sync::Semaphore;
+use tokio::{spawn, task};
+use tracing::{debug, error, info, warn};
 
 use crate::error::{PipelineError, Result};
 use crate::gpu::{DirectGpuExecutor, GpuExecutor, OcrStageLabel, resolve_pending_ocr};
@@ -120,7 +123,7 @@ pub async fn process_file_with_progress(
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            tracing::info!("Skipping {name}: no English subtitle source");
+            info!("Skipping {name}: no English subtitle source");
             FileOutcome::SkippedNoSubs
         }
         Err(e) => {
@@ -128,7 +131,7 @@ pub async fn process_file_with_progress(
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            tracing::error!("Failed: {name} - {e}");
+            error!("Failed: {name} - {e}");
             FileOutcome::Failed
         }
     }
@@ -139,7 +142,7 @@ async fn run_blocking<F>(f: F) -> Result<PipelineContext>
 where
     F: FnOnce() -> Result<PipelineContext> + Send + 'static,
 {
-    tokio::task::spawn_blocking(f)
+    task::spawn_blocking(f)
         .await
         .map_err(|e| PipelineError::Stage(format!("stage task panicked: {e}")))?
 }
@@ -375,10 +378,10 @@ async fn prepare_hardsub_plan(
 ) -> Option<Arc<HardsubPlan>> {
     let first_file = first_file?.clone();
     let progress = progress.clone();
-    let plan = tokio::task::spawn_blocking(move || {
+    let plan = task::spawn_blocking(move || {
         let title = hardsub_title(&first_file);
         if title.is_empty() {
-            tracing::warn!("hardsub-ocr: could not derive a title from {first_file:?}");
+            warn!("hardsub-ocr: could not derive a title from {first_file:?}");
             return None;
         }
         log_hardsub(
@@ -469,7 +472,7 @@ fn hardsub_title(path: &Path) -> String {
 
 /// Emit a hardsub prep status line both to the TUI (as a Log event) and tracing.
 fn log_hardsub(progress: &ProgressSender, message: String) {
-    tracing::info!("hardsub-ocr: {message}");
+    info!("hardsub-ocr: {message}");
     progress.send(ProgressEvent::Log {
         level: "info".to_string(),
         target: "hardsub-ocr".to_string(),
@@ -479,6 +482,8 @@ fn log_hardsub(progress: &ProgressSender, message: String) {
 
 /// Shared implementation that takes an already-spawned worker, so tests can
 /// supply a fake executor and assert serialisation.
+// Many arguments are needed to pass per-file state without bundling into
+// a config struct; the worker is constructed at the call site.
 #[allow(clippy::too_many_arguments)]
 async fn run_all_with_executor(
     video_files: Vec<PathBuf>,
@@ -508,7 +513,7 @@ async fn run_all_with_executor(
         let progress = progress.clone();
         let hardsub_plan = hardsub_plan.clone();
 
-        let handle = tokio::spawn(async move {
+        let handle = spawn(async move {
             // Hold a permit for the file's whole lifetime.
             let _permit = permit_sem.acquire_owned().await.expect("semaphore");
 
@@ -523,15 +528,14 @@ async fn run_all_with_executor(
             // processed: that would silently push a broken file through the
             // whole pipeline. Treat either as a per-file `Failed` and report it.
             let vp = video_path.clone();
-            let probe = tokio::task::spawn_blocking(move || {
-                SubtitleExtractor::new().has_polish_subtitles(&vp)
-            })
-            .await;
+            let probe =
+                task::spawn_blocking(move || SubtitleExtractor::new().has_polish_subtitles(&vp))
+                    .await;
 
             let has_polish = match probe {
                 Ok(Ok(has)) => has,
                 Ok(Err(e)) => {
-                    tracing::error!(
+                    error!(
                         "Failed to probe Polish subtitles for {}: {e}",
                         video_path.display()
                     );
@@ -542,7 +546,7 @@ async fn run_all_with_executor(
                     return (idx, video_path, FileStatus::Failed);
                 }
                 Err(join_err) => {
-                    tracing::error!(
+                    error!(
                         "Polish-subtitle probe task panicked for {}: {join_err}",
                         video_path.display()
                     );
@@ -565,7 +569,7 @@ async fn run_all_with_executor(
             let work_dir = match create_work_dir(&video_path, &root_dir) {
                 Ok(wd) => wd,
                 Err(e) => {
-                    tracing::error!(
+                    error!(
                         "Failed to create work dir for {}: {e}",
                         video_path.display()
                     );
@@ -624,7 +628,7 @@ async fn run_all_with_executor(
         match j.await {
             Ok(triple) => collected.push(triple),
             Err(join_err) => {
-                tracing::error!("File task panicked for {}: {join_err}", path.display());
+                error!("File task panicked for {}: {join_err}", path.display());
                 collected.push((idx, path, FileStatus::Failed));
             }
         }
@@ -645,8 +649,8 @@ fn cleanup_work_dir(work_dir: &Path, root_dir: &Path) {
     if !work_dir.exists() {
         return;
     }
-    if let Err(e) = std::fs::remove_dir_all(work_dir) {
-        tracing::debug!("Failed to clean up {}: {e}", work_dir.display());
+    if let Err(e) = fs::remove_dir_all(work_dir) {
+        debug!("Failed to clean up {}: {e}", work_dir.display());
         return;
     }
 
@@ -660,7 +664,7 @@ fn cleanup_work_dir(work_dir: &Path, root_dir: &Path) {
         }
         match dir_is_empty(&dir) {
             Some(true) => {
-                if std::fs::remove_dir(&dir).is_err() {
+                if fs::remove_dir(&dir).is_err() {
                     break;
                 }
                 parent = dir.parent().map(Path::to_path_buf);
@@ -670,14 +674,14 @@ fn cleanup_work_dir(work_dir: &Path, root_dir: &Path) {
     }
     // Finally, remove the temp root itself if it is now empty.
     if dir_is_empty(&temp_root) == Some(true) {
-        let _ = std::fs::remove_dir(&temp_root);
+        let _ = fs::remove_dir(&temp_root);
     }
 }
 
 /// `Some(true)` if `dir` exists and has no entries, `Some(false)` if it has
 /// entries, `None` if it can't be read.
 fn dir_is_empty(dir: &Path) -> Option<bool> {
-    let mut entries = std::fs::read_dir(dir).ok()?;
+    let mut entries = fs::read_dir(dir).ok()?;
     Some(entries.next().is_none())
 }
 
@@ -701,7 +705,7 @@ pub fn process_video_file_with(
     match process_video_file_inner(video_path, work_dir, config, &executor, vision_probe) {
         Ok(()) => true,
         Err(e) => {
-            tracing::error!(
+            error!(
                 "Failed: {} - {e}",
                 video_path
                     .file_name()
@@ -748,8 +752,11 @@ fn process_video_file_inner(
 mod tests {
     use super::*;
     use crate::worker::{ConcurrencyProbe, GpuWorker};
+    use tokio::sync::mpsc;
+
     use std::sync::atomic::Ordering;
     use std::time::Duration;
+    use tempfile::tempdir;
 
     fn probe_off() -> bool {
         false
@@ -766,12 +773,12 @@ mod tests {
     /// and prunes the now-empty `.translate_temp` tree up to the input root.
     #[test]
     fn cleanup_work_dir_removes_and_prunes() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let root = dir.path();
         // Match the create_work_dir layout: root/.translate_temp/Show/ep01/
         let work_dir = root.join(".translate_temp").join("Show").join("ep01");
-        std::fs::create_dir_all(work_dir.join("candidates")).unwrap();
-        std::fs::write(work_dir.join("artifact.srt"), b"x").unwrap();
+        fs::create_dir_all(work_dir.join("candidates")).unwrap();
+        fs::write(work_dir.join("artifact.srt"), b"x").unwrap();
 
         cleanup_work_dir(&work_dir, root);
 
@@ -791,14 +798,14 @@ mod tests {
     /// survive when the first is cleaned.
     #[test]
     fn cleanup_work_dir_keeps_nonempty_siblings() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let root = dir.path();
         let temp = root.join(".translate_temp").join("Show");
         let ep01 = temp.join("ep01");
         let ep02 = temp.join("ep02");
-        std::fs::create_dir_all(&ep01).unwrap();
-        std::fs::create_dir_all(&ep02).unwrap();
-        std::fs::write(ep02.join("keep.srt"), b"x").unwrap();
+        fs::create_dir_all(&ep01).unwrap();
+        fs::create_dir_all(&ep02).unwrap();
+        fs::write(ep02.join("keep.srt"), b"x").unwrap();
 
         cleanup_work_dir(&ep01, root);
 
@@ -813,7 +820,7 @@ mod tests {
     /// then `Skipped`. (Skipped would mean a broken file is quietly ignored.)
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn unprobeable_file_is_failed_not_skipped() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let files = vec![dir.path().join("does_not_exist.mkv")];
         let config = PipelineConfig {
             workers: 1,
@@ -838,8 +845,8 @@ mod tests {
     /// concurrent files through the real shutdown path to exercise that.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn all_file_tasks_joined_before_shutdown() {
-        let dir = tempfile::tempdir().unwrap();
-        let files: Vec<PathBuf> = (0..8)
+        let dir = tempdir().unwrap();
+        let files: Vec<_> = (0..8)
             .map(|i| dir.path().join(format!("ep{i}.mkv")))
             .collect();
         let config = PipelineConfig {
@@ -863,8 +870,8 @@ mod tests {
     /// worker, status aggregation, ordering) without ffmpeg fixtures.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn run_all_aggregates_failures_in_order() {
-        let dir = tempfile::tempdir().unwrap();
-        let files: Vec<PathBuf> = (0..5)
+        let dir = tempdir().unwrap();
+        let files: Vec<_> = (0..5)
             .map(|i| dir.path().join(format!("missing{i}.mkv")))
             .collect();
         let config = PipelineConfig {
@@ -886,7 +893,7 @@ mod tests {
     /// the worker down cleanly.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn run_all_empty_input() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let results = run_all_with(
             vec![],
             dir.path().to_path_buf(),
@@ -902,7 +909,7 @@ mod tests {
     /// when a stage fails on a missing video: failures are logged, not propagated.
     #[test]
     fn process_video_file_returns_false_on_failure() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let video = dir.path().join("nope.mkv");
         let config = PipelineConfig {
             enable_fetch: false,
@@ -928,10 +935,10 @@ mod tests {
         for _ in 0..9 {
             let h = handle.clone();
             let sem = sem.clone();
-            joins.push(tokio::spawn(async move {
+            joins.push(spawn(async move {
                 let _permit = sem.acquire_owned().await.unwrap();
                 // Like process_file: sync GpuExecutor call inside spawn_blocking.
-                tokio::task::spawn_blocking(move || {
+                task::spawn_blocking(move || {
                     use crate::gpu::GpuExecutor;
                     let req = mt_ml::TranslateRequest {
                         lines: vec![],
@@ -966,8 +973,8 @@ mod tests {
     /// `FileOutcome` unit test below.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn run_all_with_progress_emits_lifecycle_events() {
-        let dir = tempfile::tempdir().unwrap();
-        let files: Vec<PathBuf> = (0..3)
+        let dir = tempdir().unwrap();
+        let files: Vec<_> = (0..3)
             .map(|i| dir.path().join(format!("ep{i}.mkv")))
             .collect();
         let config = PipelineConfig {
@@ -975,7 +982,7 @@ mod tests {
             enable_fetch: false,
             ..Default::default()
         };
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::unbounded_channel();
         let sender = ProgressSender::new(tx);
         let results =
             run_all_with_progress(files.clone(), dir.path().to_path_buf(), config, sender)
@@ -1042,7 +1049,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires a real video fixture + ffmpeg + ML scripts"]
     async fn process_file_end_to_end_real_fixture() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let video = dir.path().join("ep01.mkv");
         let worker = GpuWorker::spawn();
         let ok = process_file(

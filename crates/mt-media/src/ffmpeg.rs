@@ -1,10 +1,12 @@
 //! FFmpeg/ffprobe/mkvmerge binary resolution and media operations.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
 use serde::Deserialize;
+use serde_json::{Value, from_str};
 use thiserror::Error;
 
 use mt_core::SubtitleFile;
@@ -131,9 +133,9 @@ pub struct FfprobeStream {
     #[serde(default)]
     pub duration: Option<String>,
     #[serde(default)]
-    pub tags: std::collections::HashMap<String, String>,
+    pub tags: HashMap<String, String>,
     #[serde(default)]
-    pub disposition: std::collections::HashMap<String, i64>,
+    pub disposition: HashMap<String, i64>,
 }
 
 /// High-level info returned by `get_video_info`.
@@ -187,7 +189,7 @@ pub fn get_video_info(video_path: &Path) -> Result<VideoInfo, VideoMuxError> {
 ///
 /// Factored out for unit testing against captured fixtures.
 pub fn parse_video_info(json: &str) -> Result<VideoInfo, VideoMuxError> {
-    let raw: FfprobeOutput = serde_json::from_str(json)?;
+    let raw: FfprobeOutput = from_str(json)?;
     let format = raw.format;
     Ok(VideoInfo {
         streams: raw.streams,
@@ -384,9 +386,9 @@ pub fn parse_mkvmerge_sub_track_id(
     json: &str,
     subtitle_index: usize,
 ) -> Result<u64, VideoMuxError> {
-    let value: serde_json::Value = serde_json::from_str(json)?;
+    let value: Value = from_str(json)?;
     let tracks = value["tracks"].as_array().cloned().unwrap_or_default();
-    let sub_tracks: Vec<&serde_json::Value> = tracks
+    let sub_tracks: Vec<&Value> = tracks
         .iter()
         .filter(|t| t["type"].as_str() == Some("subtitles"))
         .collect();
@@ -591,7 +593,7 @@ fn run_ffmpeg_mux(ffmpeg: &Path, args: &[String]) -> Result<(), VideoMuxError> {
     let output = Command::new(ffmpeg).args(args).output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let error_lines: Vec<&str> = stderr
+        let error_lines: Vec<_> = stderr
             .lines()
             .filter(|l| l.to_ascii_lowercase().contains("error"))
             .collect();

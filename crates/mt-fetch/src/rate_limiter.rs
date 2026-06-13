@@ -3,7 +3,10 @@
 //! Designed for APIs that return `X-RateLimit-*` headers (e.g., OpenSubtitles).
 //! The clock is injected via the `Clock` trait so tests are deterministic.
 
+use std::collections::HashMap;
 use std::sync::Mutex;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
 /// Clock abstraction for testability — callers provide `now` and `sleep`.
 pub trait Clock: Send + Sync {
@@ -15,13 +18,13 @@ pub trait Clock: Send + Sync {
 
 /// Real clock backed by `std::time::Instant`.
 pub struct RealClock {
-    start: std::time::Instant,
+    start: Instant,
 }
 
 impl Default for RealClock {
     fn default() -> Self {
         Self {
-            start: std::time::Instant::now(),
+            start: Instant::now(),
         }
     }
 }
@@ -33,7 +36,7 @@ impl Clock for RealClock {
 
     fn sleep(&self, secs: f64) {
         if secs > 0.0 {
-            std::thread::sleep(std::time::Duration::from_secs_f64(secs));
+            sleep(Duration::from_secs_f64(secs));
         }
     }
 }
@@ -98,7 +101,7 @@ impl<C: Clock> RateLimiter<C> {
     }
 
     /// Parse `X-RateLimit-*` headers to adjust pacing.
-    pub fn update_from_headers(&self, headers: &std::collections::HashMap<String, String>) {
+    pub fn update_from_headers(&self, headers: &HashMap<String, String>) {
         let remaining = match headers.get("X-RateLimit-Remaining") {
             Some(v) => v,
             None => return,
@@ -144,14 +147,14 @@ mod tests {
     struct FakeClock {
         // Stored as f64 bits in an AtomicU64 for interior mutability.
         now_bits: AtomicU64,
-        total_slept: std::sync::Mutex<f64>,
+        total_slept: Mutex<f64>,
     }
 
     impl FakeClock {
         fn new(start: f64) -> Self {
             Self {
                 now_bits: AtomicU64::new(start.to_bits()),
-                total_slept: std::sync::Mutex::new(0.0),
+                total_slept: Mutex::new(0.0),
             }
         }
 

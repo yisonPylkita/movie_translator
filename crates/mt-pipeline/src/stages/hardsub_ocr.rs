@@ -22,6 +22,7 @@ use mt_fetch::ogladajanime::HardsubPlan;
 
 use crate::error::Result;
 use crate::gpu::GpuExecutor;
+use tracing::{info, warn};
 
 /// Lowest stream height to accept for OCR legibility (matches the PoC default).
 const MIN_HEIGHT: u32 = 480;
@@ -36,12 +37,12 @@ pub fn run(
     plan: &HardsubPlan,
 ) -> Result<PipelineContext> {
     let Some(episode) = ctx.identity.as_ref().and_then(|i| i.episode) else {
-        tracing::info!("hardsub-ocr: no episode number identified; skipping");
+        info!("hardsub-ocr: no episode number identified; skipping");
         return Ok(ctx);
     };
     let players = plan.pl_players(episode as i64);
     if players.is_empty() {
-        tracing::info!("hardsub-ocr: no PL player resolved for episode {episode}; skipping");
+        info!("hardsub-ocr: no PL player resolved for episode {episode}; skipping");
         return Ok(ctx);
     }
 
@@ -57,7 +58,7 @@ pub fn run(
     // onto cda's internal API calls and breaks extraction.
     let mut downloaded = false;
     for player in &players {
-        tracing::info!(
+        info!(
             "hardsub-ocr: episode {episode} -> trying {} {} ({})",
             player.host.as_deref().unwrap_or("?"),
             player.quality.as_deref().unwrap_or("?"),
@@ -69,7 +70,7 @@ pub fn run(
                 break;
             }
             Err(e) => {
-                tracing::warn!(
+                warn!(
                     "hardsub-ocr: {} mirror failed for episode {episode} ({e}); trying next",
                     player.host.as_deref().unwrap_or("?")
                 );
@@ -77,7 +78,7 @@ pub fn run(
         }
     }
     if !downloaded {
-        tracing::warn!(
+        warn!(
             "hardsub-ocr: all {} mirror(s) failed for episode {episode}; skipping",
             players.len()
         );
@@ -88,11 +89,11 @@ pub fn run(
     let cleaned = match executor.hardsub_ocr_clean(&video, &work, "pl") {
         Ok(Some(path)) => path,
         Ok(None) => {
-            tracing::warn!("hardsub-ocr: OCR produced no usable lines for episode {episode}");
+            warn!("hardsub-ocr: OCR produced no usable lines for episode {episode}");
             return Ok(ctx);
         }
         Err(e) => {
-            tracing::warn!("hardsub-ocr: OCR failed for episode {episode}: {e}");
+            warn!("hardsub-ocr: OCR failed for episode {episode}: {e}");
             return Ok(ctx);
         }
     };
@@ -104,11 +105,9 @@ pub fn run(
         .or_else(|| ctx.english_source.clone())
     {
         let changed = mt_fetch::align_ilass(&cleaned, &reference, SPLIT_PENALTY);
-        tracing::info!("hardsub-ocr: aligned episode {episode} to reference (changed={changed})");
+        info!("hardsub-ocr: aligned episode {episode} to reference (changed={changed})");
     } else {
-        tracing::info!(
-            "hardsub-ocr: no English reference for episode {episode}; leaving OCR timing as-is"
-        );
+        info!("hardsub-ocr: no English reference for episode {episode}; leaving OCR timing as-is");
     }
 
     // 4. Inject as a fetched Polish track (create_tracks turns it into a track).
@@ -119,6 +118,6 @@ pub fn run(
             path: cleaned,
             source: "ogladajanime-ocr".to_string(),
         });
-    tracing::info!("hardsub-ocr: added Polish OCR track for episode {episode}");
+    info!("hardsub-ocr: added Polish OCR track for episode {episode}");
     Ok(ctx)
 }

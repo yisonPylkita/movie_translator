@@ -33,8 +33,9 @@
 
 use std::collections::VecDeque;
 use std::io::{self, IsTerminal, Stdout, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -54,8 +55,8 @@ use ratatui::widgets::{
     Table, Wrap,
 };
 use tokio::sync::mpsc;
-use tracing::Subscriber;
 use tracing::field::Visit;
+use tracing::{Subscriber, warn};
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 
@@ -492,7 +493,7 @@ impl<S: Subscriber> Layer<S> for TuiTracingLayer {
 
 // ── Python stderr capture path ────────────────────────────────────
 
-pub fn python_stderr_capture_path(root: &std::path::Path) -> PathBuf {
+pub fn python_stderr_capture_path(root: &Path) -> PathBuf {
     root.join(".translate_temp").join("python.stderr.log")
 }
 
@@ -560,7 +561,7 @@ impl TuiHandle {
         *self.quit_flag.lock().unwrap()
     }
 
-    pub fn python_log_path(&self) -> &std::path::Path {
+    pub fn python_log_path(&self) -> &Path {
         &self.python_log_path
     }
 }
@@ -570,12 +571,7 @@ pub struct JoinedTuiState {
     pub python_log_path: PathBuf,
 }
 
-impl JoinedTuiState {
-    #[allow(dead_code)]
-    pub fn was_failure(&self, status: FileViewStatus) -> bool {
-        matches!(status, FileViewStatus::Failed)
-    }
-}
+impl JoinedTuiState {}
 
 pub fn finish_glyph(s: FileViewStatus) -> &'static str {
     status_glyph(s).0
@@ -608,7 +604,7 @@ pub fn spawn_tui(
 
     let interactive = !force_plain && stdout_is_tty();
 
-    let join = std::thread::spawn(move || {
+    let join = thread::spawn(move || {
         if interactive {
             run_interactive(&mut rx, quit_flag_for_thread, python_log_path_clone)
         } else {
@@ -643,7 +639,7 @@ fn run_interactive(
     let guard = match TerminalGuard::enter() {
         Ok(g) => g,
         Err(e) => {
-            eprintln!("TUI init failed ({e}); falling back to plain mode");
+            warn!("TUI init failed ({e}); falling back to plain mode");
             return run_plain(rx);
         }
     };

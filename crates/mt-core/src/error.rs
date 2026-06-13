@@ -29,6 +29,7 @@ pub type Result<T> = std::result::Result<T, MtError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Error, ErrorKind};
 
     #[test]
     fn parse_error_display() {
@@ -50,7 +51,7 @@ mod tests {
 
     #[test]
     fn io_error_from_conversion() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file missing");
+        let io_err = Error::new(ErrorKind::NotFound, "file missing");
         let mt_err = MtError::from(io_err);
         assert!(matches!(mt_err, MtError::Io(_)));
     }

@@ -11,6 +11,7 @@ use mt_media::{
     check_embedded_fonts_support_polish, find_system_font_for_polish, get_ass_font_names,
 };
 use mt_ml::TranslateRequest;
+use tracing::{info, warn};
 
 use crate::error::{PipelineError, Result};
 use crate::gpu::GpuExecutor;
@@ -94,12 +95,12 @@ pub fn run(
     }
 
     let total = dialogue_lines.len();
-    tracing::info!("Translating {total} lines...");
+    info!("Translating {total} lines...");
 
     // Detect character names from dialogue for translation protection, unless
     // the caller supplied an explicit override.
     let proper_nouns: Option<Vec<String>> = proper_nouns.or_else(|| {
-        let texts: Vec<String> = dialogue_lines.iter().map(|l| l.text.clone()).collect();
+        let texts: Vec<_> = dialogue_lines.iter().map(|l| l.text.clone()).collect();
         let names = extract_proper_nouns_from_subtitles(&texts);
         if names.is_empty() {
             None
@@ -143,10 +144,10 @@ pub fn run(
                 ctx.extra_translations.insert(extra, lines);
             }
             Ok(_) => {
-                tracing::warn!("Extra model {extra:?} produced no output, dropping track");
+                warn!("Extra model {extra:?} produced no output, dropping track");
             }
             Err(e) => {
-                tracing::warn!("Extra model {extra:?} failed: {e}; skipping track");
+                warn!("Extra model {extra:?} failed: {e}; skipping track");
             }
         }
     }
@@ -160,12 +161,15 @@ mod tests {
     use crate::gpu::DirectGpuExecutor;
     use mt_core::{BurnedInResult, DialogueLine, OCRResult, PipelineConfig};
     use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::fs;
     use std::path::{Path, PathBuf};
+    use tempfile::tempdir;
 
     /// Fake executor returning canned translations per model.
     struct FakeGpu {
         primary: Vec<DialogueLine>,
-        extra: std::collections::HashMap<String, Vec<DialogueLine>>,
+        extra: HashMap<String, Vec<DialogueLine>>,
         seen_models: RefCell<Vec<String>>,
         seen_proper_nouns: RefCell<Option<Vec<String>>>,
     }
@@ -206,9 +210,9 @@ mod tests {
 
     fn ctx(tmp: &Path, extra_models: Vec<String>) -> PipelineContext {
         let video = tmp.join("ep01.mp4"); // .mp4 so font check skips the mkv branch
-        std::fs::write(&video, b"fake").unwrap();
+        fs::write(&video, b"fake").unwrap();
         let eng = tmp.join("eng.srt");
-        std::fs::write(&eng, "1\n00:00:01,000 --> 00:00:02,000\nHello\n").unwrap();
+        fs::write(&eng, "1\n00:00:01,000 --> 00:00:02,000\nHello\n").unwrap();
         let config = PipelineConfig {
             extra_models,
             ..Default::default()
@@ -225,14 +229,14 @@ mod tests {
 
     #[test]
     fn primary_translation_sets_translated_lines() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let gpu = FakeGpu {
             primary: vec![DialogueLine {
                 start_ms: 1000,
                 end_ms: 2000,
                 text: "Cześć".into(),
             }],
-            extra: std::collections::HashMap::new(),
+            extra: HashMap::new(),
             seen_models: RefCell::new(vec![]),
             seen_proper_nouns: RefCell::new(None),
         };
@@ -247,10 +251,10 @@ mod tests {
 
     #[test]
     fn empty_primary_result_errors() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let gpu = FakeGpu {
             primary: vec![],
-            extra: std::collections::HashMap::new(),
+            extra: HashMap::new(),
             seen_models: RefCell::new(vec![]),
             seen_proper_nouns: RefCell::new(None),
         };
@@ -260,8 +264,8 @@ mod tests {
 
     #[test]
     fn extra_model_emits_extra_translation() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut extra = std::collections::HashMap::new();
+        let dir = tempdir().unwrap();
+        let mut extra = HashMap::new();
         extra.insert(
             "apple".to_string(),
             vec![DialogueLine {
@@ -287,7 +291,7 @@ mod tests {
 
     #[test]
     fn extra_model_failure_is_skipped() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         // "apple" returns empty (no entry) → dropped, not fatal.
         let gpu = FakeGpu {
             primary: vec![DialogueLine {
@@ -295,7 +299,7 @@ mod tests {
                 end_ms: 2000,
                 text: "Cześć".into(),
             }],
-            extra: std::collections::HashMap::new(),
+            extra: HashMap::new(),
             seen_models: RefCell::new(vec![]),
             seen_proper_nouns: RefCell::new(None),
         };
@@ -306,7 +310,7 @@ mod tests {
 
     #[test]
     fn proper_nouns_derived_from_dialogue_when_none() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut c = ctx(dir.path(), vec![]);
         // Repeated capitalized name in direct address → derived as a proper noun.
         c.dialogue_lines = Some(vec![
@@ -332,7 +336,7 @@ mod tests {
                 end_ms: 1,
                 text: "x".into(),
             }],
-            extra: std::collections::HashMap::new(),
+            extra: HashMap::new(),
             seen_models: RefCell::new(vec![]),
             seen_proper_nouns: RefCell::new(None),
         };
@@ -346,7 +350,7 @@ mod tests {
 
     #[test]
     fn caller_override_takes_precedence() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut c = ctx(dir.path(), vec![]);
         c.dialogue_lines = Some(vec![DialogueLine {
             start_ms: 0,
@@ -359,7 +363,7 @@ mod tests {
                 end_ms: 1,
                 text: "x".into(),
             }],
-            extra: std::collections::HashMap::new(),
+            extra: HashMap::new(),
             seen_models: RefCell::new(vec![]),
             seen_proper_nouns: RefCell::new(None),
         };
@@ -376,7 +380,7 @@ mod tests {
     #[test]
     #[ignore = "requires translation model"]
     fn run_via_direct_executor() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let executor = DirectGpuExecutor::new();
         let _ = run(ctx(dir.path(), vec![]), &executor, None);
     }

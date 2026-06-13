@@ -1,7 +1,12 @@
 //! Fetch subtitles from online providers.
+use std::fs;
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::env;
 use std::path::{Path, PathBuf};
+use std::thread::sleep;
+use std::time::Duration;
 
 use mt_core::{FetchedSubtitle, PipelineContext};
 use mt_fetch::providers::{
@@ -11,6 +16,7 @@ use mt_fetch::providers::{
 use mt_fetch::retry::with_retry;
 use mt_fetch::{SubtitleFetcher, SubtitleMatch, SubtitleValidator};
 use mt_subtitles::normalize_encoding;
+use tracing::{debug, info, warn};
 
 use crate::error::Result;
 
@@ -48,19 +54,19 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
 
     let all_matches = fetcher.search_all(identity, &["eng", "pol"]);
     if all_matches.is_empty() {
-        tracing::info!("No subtitles found from any provider");
+        info!("No subtitles found from any provider");
         ctx.fetched_subtitles = Some(HashMap::new());
         return Ok(ctx);
     }
-    tracing::info!("Found {} subtitle candidate(s)", all_matches.len());
+    info!("Found {} subtitle candidate(s)", all_matches.len());
 
     // Download all candidates.
     let candidates_dir = ctx.work_dir.join("candidates");
-    std::fs::create_dir_all(&candidates_dir)?;
+    fs::create_dir_all(&candidates_dir)?;
     let downloaded = download_all(&fetcher, &all_matches, &candidates_dir);
 
     if downloaded.is_empty() {
-        tracing::warn!("All candidate downloads failed");
+        warn!("All candidate downloads failed");
         ctx.fetched_subtitles = Some(HashMap::new());
         return Ok(ctx);
     }
@@ -76,7 +82,7 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
     {
         for sub in pol_subs {
             let (method, offset) = align_subtitle(&sub.path, &reference);
-            tracing::debug!(
+            debug!(
                 "aligned {} via {method} (offset={offset:?})",
                 sub.path.display()
             );
@@ -95,7 +101,7 @@ fn build_fetcher(video_path: &Path) -> SubtitleFetcher {
     let mut napi = NapiProjektProvider::new();
     napi.set_video_path(video_path);
     providers.push(Box::new(napi));
-    if let Ok(api_key) = std::env::var("OPENSUBTITLES_API_KEY")
+    if let Ok(api_key) = env::var("OPENSUBTITLES_API_KEY")
         && !api_key.is_empty()
     {
         providers.push(Box::new(OpenSubtitlesProvider::new(
@@ -123,13 +129,13 @@ fn download_all(
             1,
             2.0,
             &label,
-            |secs| std::thread::sleep(std::time::Duration::from_secs_f64(secs)),
+            |secs| sleep(Duration::from_secs_f64(secs)),
         );
         match result {
             Ok(_) => {
                 // Normalize encoding to UTF-8 so the parser can read Polish chars.
                 if let Err(e) = normalize_encoding(&output_path) {
-                    tracing::debug!(
+                    debug!(
                         "Encoding normalization failed for {}: {e}",
                         output_path.display()
                     );
@@ -137,11 +143,11 @@ fn download_all(
                 downloaded.push((m.clone(), output_path));
             }
             Err(e) => {
-                tracing::warn!("Failed to download candidate {}: {e}", m.subtitle_id);
+                warn!("Failed to download candidate {}: {e}", m.subtitle_id);
             }
         }
     }
-    tracing::info!("Downloaded {} candidate(s)", downloaded.len());
+    info!("Downloaded {} candidate(s)", downloaded.len());
     downloaded
 }
 
@@ -154,7 +160,7 @@ pub fn align_subtitle(subtitle_path: &Path, reference_path: &Path) -> (&'static 
         if mt_fetch::align_ilass(subtitle_path, reference_path, ILASS_SPLIT_PENALTY) {
             return ("ilass", None);
         }
-        tracing::info!("ilass alignment failed, falling back to built-in");
+        info!("ilass alignment failed, falling back to built-in");
     }
     let offset = mt_fetch::align_cross_correlation(
         subtitle_path,
@@ -185,7 +191,7 @@ pub fn validate_and_select(
     match validated {
         Some(validated) if !validated.is_empty() => {
             best_score = Some(validated[0].2);
-            tracing::info!("{} candidate(s) passed validation", validated.len());
+            info!("{} candidate(s) passed validation", validated.len());
             for (m, path, score) in &validated {
                 let sub = FetchedSubtitle {
                     path: path.clone(),
@@ -193,24 +199,20 @@ pub fn validate_and_select(
                 };
                 let entry = result.entry(m.language.clone());
                 match entry {
-                    std::collections::hash_map::Entry::Vacant(v) => {
+                    Entry::Vacant(v) => {
                         // First (best) candidate for this language — always keep.
                         v.insert(vec![sub]);
-                        tracing::info!(
+                        info!(
                             "Selected {}: {} (score: {score:.3}, source: {})",
-                            m.language,
-                            m.release_name,
-                            m.source
+                            m.language, m.release_name, m.source
                         );
                     }
-                    std::collections::hash_map::Entry::Occupied(mut o) => {
+                    Entry::Occupied(mut o) => {
                         if *score >= QUALITY_THRESHOLD {
                             o.get_mut().push(sub);
-                            tracing::info!(
+                            info!(
                                 "Also keeping {}: {} (score: {score:.3}, source: {})",
-                                m.language,
-                                m.release_name,
-                                m.source
+                                m.language, m.release_name, m.source
                             );
                         }
                     }
@@ -218,16 +220,14 @@ pub fn validate_and_select(
             }
         }
         Some(_) => {
-            tracing::warn!("No candidates passed validation threshold");
+            warn!("No candidates passed validation threshold");
         }
         None => {
             for (m, path) in downloaded {
                 result.entry(m.language.clone()).or_insert_with(|| {
-                    tracing::info!(
+                    info!(
                         "Best {} (unvalidated): {} (source: {})",
-                        m.language,
-                        m.release_name,
-                        m.source
+                        m.language, m.release_name, m.source
                     );
                     vec![FetchedSubtitle {
                         path: path.clone(),
@@ -244,6 +244,8 @@ pub fn validate_and_select(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::tempdir;
 
     fn make_match(language: &str, source: &str, id: &str) -> SubtitleMatch {
         SubtitleMatch {
@@ -274,11 +276,11 @@ mod tests {
     #[test]
     fn align_subtitle_builtin_path_returns_offset() {
         // ilass binary is typically absent in CI; this exercises the builtin path.
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let sub = dir.path().join("pol.srt");
         let reference = dir.path().join("ref.srt");
-        std::fs::write(&sub, "1\n00:00:01,000 --> 00:00:02,000\nA\n").unwrap();
-        std::fs::write(&reference, "1\n00:00:01,000 --> 00:00:02,000\nA\n").unwrap();
+        fs::write(&sub, "1\n00:00:01,000 --> 00:00:02,000\nA\n").unwrap();
+        fs::write(&reference, "1\n00:00:01,000 --> 00:00:02,000\nA\n").unwrap();
         let (method, offset) = align_subtitle(&sub, &reference);
         // Either ilass (if present) or builtin; if builtin, offset is Some.
         assert!(method == "ilass" || (method == "builtin" && offset.is_some()));

@@ -8,10 +8,12 @@
 //! indicating which pixels to fill, it propagates known pixel information into
 //! the masked region using a weighted average of neighbouring known pixels.
 
+use std::collections::BinaryHeap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use mt_core::{MtError, OCRResult, Result};
+use serde_json::{Value, from_slice};
 use tracing::info;
 
 /// Remove burned-in subtitles from a video via inpainting.
@@ -52,8 +54,7 @@ pub fn inpaint(
         .output()
         .map_err(MtError::Io)?;
 
-    let info: serde_json::Value =
-        serde_json::from_slice(&info_output.stdout).map_err(|e| MtError::Parse(e.to_string()))?;
+    let info: Value = from_slice(&info_output.stdout).map_err(|e| MtError::Parse(e.to_string()))?;
 
     let streams = info["streams"]
         .as_array()
@@ -210,7 +211,7 @@ fn telea_inpaint_rgb(pixels: &[u8], width: usize, height: usize, mask: &[u8]) ->
     // Build a binary mask and a distance map
     let mut bin_mask = vec![0u8; width * height];
     let mut dist = vec![f64::MAX; width * height];
-    let mut narrow_band = std::collections::BinaryHeap::new();
+    let mut narrow_band = BinaryHeap::new();
 
     // Use ordered struct for BinaryHeap (min-heap via reverse ordering)
     #[derive(PartialEq)]
@@ -393,7 +394,7 @@ fn read_ppm(path: &Path) -> Result<(Vec<u8>, usize, usize)> {
     let header = std::str::from_utf8(&data[..header_end])
         .map_err(|_| MtError::Parse("Invalid PPM header".into()))?;
 
-    let parts: Vec<&str> = header.split_whitespace().collect();
+    let parts: Vec<_> = header.split_whitespace().collect();
     if parts.len() < 4 || parts[0] != "P6" {
         return Err(MtError::Parse("Invalid PPM format: expected P6".into()));
     }

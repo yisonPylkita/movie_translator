@@ -29,10 +29,14 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use mt_core::{BurnedInResult, DialogueLine, OCRResult};
 use mt_ml::TranslateRequest;
 use tokio::sync::{mpsc, oneshot};
+use tokio::{select, spawn, task};
 
 use crate::error::{PipelineError, Result};
 use crate::gpu::{DirectGpuExecutor, GpuExecutor};
@@ -90,10 +94,8 @@ enum Job {
 /// channel and lets the worker task finish (FIFO drain of any queued jobs).
 pub struct GpuWorker {
     handle: GpuWorkerHandle,
-    task: tokio::task::JoinHandle<()>,
+    task: task::JoinHandle<()>,
     stop: oneshot::Sender<()>,
-    #[allow(dead_code)]
-    progress: ProgressSender,
 }
 
 impl GpuWorker {
@@ -121,13 +123,11 @@ impl GpuWorker {
         let (tx, mut rx) = mpsc::unbounded_channel::<Job>();
         let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
         let executor = Arc::new(executor);
-        let progress_for_handle = progress.clone();
-
         let task = {
             let progress = progress.clone();
-            tokio::spawn(async move {
+            spawn(async move {
                 loop {
-                    let job = tokio::select! {
+                    let job = select! {
                         biased;
                         maybe = rx.recv() => match maybe {
                             Some(job) => job,
@@ -137,7 +137,7 @@ impl GpuWorker {
                             while let Ok(job) = rx.try_recv() {
                                 let exec = executor.clone();
                                 let prog = progress.clone();
-                                let _ = tokio::task::spawn_blocking(move || {
+                                let _ = task::spawn_blocking(move || {
                                     run_job_with_progress(exec.as_ref(), job, &prog)
                                 })
                                 .await;
@@ -147,7 +147,7 @@ impl GpuWorker {
                     };
                     let exec = executor.clone();
                     let prog = progress.clone();
-                    let _ = tokio::task::spawn_blocking(move || {
+                    let _ = task::spawn_blocking(move || {
                         run_job_with_progress(exec.as_ref(), job, &prog)
                     })
                     .await;
@@ -156,13 +156,9 @@ impl GpuWorker {
         };
 
         GpuWorker {
-            handle: GpuWorkerHandle {
-                tx,
-                progress: progress_for_handle,
-            },
+            handle: GpuWorkerHandle { tx },
             task,
             stop: stop_tx,
-            progress,
         }
     }
 
@@ -179,17 +175,16 @@ impl GpuWorker {
         let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
         let executor = Arc::new(executor);
         let progress = ProgressSender::disabled();
-        let progress_for_handle = progress.clone();
 
         let task = {
             let progress = progress.clone();
-            tokio::spawn(async move {
+            spawn(async move {
                 // FIFO: pull one job, run it to completion, then pull the next.
                 // Exit when the channel closes (all senders dropped) OR an explicit
                 // stop signal arrives — after which any already-queued jobs are
                 // drained so in-flight submissions still get a reply.
                 loop {
-                    let job = tokio::select! {
+                    let job = select! {
                         biased;
                         maybe = rx.recv() => match maybe {
                             Some(job) => job,
@@ -200,7 +195,7 @@ impl GpuWorker {
                             while let Ok(job) = rx.try_recv() {
                                 let exec = executor.clone();
                                 let prog = progress.clone();
-                                let _ = tokio::task::spawn_blocking(move || {
+                                let _ = task::spawn_blocking(move || {
                                     run_job_with_progress(exec.as_ref(), job, &prog)
                                 })
                                 .await;
@@ -212,7 +207,7 @@ impl GpuWorker {
                     let prog = progress.clone();
                     // spawn_blocking because the underlying `mt_ml` calls are
                     // synchronous PyO3 (GIL-acquiring) calls into embedded CPython.
-                    let _ = tokio::task::spawn_blocking(move || {
+                    let _ = task::spawn_blocking(move || {
                         run_job_with_progress(exec.as_ref(), job, &prog)
                     })
                     .await;
@@ -221,13 +216,9 @@ impl GpuWorker {
         };
 
         GpuWorker {
-            handle: GpuWorkerHandle {
-                tx,
-                progress: progress_for_handle,
-            },
+            handle: GpuWorkerHandle { tx },
             task,
             stop: stop_tx,
-            progress,
         }
     }
 
@@ -250,19 +241,13 @@ impl GpuWorker {
     }
 }
 
-/// Run a single job synchronously and send the result back.
-#[allow(dead_code)]
-fn run_job(executor: &dyn GpuExecutor, job: Job) {
-    run_job_impl(executor, job, None);
-}
-
 /// Run a single job with progress events.
 fn run_job_with_progress(executor: &dyn GpuExecutor, job: Job, progress: &ProgressSender) {
     run_job_impl(executor, job, Some(progress));
 }
 
 fn run_job_impl(executor: &dyn GpuExecutor, job: Job, progress: Option<&ProgressSender>) {
-    let started = std::time::Instant::now();
+    let started = Instant::now();
     let (job_type, path) = job_describe(&job);
 
     // Emit GpuJobStarted
@@ -364,12 +349,10 @@ const WORKER_GONE: &str = "GPU worker stopped before completing the task";
 #[derive(Clone)]
 pub struct GpuWorkerHandle {
     tx: mpsc::UnboundedSender<Job>,
-    #[allow(dead_code)]
-    progress: ProgressSender,
 }
 
 impl GpuWorkerHandle {
-    fn send(&self, job: Job) -> std::result::Result<(), PipelineError> {
+    fn send(&self, job: Job) -> Result<()> {
         self.tx
             .send(job)
             .map_err(|_| PipelineError::Stage(WORKER_GONE.to_string()))
@@ -556,10 +539,10 @@ impl GpuExecutor for GpuWorkerHandle {
 /// decrements it; `max_concurrency` is the peak seen.
 #[doc(hidden)]
 pub struct ConcurrencyProbe {
-    live: std::sync::atomic::AtomicUsize,
-    max: std::sync::atomic::AtomicUsize,
-    calls: std::sync::atomic::AtomicUsize,
-    delay: std::time::Duration,
+    live: AtomicUsize,
+    max: AtomicUsize,
+    calls: AtomicUsize,
+    delay: Duration,
     shared: Arc<ConcurrencyStats>,
 }
 
@@ -567,18 +550,18 @@ pub struct ConcurrencyProbe {
 #[doc(hidden)]
 #[derive(Default)]
 pub struct ConcurrencyStats {
-    pub max_concurrency: std::sync::atomic::AtomicUsize,
-    pub total_calls: std::sync::atomic::AtomicUsize,
+    pub max_concurrency: AtomicUsize,
+    pub total_calls: AtomicUsize,
 }
 
 impl ConcurrencyProbe {
     /// Create a probe and a shared stats handle the test can read afterwards.
-    pub fn new(delay: std::time::Duration) -> (Self, Arc<ConcurrencyStats>) {
+    pub fn new(delay: Duration) -> (Self, Arc<ConcurrencyStats>) {
         let shared = Arc::new(ConcurrencyStats::default());
         let probe = ConcurrencyProbe {
-            live: std::sync::atomic::AtomicUsize::new(0),
-            max: std::sync::atomic::AtomicUsize::new(0),
-            calls: std::sync::atomic::AtomicUsize::new(0),
+            live: AtomicUsize::new(0),
+            max: AtomicUsize::new(0),
+            calls: AtomicUsize::new(0),
             delay,
             shared: shared.clone(),
         };
@@ -590,7 +573,7 @@ impl ConcurrencyProbe {
         let now = self.live.fetch_add(1, Ordering::SeqCst) + 1;
         self.max.fetch_max(now, Ordering::SeqCst);
         self.calls.fetch_add(1, Ordering::SeqCst);
-        std::thread::sleep(self.delay);
+        thread::sleep(self.delay);
         self.live.fetch_sub(1, Ordering::SeqCst);
         // Publish to the shared snapshot.
         self.shared
@@ -656,7 +639,7 @@ mod tests {
         let mut joins = Vec::new();
         for _ in 0..8 {
             let h = handle.clone();
-            joins.push(tokio::spawn(async move {
+            joins.push(spawn(async move {
                 h.translate_async(TranslateRequest {
                     lines: vec![],
                     device: "cpu".into(),
@@ -692,7 +675,7 @@ mod tests {
         let mut joins = Vec::new();
         for _ in 0..6 {
             let h = handle.clone();
-            joins.push(tokio::task::spawn_blocking(move || {
+            joins.push(task::spawn_blocking(move || {
                 // Sync trait call — blocks this blocking-pool thread.
                 h.ocr_pgs(Path::new("/tmp/x.mkv"), 0, Path::new("/tmp/wd"))
             }));

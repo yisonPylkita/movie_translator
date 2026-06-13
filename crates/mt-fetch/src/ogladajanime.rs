@@ -11,10 +11,16 @@
 //! without network or filesystem.
 
 use std::collections::HashMap;
+use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime};
 
+use reqwest::blocking::Client;
 use serde::Deserialize;
+use serde_json::from_str;
 
 use crate::retry::FetchError;
 
@@ -147,7 +153,7 @@ pub fn discover(title: &str) -> Discovery {
 }
 
 fn slug_is_anime_page(url: &str) -> bool {
-    let client = match reqwest::blocking::Client::builder()
+    let client = match Client::builder()
         .user_agent(USER_AGENT)
         .timeout(Duration::from_secs(15))
         .build()
@@ -176,7 +182,7 @@ pub fn open_in_browser(url: &str) -> Result<(), FetchError> {
     let program = "open";
     #[cfg(not(target_os = "macos"))]
     let program = "xdg-open";
-    std::process::Command::new(program)
+    Command::new(program)
         .arg(url)
         .spawn()
         .map(|_| ())
@@ -185,12 +191,12 @@ pub fn open_in_browser(url: &str) -> Result<(), FetchError> {
 
 /// The default Downloads directory (`$XDG_DOWNLOAD_DIR`, then `$HOME/Downloads`).
 pub fn default_downloads_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("XDG_DOWNLOAD_DIR")
+    if let Ok(dir) = env::var("XDG_DOWNLOAD_DIR")
         && !dir.is_empty()
     {
         return PathBuf::from(dir);
     }
-    if let Ok(home) = std::env::var("HOME") {
+    if let Ok(home) = env::var("HOME") {
         return PathBuf::from(home).join("Downloads");
     }
     PathBuf::from("Downloads")
@@ -234,13 +240,13 @@ pub fn wait_for_resolver_json(
     loop {
         if let Some(path) = newest_match(downloads_dir, slug, cutoff) {
             let size1 = file_size(&path);
-            std::thread::sleep(poll);
+            sleep(poll);
             let size2 = file_size(&path);
             if size1 > 0 && size1 == size2 && parse_plan(&path, "").is_ok() {
                 return Ok(path);
             }
         } else {
-            std::thread::sleep(poll);
+            sleep(poll);
         }
         if start.elapsed() >= timeout {
             return Err(FetchError::NotFound(format!(
@@ -253,11 +259,11 @@ pub fn wait_for_resolver_json(
 }
 
 fn file_size(path: &Path) -> u64 {
-    std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
+    fs::metadata(path).map(|m| m.len()).unwrap_or(0)
 }
 
 fn newest_match(dir: &Path, slug: Option<&str>, cutoff: SystemTime) -> Option<PathBuf> {
-    let entries = std::fs::read_dir(dir).ok()?;
+    let entries = fs::read_dir(dir).ok()?;
     let mut best: Option<(SystemTime, PathBuf)> = None;
     for entry in entries.flatten() {
         let name = entry.file_name();
@@ -280,9 +286,8 @@ fn newest_match(dir: &Path, slug: Option<&str>, cutoff: SystemTime) -> Option<Pa
 /// Parse a resolver JSON file into a [`HardsubPlan`]. `fallback_slug` is used
 /// when the JSON omits `anime_slug`.
 pub fn parse_plan(path: &Path, fallback_slug: &str) -> Result<HardsubPlan, FetchError> {
-    let text = std::fs::read_to_string(path)?;
-    let json: ResolverJson =
-        serde_json::from_str(&text).map_err(|e| FetchError::Parse(e.to_string()))?;
+    let text = fs::read_to_string(path)?;
+    let json: ResolverJson = from_str(&text).map_err(|e| FetchError::Parse(e.to_string()))?;
     let slug = json
         .anime_slug
         .filter(|s| !s.is_empty())
@@ -457,11 +462,11 @@ mod tests {
                 {"episode": 2, "episode_url": "u2", "resolved": []}
             ]
         }"#;
-        let dir = std::env::temp_dir();
+        let dir = env::temp_dir();
         let path = dir.join("oga-test-parse.players.json");
-        std::fs::write(&path, json).unwrap();
+        fs::write(&path, json).unwrap();
         let plan = parse_plan(&path, "fallback").unwrap();
-        std::fs::remove_file(&path).ok();
+        fs::remove_file(&path).ok();
         assert_eq!(plan.slug, "isekai-ojisan");
         // episode 2 had no resolved players → dropped
         assert_eq!(plan.episode_count(), 1);

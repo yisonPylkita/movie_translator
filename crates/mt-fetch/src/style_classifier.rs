@@ -147,7 +147,7 @@ mod tests {
     fn karaoke_short_text_classified_as_non_dialogue() {
         // Per-character karaoke: many events, very short text
         let chars = "abcdefghijklmnop".repeat(5);
-        let events: Vec<Event> = chars
+        let events: Vec<_> = chars
             .chars()
             .enumerate()
             .map(|(i, c)| {
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn rapid_fire_events_classified_as_non_dialogue() {
         // 600 events, 300ms each — karaoke pattern
-        let events: Vec<Event> = (0..600)
+        let events: Vec<_> = (0..600)
             .map(|i| {
                 let start = i as i64 * 300;
                 make_event("EDRO", start, start + 250, &format!("syllable {i}"))

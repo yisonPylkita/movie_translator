@@ -3,8 +3,13 @@
 //! Uses `ttf-parser` instead of Python's `fonttools` for reading font data.
 
 use std::collections::HashSet;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use serde_json::{Value, from_str};
+use tempfile::Builder;
+use tracing::debug;
 
 use mt_core::POLISH_CHARS;
 
@@ -59,7 +64,7 @@ pub fn get_embedded_fonts(video_path: &Path) -> Result<Vec<EmbeddedFont>, VideoM
 
 /// Pure function: parse ffprobe JSON to extract font attachment metadata.
 pub fn parse_embedded_fonts_json(json: &str) -> Result<Vec<EmbeddedFont>, VideoMuxError> {
-    let data: serde_json::Value = serde_json::from_str(json)?;
+    let data: Value = from_str(json)?;
     let streams = data["streams"].as_array().cloned().unwrap_or_default();
 
     let mut fonts = Vec::new();
@@ -120,8 +125,8 @@ pub fn extract_font(
     // which `output_path.exists()` alone would treat as success. Honor the exit
     // status: on failure, remove any partial output and report failure.
     if !output.status.success() {
-        let _ = std::fs::remove_file(output_path);
-        tracing::debug!(
+        let _ = fs::remove_file(output_path);
+        debug!(
             "font extraction failed (stream {stream_index}): {}",
             String::from_utf8_lossy(&output.stderr).trim()
         );
@@ -144,7 +149,7 @@ pub fn extract_font(
 ///   Polish codepoint maps to a non-zero glyph ID in at least one subtable.
 /// - This is semantically equivalent for the Polish character set (all in BMP).
 pub fn font_supports_polish(font_path: &Path) -> bool {
-    let data = match std::fs::read(font_path) {
+    let data = match fs::read(font_path) {
         Ok(d) => d,
         Err(_) => return false,
     };
@@ -162,7 +167,7 @@ pub fn font_data_supports_polish(data: &[u8]) -> bool {
         Err(_) => return false,
     };
 
-    let polish_codepoints: Vec<u32> = POLISH_CHARS.chars().map(|c| c as u32).collect();
+    let polish_codepoints: Vec<_> = POLISH_CHARS.chars().map(|c| c as u32).collect();
 
     for cp in &polish_codepoints {
         let ch = match char::from_u32(*cp) {
@@ -191,7 +196,7 @@ pub fn get_ass_font_names(ass_path: &Path) -> HashSet<String> {
     for style in &subs.styles {
         // Style.raw is comma-separated: Name, Fontname, Fontsize, ...
         // owned[0] = Name, owned[1] = Fontname
-        let fields: Vec<&str> = style.raw.splitn(3, ',').collect();
+        let fields: Vec<_> = style.raw.splitn(3, ',').collect();
         if fields.len() >= 2 {
             let fontname = fields[1].trim().to_ascii_lowercase();
             if !fontname.is_empty() {
@@ -222,7 +227,7 @@ pub fn check_embedded_fonts_support_polish(
         return Ok(false);
     }
 
-    let temp_dir = tempfile::Builder::new()
+    let temp_dir = Builder::new()
         .prefix("mt-media-fonts-")
         .tempdir()
         .map_err(VideoMuxError::Io)?;
@@ -285,7 +290,7 @@ pub fn iter_system_fonts() -> Vec<PathBuf> {
 
 fn walkdir_fonts(dir: &Path) -> Vec<PathBuf> {
     let mut result = Vec::new();
-    let Ok(rd) = std::fs::read_dir(dir) else {
+    let Ok(rd) = fs::read_dir(dir) else {
         return result;
     };
     for entry in rd.flatten() {
@@ -310,7 +315,7 @@ fn walkdir_fonts(dir: &Path) -> Vec<PathBuf> {
 ///
 /// Prefers platform 3 (Windows) name record, then any record with nameID=1.
 pub fn get_font_family_name(font_path: &Path) -> Option<String> {
-    let data = std::fs::read(font_path).ok()?;
+    let data = fs::read(font_path).ok()?;
     font_family_name_from_data(&data)
 }
 
@@ -546,7 +551,7 @@ mod tests {
         // We test the raw-field splitting logic directly
         let raw = "Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1";
         // fields[1] = "Arial"
-        let fields: Vec<&str> = raw.splitn(3, ',').collect();
+        let fields: Vec<_> = raw.splitn(3, ',').collect();
         assert_eq!(fields[1], "Arial");
     }
 

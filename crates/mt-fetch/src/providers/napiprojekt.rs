@@ -3,13 +3,16 @@
 //! NapiProjekt is the largest Polish subtitle database. Subtitles are matched
 //! by computing MD5 of the first 10 MB of the video file.
 
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use md5::{Digest, Md5};
 
 use crate::retry::FetchError;
 use crate::types::SubtitleMatch;
 use mt_core::MediaIdentity;
+use tracing::{debug, info};
 
 pub const API_URL: &str = "http://napiprojekt.pl/unit_napisy/dl.php";
 pub const MAGIC_PREFIX: &str = "iBlm8NTigvXkI6";
@@ -59,7 +62,7 @@ pub struct NapiProjektProvider {
     video_path: Option<PathBuf>,
     client: reqwest::blocking::Client,
     // Cache: (hash, content) — avoids re-fetching on download after search
-    cached: std::sync::Mutex<Option<(String, Vec<u8>)>>,
+    cached: Mutex<Option<(String, Vec<u8>)>>,
 }
 
 impl Default for NapiProjektProvider {
@@ -77,7 +80,7 @@ impl NapiProjektProvider {
         Self {
             video_path: None,
             client,
-            cached: std::sync::Mutex::new(None),
+            cached: Mutex::new(None),
         }
     }
 
@@ -125,7 +128,7 @@ impl super::SubtitleProvider for NapiProjektProvider {
         let video_path = match &self.video_path {
             Some(p) => p,
             None => {
-                tracing::debug!("NapiProjekt: no video_path set, cannot compute hash");
+                debug!("NapiProjekt: no video_path set, cannot compute hash");
                 return Ok(vec![]);
             }
         };
@@ -133,7 +136,7 @@ impl super::SubtitleProvider for NapiProjektProvider {
         let file_hash = match mt_discovery::compute_napiprojekt_hash(video_path) {
             Ok(h) => h,
             Err(e) => {
-                tracing::debug!("NapiProjekt hash failed: {e}");
+                debug!("NapiProjekt hash failed: {e}");
                 return Ok(vec![]);
             }
         };
@@ -141,7 +144,7 @@ impl super::SubtitleProvider for NapiProjektProvider {
         let content = match self.fetch_subtitle(&file_hash)? {
             Some(c) => c,
             None => {
-                tracing::debug!(
+                debug!(
                     "NapiProjekt: no subtitle for hash {}",
                     short_hash(&file_hash)
                 );
@@ -194,8 +197,8 @@ impl super::SubtitleProvider for NapiProjektProvider {
             },
         };
 
-        std::fs::write(output_path, &content).map_err(FetchError::Io)?;
-        tracing::info!(
+        fs::write(output_path, &content).map_err(FetchError::Io)?;
+        info!(
             "Downloaded subtitle: {} (napiprojekt)",
             output_path.display()
         );

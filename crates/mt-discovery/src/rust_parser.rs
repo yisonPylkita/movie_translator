@@ -246,7 +246,7 @@ fn parse_with_regex(filename: &str) -> RegexResult {
         // If no dot-title pattern matched but we have meaningful content, try first token
         if result.title.is_none() && !cleaned.is_empty() {
             let spaced = cleaned.replace(['.', '_', '-'], " ");
-            let tokens: Vec<&str> = spaced
+            let tokens: Vec<_> = spaced
                 .split_whitespace()
                 .filter(|t| {
                     t.len() > 1

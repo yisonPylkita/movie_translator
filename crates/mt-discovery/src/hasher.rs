@@ -151,7 +151,7 @@ mod tests {
     /// implementation run over the identical 200 KB byte sequence.
     #[test]
     fn oshash_random_200kb() {
-        let data: Vec<u8> = (0u8..=255u8).cycle().take(200 * 1024).collect();
+        let data = (0u8..=255u8).cycle().take(200 * 1024).collect::<Vec<u8>>();
         let f = write_temp(&data);
         let hash = compute_oshash(f.path()).unwrap();
         assert_eq!(hash, "a0601fdf9f622000");

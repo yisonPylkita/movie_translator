@@ -15,7 +15,11 @@
 //!      OP duration being removed.
 //!   4. Apply per-segment shifts to the subtitle file.
 
+use std::fs;
+use std::io::Error;
 use std::path::Path;
+
+use ndarray::{Array1, s};
 
 use crate::validator::{build_activity_vector, extract_timestamps};
 
@@ -34,7 +38,7 @@ pub enum AlignError {
     Write {
         path: String,
         #[source]
-        source: std::io::Error,
+        source: Error,
     },
 }
 
@@ -95,13 +99,11 @@ pub fn estimate_offset(
     }
 
     let max_len = ref_vec.len().max(cand_vec.len());
-    let mut ref_padded = ndarray::Array1::<f64>::zeros(max_len);
-    let mut cand_padded = ndarray::Array1::<f64>::zeros(max_len);
-    ref_padded
-        .slice_mut(ndarray::s![..ref_vec.len()])
-        .assign(&ref_vec);
+    let mut ref_padded = Array1::<f64>::zeros(max_len);
+    let mut cand_padded = Array1::<f64>::zeros(max_len);
+    ref_padded.slice_mut(s![..ref_vec.len()]).assign(&ref_vec);
     cand_padded
-        .slice_mut(ndarray::s![..cand_vec.len()])
+        .slice_mut(s![..cand_vec.len()])
         .assign(&cand_vec);
 
     let max_shift_bins = (max_shift_ms / bin_size_ms) as usize;
@@ -171,7 +173,7 @@ pub fn detect_op_gap(
     }
 
     // Sort by start time
-    let mut events: Vec<(i64, i64)> = timestamps.to_vec();
+    let mut events = timestamps.to_vec();
     events.sort_by_key(|&(s, _)| s);
 
     let mut best_gap: Option<(i64, i64)> = None;
@@ -260,7 +262,7 @@ fn save_subs(subs: &mt_subtitles::model::Subtitles, path: &Path) -> Result<(), A
         Some("srt") => mt_subtitles::srt::to_srt_string(subs),
         _ => mt_subtitles::ass::to_ass_string(subs),
     };
-    std::fs::write(path, content).map_err(|source| AlignError::Write {
+    fs::write(path, content).map_err(|source| AlignError::Write {
         path: path.display().to_string(),
         source,
     })
@@ -340,12 +342,12 @@ fn align_piecewise(
     let op_duration = gap_end - gap_start;
 
     // Split reference into pre-OP and post-OP segments
-    let pre_op_ref: Vec<(i64, i64)> = ref_timestamps
+    let pre_op_ref: Vec<_> = ref_timestamps
         .iter()
         .filter(|&&(_, e)| e <= gap_start)
         .copied()
         .collect();
-    let post_op_ref: Vec<(i64, i64)> = ref_timestamps
+    let post_op_ref: Vec<_> = ref_timestamps
         .iter()
         .filter(|&&(s, _)| s >= gap_end)
         .copied()
@@ -441,7 +443,7 @@ mod tests {
 
     fn write_file(dir: &TempDir, name: &str, content: &str) -> PathBuf {
         let path = dir.path().join(name);
-        std::fs::write(&path, content).unwrap();
+        fs::write(&path, content).unwrap();
         path
     }
 
@@ -534,7 +536,10 @@ mod tests {
 
     #[test]
     fn detect_op_gap_finds_gap() {
-        let ts: Vec<(i64, i64)> = ref_lines().iter().map(|&(s, e, _)| (s, e)).collect();
+        let ts = ref_lines()
+            .iter()
+            .map(|&(s, e, _)| (s, e))
+            .collect::<Vec<_>>();
         let gap = detect_op_gap_default(&ts);
         assert!(gap.is_some());
         let (gap_start, gap_end) = gap.unwrap();
@@ -551,7 +556,7 @@ mod tests {
     #[test]
     fn detect_op_gap_ignores_gaps_outside_search_window() {
         // Gap at 500s — outside the 30s–360s search window
-        let ts: Vec<(i64, i64)> = vec![
+        let ts = vec![
             (1000, 3000),
             (5000, 7000),
             (500000, 502000),
@@ -564,7 +569,7 @@ mod tests {
     #[test]
     fn detect_op_gap_finds_largest_gap_in_window() {
         // Two gaps: 80s gap at 52s mark, 200s gap at 142s mark
-        let ts: Vec<(i64, i64)> = vec![
+        let ts = vec![
             (10000, 12000),
             (50000, 52000),
             (132000, 134000),
@@ -602,7 +607,7 @@ mod tests {
     fn estimate_offset_positive_candidate_early() {
         let starts = vec![1000i64, 4000, 7000, 10000, 14000, 60000, 65000, 70000];
         let ref_ = to_timestamps(&starts, 2000);
-        let shifted: Vec<i64> = starts.iter().map(|s| s - 1500).collect();
+        let shifted = starts.iter().map(|s| s - 1500).collect::<Vec<_>>();
         let cand = to_timestamps(&shifted, 2000);
         let offset = estimate_offset(&ref_, &cand, 100, 15_000, 0.4);
         let off = offset.unwrap_or(i64::MAX);
@@ -613,7 +618,7 @@ mod tests {
     fn estimate_offset_negative_candidate_late() {
         let starts = vec![1000i64, 4000, 7000, 10000, 14000, 60000, 65000, 70000];
         let ref_ = to_timestamps(&starts, 2000);
-        let shifted: Vec<i64> = starts.iter().map(|s| s + 2000).collect();
+        let shifted = starts.iter().map(|s| s + 2000).collect::<Vec<_>>();
         let cand = to_timestamps(&shifted, 2000);
         let offset = estimate_offset(&ref_, &cand, 100, 15_000, 0.4);
         let off = offset.unwrap_or(i64::MAX);
@@ -624,7 +629,7 @@ mod tests {
     fn estimate_offset_large_offset_with_dense_lines() {
         let starts = vec![1000i64, 4000, 7000, 10000, 14000, 60000, 65000, 70000];
         let ref_ = to_timestamps(&starts, 2000);
-        let shifted: Vec<i64> = starts.iter().map(|s| s + 5000).collect();
+        let shifted = starts.iter().map(|s| s + 5000).collect::<Vec<_>>();
         let cand = to_timestamps(&shifted, 2000);
         let offset = estimate_offset(&ref_, &cand, 100, 15_000, 0.4);
         let off = offset.unwrap_or(i64::MAX);
@@ -729,10 +734,10 @@ mod tests {
     fn corrects_late_subtitles() {
         let tmp = TempDir::new().unwrap();
         let ref_path = write_file(&tmp, "ref.srt", &make_srt(SIMPLE_REF));
-        let shifted: Vec<(i64, i64, &str)> = SIMPLE_REF
+        let shifted = SIMPLE_REF
             .iter()
             .map(|&(s, e, t)| (s + 2000, e + 2000, t))
-            .collect();
+            .collect::<Vec<_>>();
         let cand_path = write_file(&tmp, "cand.srt", &make_srt(&shifted));
         let offset = align_to_reference(&cand_path, &ref_path, MIN_OFFSET_MS);
         assert!(
@@ -770,13 +775,13 @@ mod tests {
         // Verify both segments are corrected
         let (timestamps, _) = extract_timestamps(&cand_path);
         let (ref_timestamps, _) = extract_timestamps(&ref_path);
-        let ref_starts: Vec<i64> = {
-            let mut v: Vec<i64> = ref_timestamps.iter().map(|&(s, _)| s).collect();
+        let ref_starts = {
+            let mut v = ref_timestamps.iter().map(|&(s, _)| s).collect::<Vec<_>>();
             v.sort_unstable();
             v
         };
-        let cand_starts: Vec<i64> = {
-            let mut v: Vec<i64> = timestamps.iter().map(|&(s, _)| s).collect();
+        let cand_starts = {
+            let mut v = timestamps.iter().map(|&(s, _)| s).collect::<Vec<_>>();
             v.sort_unstable();
             v
         };
@@ -825,12 +830,12 @@ mod tests {
     fn only_pre_op_offset() {
         let tmp = TempDir::new().unwrap();
         let ref_path = write_file(&tmp, "ref.srt", &make_srt(&ref_lines()));
-        let pre: Vec<(i64, i64, &str)> = REF_PRE_OP
+        let pre = REF_PRE_OP
             .iter()
             .map(|&(s, e, t)| (s - 3000, e - 3000, t))
-            .collect();
-        let post: Vec<(i64, i64, &str)> = REF_POST_OP.to_vec();
-        let cand_lines: Vec<(i64, i64, &str)> = pre.into_iter().chain(post).collect();
+            .collect::<Vec<_>>();
+        let post = REF_POST_OP.to_vec();
+        let cand_lines = pre.into_iter().chain(post).collect::<Vec<_>>();
         let cand_path = write_file(&tmp, "cand.srt", &make_srt(&cand_lines));
 
         let offset = align_to_reference(&cand_path, &ref_path, MIN_OFFSET_MS);
@@ -862,13 +867,13 @@ mod tests {
     fn konosuba_s1e1_static_offset_detection() {
         // Simulate Konosuba S1E1 pattern: 22 lines spread over ~22 minutes,
         // candidate is +20s (20000ms) late relative to reference.
-        let ref_starts: Vec<i64> = vec![
+        let ref_starts = vec![
             10_000, 20_000, 35_000, 50_000, 80_000, 120_000, 160_000, 200_000, 240_000, 300_000,
             360_000, 420_000, 480_000, 540_000, 600_000, 660_000, 720_000, 780_000, 840_000,
             900_000, 960_000, 1_020_000,
         ];
         let ref_ts = to_timestamps(&ref_starts, 2000);
-        let cand_starts: Vec<i64> = ref_starts.iter().map(|s| s + 20_000).collect();
+        let cand_starts = ref_starts.iter().map(|s| s + 20_000).collect::<Vec<_>>();
         let cand_ts = to_timestamps(&cand_starts, 2000);
 
         let offset = estimate_offset(&ref_ts, &cand_ts, 100, 30_000, 0.4);

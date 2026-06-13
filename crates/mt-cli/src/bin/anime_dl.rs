@@ -11,11 +11,13 @@
 //! `hardsub_download` call, so there's nothing to set up here.
 
 use std::path::{Path, PathBuf};
+use std::process::exit;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use mt_fetch::ogladajanime::{self, Discovery, HardsubPlan};
+use tracing::{error, info, warn};
 
 /// How often to poll Downloads for the resolver JSON.
 const POLL: Duration = Duration::from_secs(2);
@@ -139,7 +141,7 @@ fn resolve_plan(args: &Args) -> Result<HardsubPlan> {
 fn download_episode(plan: &HardsubPlan, episode: i64, stem: &Path) -> Option<PathBuf> {
     for player in plan.pl_players(episode) {
         let host = player.host.as_deref().unwrap_or("?");
-        tracing::info!(
+        info!(
             "ep {episode}: trying {host} {} ({})",
             player.quality.as_deref().unwrap_or("?"),
             player.embed_url
@@ -148,7 +150,7 @@ fn download_episode(plan: &HardsubPlan, episode: i64, stem: &Path) -> Option<Pat
         match mt_ml::hardsub_download(&player.embed_url, stem, 0, true, None) {
             Ok(path) => return Some(path),
             Err(e) => {
-                tracing::warn!("ep {episode}: {host} mirror failed ({e}); trying next");
+                warn!("ep {episode}: {host} mirror failed ({e}); trying next");
             }
         }
     }
@@ -192,7 +194,7 @@ fn run(args: Args) -> Result<i32> {
                 downloaded += 1;
             }
             None => {
-                eprintln!("[{n}/{total}] ep {episode}: all mirrors failed");
+                error!("[{n}/{total}] ep {episode}: all mirrors failed");
                 failed += 1;
             }
         }
@@ -209,16 +211,17 @@ fn main() {
     let code = match run(args) {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("Error: {e:#}");
+            error!("Error: {e:#}");
             1
         }
     };
-    std::process::exit(code);
+    exit(code);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn episode_stem_zero_pads_to_two_digits() {
@@ -234,7 +237,7 @@ mod tests {
 
     #[test]
     fn existing_download_finds_any_extension() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let stem = dir.path().join("show-E01");
         let mkv = dir.path().join("show-E01.mkv");
         std::fs::write(&mkv, b"data").unwrap();
@@ -243,14 +246,14 @@ mod tests {
 
     #[test]
     fn existing_download_none_when_missing() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let stem = dir.path().join("show-E99");
         assert_eq!(existing_download(&stem), None);
     }
 
     #[test]
     fn existing_download_ignores_empty_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let stem = dir.path().join("show-E02");
         std::fs::write(dir.path().join("show-E02.part"), b"").unwrap();
         assert_eq!(existing_download(&stem), None);

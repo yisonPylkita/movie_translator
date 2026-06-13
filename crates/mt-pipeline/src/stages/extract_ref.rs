@@ -1,10 +1,15 @@
 //! Extract reference subtitle and record the original English track info.
+use std::fs;
 
 use mt_core::{OriginalTrack, PendingOcr, PipelineContext};
 use mt_media::{SubtitleExtractor, SubtitleTrack};
 
 use crate::error::Result;
 use crate::vision::{VisionOcrProbe, default_vision_ocr_probe};
+use tracing::{info, warn};
+
+#[cfg(test)]
+use tempfile::tempdir;
 
 /// Stage role name.
 pub const NAME: &str = "extract_reference";
@@ -36,7 +41,7 @@ pub fn run_with_probe(
 ) -> Result<PipelineContext> {
     let extractor = SubtitleExtractor::new();
     let ref_dir = ctx.work_dir.join("reference");
-    std::fs::create_dir_all(&ref_dir)?;
+    fs::create_dir_all(&ref_dir)?;
 
     let track_info = extractor.get_track_info(&ctx.video_path).ok();
     let eng_track = track_info
@@ -81,14 +86,14 @@ pub fn run_with_probe(
                 Some(eng_track.subtitle_index),
             ) {
                 Ok(()) => {
-                    tracing::info!(
+                    info!(
                         "Extracted reference: {}",
                         ref_path.file_name().unwrap_or_default().to_string_lossy()
                     );
                     ctx.reference_path = Some(ref_path);
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to extract reference: {e}");
+                    warn!("Failed to extract reference: {e}");
                 }
             }
         }
@@ -116,11 +121,12 @@ pub fn run_with_probe(
 mod tests {
     use super::*;
     use mt_core::PipelineConfig;
-    use std::path::PathBuf;
+    use std::fs;
+    use std::path::{Path, PathBuf};
 
-    fn ctx(tmp: &std::path::Path) -> PipelineContext {
+    fn ctx(tmp: &Path) -> PipelineContext {
         let video = tmp.join("ep01.mkv");
-        std::fs::write(&video, b"fake").unwrap();
+        fs::write(&video, b"fake").unwrap();
         PipelineContext::new(video, tmp.join("work"), PipelineConfig::default())
     }
 
@@ -146,7 +152,7 @@ mod tests {
     #[test]
     fn no_track_and_no_vision_sets_none() {
         // get_track_info will fail to probe the fake video → no tracks; vision off.
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let c = ctx(dir.path());
         let result = run_with_probe(c, || false).unwrap();
         assert!(result.reference_path.is_none());
@@ -159,7 +165,7 @@ mod tests {
         // --transcribe sources English from the audio; OCRing a clean video's
         // frames for a reference yields credit-text junk that would later be
         // adopted as the English source. Skip it.
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut c = ctx(dir.path());
         c.config.enable_transcription = true;
         let result = run_with_probe(c, || true).unwrap();
@@ -169,7 +175,7 @@ mod tests {
 
     #[test]
     fn no_track_with_vision_defers_burned_in() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let c = ctx(dir.path());
         let result = run_with_probe(c, || true).unwrap();
         let pending = result.pending_ocr.expect("pending ocr");

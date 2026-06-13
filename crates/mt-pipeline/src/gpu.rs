@@ -12,9 +12,10 @@ use std::path::{Path, PathBuf};
 
 use mt_core::{BurnedInResult, DialogueLine, OCRResult, PipelineContext};
 use mt_ml::TranslateRequest;
-use mt_subtitles::SubtitleProcessor;
+use mt_subtitles::extract_dialogue_lines;
 
 use crate::error::{PipelineError, Result};
+use tracing::warn;
 
 /// Abstraction over GPU-bound ML work.
 ///
@@ -201,7 +202,7 @@ pub fn resolve_pending_ocr(
             }
         }
         other => {
-            tracing::warn!("unknown pending_ocr type {other:?}; ignoring");
+            warn!("unknown pending_ocr type {other:?}; ignoring");
         }
     }
 
@@ -210,7 +211,7 @@ pub fn resolve_pending_ocr(
         && let Some(source) = ctx.english_source.clone()
         && ctx.dialogue_lines.is_none()
     {
-        let lines = SubtitleProcessor::extract_dialogue_lines(&source)?;
+        let lines = extract_dialogue_lines(&source)?;
         if lines.is_empty() {
             ctx.pending_ocr = None;
             return Err(PipelineError::Stage(format!(

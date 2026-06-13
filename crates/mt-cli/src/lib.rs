@@ -6,6 +6,7 @@ pub mod commands;
 pub mod common;
 pub mod tui;
 
+use std::io::stderr;
 use std::sync::Once;
 
 use mt_pipeline::ProgressSender;
@@ -79,7 +80,7 @@ pub fn init_tracing_with(verbose: bool, tui_sender: Option<ProgressSender>) {
                 // Headless / plain mode: keep the fmt-stderr layer.
                 let _ = tracing_subscriber::fmt()
                     .with_env_filter(filter)
-                    .with_writer(std::io::stderr)
+                    .with_writer(stderr)
                     .with_target(false)
                     .try_init();
             }

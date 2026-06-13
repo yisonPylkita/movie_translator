@@ -121,6 +121,7 @@ pub struct BurnedInResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{from_str, to_string};
 
     #[test]
     fn replace_polish_chars_typical() {
@@ -145,8 +146,8 @@ mod tests {
             end_ms: 3500,
             text: "Cześć!".to_string(),
         };
-        let json = serde_json::to_string(&line).expect("serialize");
-        let back: DialogueLine = serde_json::from_str(&json).expect("deserialize");
+        let json = to_string(&line).expect("serialize");
+        let back = from_str::<DialogueLine>(&json).expect("deserialize");
         assert_eq!(line, back);
     }
 

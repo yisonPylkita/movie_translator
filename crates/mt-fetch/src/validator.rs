@@ -5,7 +5,8 @@
 //! finds the nearest reference line and checks if it falls within a tolerance
 //! window.  The fraction of matched lines is the similarity score.
 
-use std::path::Path;
+use std::cmp::Ordering;
+use std::path::{Path, PathBuf};
 
 use mt_subtitles::model::Event;
 use ndarray::Array1;
@@ -13,6 +14,7 @@ use ndarray::Array1;
 use crate::retry::FetchError;
 use crate::style_classifier::classify_styles;
 use crate::types::SubtitleMatch;
+use tracing::warn;
 
 // ---------------------------------------------------------------------------
 // build_activity_vector
@@ -22,7 +24,7 @@ use crate::types::SubtitleMatch;
 ///
 /// Divides the timeline into fixed-width bins and marks each bin as 1
 /// if any dialogue event overlaps it, 0 otherwise.
-pub fn build_activity_vector(
+pub(crate) fn build_activity_vector(
     timestamps: &[(i64, i64)],
     duration_ms: i64,
     bin_size_ms: i64,
@@ -64,7 +66,8 @@ pub fn build_activity_vector(
 ///
 /// Tries shifts from -max_shift_bins to +max_shift_bins and returns the
 /// peak correlation, normalised by the geometric mean of energies.
-pub fn compute_similarity(
+#[cfg(test)]
+pub(crate) fn compute_similarity(
     reference: &Array1<f64>,
     candidate: &Array1<f64>,
     max_shift_bins: usize,
@@ -131,7 +134,11 @@ pub fn compute_similarity(
 /// start time using binary search.  A candidate line is "matched" if the
 /// nearest reference line is within `tolerance_ms`.  The score is the
 /// fraction of candidate lines that matched.
-pub fn compute_line_match_score(ref_starts: &[i64], cand_starts: &[i64], tolerance_ms: i64) -> f64 {
+pub(crate) fn compute_line_match_score(
+    ref_starts: &[i64],
+    cand_starts: &[i64],
+    tolerance_ms: i64,
+) -> f64 {
     if ref_starts.is_empty() || cand_starts.is_empty() {
         return 0.0;
     }
@@ -161,122 +168,6 @@ pub fn compute_line_match_score(ref_starts: &[i64], cand_starts: &[i64], toleran
 }
 
 // ---------------------------------------------------------------------------
-// build_density_vector
-// ---------------------------------------------------------------------------
-
-/// Build a dialogue density vector — count of events starting in each window.
-pub fn build_density_vector(
-    timestamps: &[(i64, i64)],
-    duration_ms: i64,
-    window_ms: i64,
-) -> Array1<f64> {
-    let n_bins = if duration_ms > 0 {
-        ((duration_ms as f64) / (window_ms as f64)).ceil() as usize
-    } else {
-        0
-    };
-
-    if n_bins == 0 {
-        return Array1::zeros(0);
-    }
-
-    let mut vec = Array1::<f64>::zeros(n_bins);
-
-    for &(start, _) in timestamps {
-        let bin_idx = ((start / window_ms) as usize).min(n_bins - 1);
-        vec[bin_idx] += 1.0;
-    }
-
-    vec
-}
-
-// ---------------------------------------------------------------------------
-// compute_density_correlation
-// ---------------------------------------------------------------------------
-
-/// Compute Pearson correlation between density vectors with shifting.
-pub fn compute_density_correlation(
-    ref_density: &Array1<f64>,
-    cand_density: &Array1<f64>,
-    max_shift: usize,
-) -> f64 {
-    if ref_density.is_empty() || cand_density.is_empty() {
-        return 0.0;
-    }
-
-    // Pad to same length
-    let max_len = ref_density.len().max(cand_density.len());
-    let mut ref_padded = Array1::<f64>::zeros(max_len);
-    let mut cand_padded = Array1::<f64>::zeros(max_len);
-    ref_padded
-        .slice_mut(ndarray::s![..ref_density.len()])
-        .assign(ref_density);
-    cand_padded
-        .slice_mut(ndarray::s![..cand_density.len()])
-        .assign(cand_density);
-
-    let ref_std = std_dev(&ref_padded);
-    let cand_std = std_dev(&cand_padded);
-
-    if ref_std == 0.0 || cand_std == 0.0 {
-        return 0.0;
-    }
-
-    let effective_max = max_shift.min(max_len.saturating_sub(1));
-    let mut best = 0.0f64;
-
-    for shift_abs in -(effective_max as i64)..=(effective_max as i64) {
-        let (r_slice, c_slice) = if shift_abs >= 0 {
-            let s = shift_abs as usize;
-            let r = ref_padded.slice(ndarray::s![s..]).to_owned();
-            let c = cand_padded.slice(ndarray::s![..max_len - s]).to_owned();
-            (r, c)
-        } else {
-            let s = (-shift_abs) as usize;
-            let r = ref_padded.slice(ndarray::s![..max_len - s]).to_owned();
-            let c = cand_padded.slice(ndarray::s![s..]).to_owned();
-            (r, c)
-        };
-
-        if r_slice.len() < 3 {
-            continue;
-        }
-
-        let r_mean = r_slice.mean().unwrap_or(0.0);
-        let c_mean = c_slice.mean().unwrap_or(0.0);
-        let r_std_s = std_dev(&r_slice);
-        let c_std_s = std_dev(&c_slice);
-
-        if r_std_s == 0.0 || c_std_s == 0.0 {
-            continue;
-        }
-
-        let len = r_slice.len() as f64;
-        let corr: f64 = r_slice
-            .iter()
-            .zip(c_slice.iter())
-            .map(|(&ri, &ci)| (ri - r_mean) * (ci - c_mean))
-            .sum::<f64>()
-            / (len * r_std_s * c_std_s);
-
-        if corr > best {
-            best = corr;
-        }
-    }
-
-    best
-}
-
-fn std_dev(arr: &Array1<f64>) -> f64 {
-    if arr.is_empty() {
-        return 0.0;
-    }
-    let mean = arr.mean().unwrap_or(0.0);
-    let variance = arr.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / arr.len() as f64;
-    variance.sqrt()
-}
-
-// ---------------------------------------------------------------------------
 // extract_timestamps
 // ---------------------------------------------------------------------------
 
@@ -287,11 +178,11 @@ fn std_dev(arr: &Array1<f64>) -> f64 {
 ///
 /// Accepts pre-parsed events to decouple I/O. The public
 /// [`extract_timestamps_from_path`] wraps this.
-pub fn extract_timestamps_from_events(events: &[Event]) -> (Vec<(i64, i64)>, i64) {
+pub(crate) fn extract_timestamps_from_events(events: &[Event]) -> (Vec<(i64, i64)>, i64) {
     // Use structural classification as primary filter.
     let dialogue_styles = classify_styles(events);
 
-    let mut timestamps: Vec<(i64, i64)> = Vec::new();
+    let mut timestamps = Vec::new();
 
     for event in events {
         if event.text.trim().is_empty() {
@@ -324,7 +215,7 @@ pub fn extract_timestamps_from_events(events: &[Event]) -> (Vec<(i64, i64)>, i64
 }
 
 /// Extract dialogue timestamps from a subtitle file on disk.
-pub fn extract_timestamps(path: &Path) -> (Vec<(i64, i64)>, i64) {
+pub(crate) fn extract_timestamps(path: &Path) -> (Vec<(i64, i64)>, i64) {
     let subs = match mt_subtitles::load(path) {
         Ok(s) => s,
         Err(_) => return (vec![], 0),
@@ -334,7 +225,9 @@ pub fn extract_timestamps(path: &Path) -> (Vec<(i64, i64)>, i64) {
 
 /// Like [`extract_timestamps`] but surfaces parse/IO failures instead of
 /// silently returning an empty result.
-pub fn extract_timestamps_checked(path: &Path) -> Result<(Vec<(i64, i64)>, i64), FetchError> {
+pub(crate) fn extract_timestamps_checked(
+    path: &Path,
+) -> Result<(Vec<(i64, i64)>, i64), FetchError> {
     let subs = mt_subtitles::load(path)
         .map_err(|e| FetchError::Parse(format!("{}: {e}", path.display())))?;
     Ok(extract_timestamps_from_events(&subs.events))
@@ -388,16 +281,16 @@ impl SubtitleValidator {
     /// Score all candidates, filter by threshold, sort by score descending.
     pub fn validate_candidates(
         &self,
-        candidates: &[(SubtitleMatch, std::path::PathBuf)],
+        candidates: &[(SubtitleMatch, PathBuf)],
         min_threshold: f64,
-    ) -> Vec<(SubtitleMatch, std::path::PathBuf, f64)> {
+    ) -> Vec<(SubtitleMatch, PathBuf, f64)> {
         let mut results = Vec::new();
 
         for (match_, path) in candidates {
             let score = match self.score_candidate(path) {
                 Ok(s) => s,
                 Err(e) => {
-                    tracing::warn!("Failed to score candidate {}: {e}", match_.subtitle_id);
+                    warn!("Failed to score candidate {}: {e}", match_.subtitle_id);
                     continue;
                 }
             };
@@ -407,7 +300,7 @@ impl SubtitleValidator {
             }
         }
 
-        results.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(Ordering::Equal));
         results
     }
 }
@@ -419,13 +312,14 @@ impl SubtitleValidator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::path::PathBuf;
     use tempfile::TempDir;
 
     // Helper: write a file and return its path
     fn write_file(dir: &TempDir, name: &str, content: &str) -> PathBuf {
         let path = dir.path().join(name);
-        std::fs::write(&path, content).unwrap();
+        fs::write(&path, content).unwrap();
         path
     }
 
@@ -603,10 +497,10 @@ mod tests {
     #[test]
     fn score_between_0_and_1() {
         // Use a deterministic "random" sequence
-        let ref_vals: Vec<f64> = (0..100)
+        let ref_vals: Vec<_> = (0..100)
             .map(|i| if (i * 7 + 3) % 3 == 0 { 1.0 } else { 0.0 })
             .collect();
-        let cand_vals: Vec<f64> = (0..100)
+        let cand_vals: Vec<_> = (0..100)
             .map(|i| if (i * 11 + 5) % 3 == 0 { 1.0 } else { 0.0 })
             .collect();
         let ref_ = Array1::from(ref_vals);
@@ -617,8 +511,8 @@ mod tests {
 
     #[test]
     fn both_empty_returns_zero() {
-        let ref_: Array1<f64> = Array1::zeros(10);
-        let cand: Array1<f64> = Array1::zeros(10);
+        let ref_ = Array1::zeros(10);
+        let cand = Array1::zeros(10);
         let score = compute_similarity(&ref_, &cand, 15);
         assert_eq!(score, 0.0);
     }
@@ -743,7 +637,7 @@ Dialogue: 0,0:00:15.00,0:00:17.00,Song-Lyrics,,0,0,0,,La la la
         let tmp = TempDir::new().unwrap();
         let path = write_file(&tmp, "ordered.srt", SRT_CONTENT);
         let (timestamps, _) = extract_timestamps(&path);
-        let starts: Vec<i64> = timestamps.iter().map(|&(s, _)| s).collect();
+        let starts: Vec<_> = timestamps.iter().map(|&(s, _)| s).collect();
         let mut sorted = starts.clone();
         sorted.sort_unstable();
         assert_eq!(starts, sorted);

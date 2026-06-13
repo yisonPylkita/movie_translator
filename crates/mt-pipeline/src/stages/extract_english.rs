@@ -4,10 +4,14 @@ use std::path::PathBuf;
 
 use mt_core::{PendingOcr, PipelineContext};
 use mt_media::{SubtitleExtractor, SubtitleTrack};
-use mt_subtitles::SubtitleProcessor;
+use mt_subtitles::extract_dialogue_lines;
 
 use crate::error::{PipelineError, Result};
 use crate::vision::{VisionOcrProbe, default_vision_ocr_probe};
+use tracing::info;
+
+#[cfg(test)]
+use tempfile::tempdir;
 
 /// Stage role name.
 pub const NAME: &str = "extract";
@@ -72,7 +76,7 @@ pub fn run_with_probe(
         return Ok(ctx);
     }
     if ctx.english_source.is_none() && ctx.pending_ocr.is_none() {
-        tracing::info!(
+        info!(
             "{}: no English subtitle source — will skip",
             ctx.video_path
                 .file_name()
@@ -83,14 +87,14 @@ pub fn run_with_probe(
     }
 
     if let Some(source) = ctx.english_source.clone() {
-        let lines = SubtitleProcessor::extract_dialogue_lines(&source)?;
+        let lines = extract_dialogue_lines(&source)?;
         if lines.is_empty() {
             return Err(PipelineError::Stage(format!(
                 "No dialogue lines found in {}",
                 source.file_name().unwrap_or_default().to_string_lossy()
             )));
         }
-        tracing::info!(
+        info!(
             "English source: {} ({} lines)",
             source.file_name().unwrap_or_default().to_string_lossy(),
             lines.len()
@@ -142,22 +146,24 @@ mod tests {
     use super::*;
     use mt_core::{DialogueLine, FetchedSubtitle, PipelineConfig};
     use std::collections::HashMap;
+    use std::fs;
+    use std::path::Path;
 
-    fn base_ctx(tmp: &std::path::Path) -> PipelineContext {
+    fn base_ctx(tmp: &Path) -> PipelineContext {
         let video = tmp.join("ep01.mkv");
-        std::fs::write(&video, b"fake").unwrap();
+        fs::write(&video, b"fake").unwrap();
         let work = tmp.join("work");
-        std::fs::create_dir_all(&work).unwrap();
+        fs::create_dir_all(&work).unwrap();
         PipelineContext::new(video, work, PipelineConfig::default())
     }
 
-    fn write_srt(path: &std::path::Path) {
-        std::fs::write(path, "1\n00:00:01,000 --> 00:00:02,000\nHello there\n").unwrap();
+    fn write_srt(path: &Path) {
+        fs::write(path, "1\n00:00:01,000 --> 00:00:02,000\nHello there\n").unwrap();
     }
 
     #[test]
     fn prefers_fetched_english_and_extracts_lines() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut ctx = base_ctx(dir.path());
         let eng = dir.path().join("fetched_eng.srt");
         write_srt(&eng);
@@ -185,7 +191,7 @@ mod tests {
 
     #[test]
     fn falls_back_to_reference_path() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut ctx = base_ctx(dir.path());
         let reference = dir.path().join("ref.srt");
         write_srt(&reference);
@@ -198,7 +204,7 @@ mod tests {
 
     #[test]
     fn no_source_no_vision_errors() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let ctx = base_ctx(dir.path());
         let err = run_with_probe(ctx, || false).unwrap_err();
         // Fix #5: this MUST be the dedicated NoEnglishSource variant so the
@@ -211,7 +217,7 @@ mod tests {
 
     #[test]
     fn no_source_with_vision_defers_burned_in() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let ctx = base_ctx(dir.path());
         let result = run_with_probe(ctx, || true).unwrap();
         let pending = result.pending_ocr.expect("pending");
@@ -224,7 +230,7 @@ mod tests {
         // --transcribe says "source English from the audio": don't OCR video
         // frames (clean BDs yield credit-text junk that would preempt ASR),
         // and don't bail NoEnglishSource — the transcribe stage runs later.
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut ctx = base_ctx(dir.path());
         ctx.config.enable_transcription = true;
         let result = run_with_probe(ctx, || true).unwrap();
@@ -235,7 +241,7 @@ mod tests {
 
     #[test]
     fn already_probed_does_not_defer() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut ctx = base_ctx(dir.path());
         ctx.burned_in_probed = true;
         let err = run_with_probe(ctx, || true).unwrap_err();

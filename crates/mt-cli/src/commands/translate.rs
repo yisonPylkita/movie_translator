@@ -9,6 +9,7 @@ use mt_pipeline::{FileStatus, ProgressSender, run_all_with_progress};
 
 use crate::common::{check_dependencies, resolve_models};
 use crate::tui::{python_stderr_capture_path, spawn_tui, stdout_is_tty};
+use tracing::{error, info, warn};
 
 /// Default device per platform — `mps` on macOS, `cpu` elsewhere.
 fn default_device() -> String {
@@ -108,7 +109,7 @@ pub const METRICS_NOT_IMPLEMENTED_WARNING: &str =
 /// Emit the metrics-not-implemented warning to stderr if `metrics` is set.
 fn warn_unimplemented_metrics(metrics: bool) {
     if metrics {
-        eprintln!("{METRICS_NOT_IMPLEMENTED_WARNING}");
+        warn!("{METRICS_NOT_IMPLEMENTED_WARNING}");
     }
 }
 
@@ -187,7 +188,7 @@ pub fn cleanup_in_place_orphans(video_files: &[PathBuf]) -> usize {
             match std::fs::remove_file(&orphan) {
                 Ok(()) => {
                     removed += 1;
-                    tracing::warn!(
+                    warn!(
                         "Removed orphan temp: {}",
                         orphan
                             .file_name()
@@ -195,12 +196,12 @@ pub fn cleanup_in_place_orphans(video_files: &[PathBuf]) -> usize {
                             .unwrap_or_default()
                     );
                 }
-                Err(e) => tracing::warn!("Could not remove orphan {}: {e}", orphan.display()),
+                Err(e) => warn!("Could not remove orphan {}: {e}", orphan.display()),
             }
         }
     }
     if removed > 0 {
-        eprintln!("Cleaned up {removed} orphan temp file(s) from prior run");
+        info!("Cleaned up {removed} orphan temp file(s) from prior run");
     }
     removed
 }
@@ -219,7 +220,7 @@ pub async fn run(args: TranslateArgs) -> anyhow::Result<i32> {
     let (model, extra_models) = resolve_models(args.model.as_deref());
 
     if args.in_place && args.inpaint {
-        eprintln!(
+        error!(
             "--in-place is incompatible with --inpaint (inpainting requires an extra full-size temp copy)."
         );
         return Ok(2);
@@ -227,7 +228,7 @@ pub async fn run(args: TranslateArgs) -> anyhow::Result<i32> {
 
     let input_path = PathBuf::from(&args.input);
     if !input_path.exists() {
-        eprintln!("Not found: {}", input_path.display());
+        error!("Not found: {}", input_path.display());
         return Ok(1);
     }
 
@@ -237,11 +238,11 @@ pub async fn run(args: TranslateArgs) -> anyhow::Result<i32> {
 
     let video_files = find_videos(&input_path);
     if video_files.is_empty() {
-        eprintln!("No video files found in {}", input_path.display());
+        error!("No video files found in {}", input_path.display());
         return Ok(1);
     }
 
-    let root_dir: PathBuf = if input_path.is_dir() {
+    let root_dir = if input_path.is_dir() {
         input_path.clone()
     } else {
         input_path
@@ -252,11 +253,11 @@ pub async fn run(args: TranslateArgs) -> anyhow::Result<i32> {
 
     if args.in_place {
         cleanup_in_place_orphans(&video_files);
-        eprintln!("In-place mode: peak disk ~2x per worker; originals replaced atomically.");
+        info!("In-place mode: peak disk ~2x per worker; originals replaced atomically.");
     }
 
     if args.dry_run {
-        eprintln!("Dry run mode - originals will not be modified");
+        info!("Dry run mode - originals will not be modified");
     }
 
     let config = args.to_config(model, extra_models);
@@ -305,7 +306,7 @@ pub async fn run(args: TranslateArgs) -> anyhow::Result<i32> {
     }
     // Best-effort hint about the python stderr capture file.
     if python_log_path.exists() {
-        eprintln!("python stderr captured at: {}", python_log_path.display());
+        info!("python stderr captured at: {}", python_log_path.display());
     }
 
     let any_failed = results.iter().any(|(_, s)| *s == FileStatus::Failed);

@@ -42,6 +42,7 @@ pub struct MediaIdentity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::{from_str, to_string};
 
     fn minimal_identity() -> MediaIdentity {
         MediaIdentity {
@@ -70,8 +71,8 @@ mod tests {
             release_group: Some("HorribleSubs".to_string()),
             ..minimal_identity()
         };
-        let json = serde_json::to_string(&id).expect("serialize");
-        let back: MediaIdentity = serde_json::from_str(&json).expect("deserialize");
+        let json = to_string(&id).expect("serialize");
+        let back = from_str::<MediaIdentity>(&json).expect("deserialize");
         assert_eq!(id, back);
     }
 
@@ -90,7 +91,7 @@ mod tests {
             "file_size": 2000000000,
             "raw_filename": "Spirited.Away.mkv"
         }"#;
-        let id: MediaIdentity = serde_json::from_str(json).expect("deserialize");
+        let id = from_str::<MediaIdentity>(json).expect("deserialize");
         assert!(id.imdb_id.is_none());
         assert!(id.tmdb_id.is_none());
         assert!(!id.is_anime);

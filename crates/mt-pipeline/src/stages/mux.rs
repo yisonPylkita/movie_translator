@@ -1,5 +1,6 @@
 //! Final video muxing stage — combines video with subtitle tracks.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use mt_core::{PipelineContext, SubtitleFile};
@@ -7,6 +8,7 @@ use mt_media::VideoOperations;
 
 use crate::error::{PipelineError, Result};
 use crate::gpu::GpuExecutor;
+use tracing::{error, info};
 
 /// Stage role name.
 pub const NAME: &str = "mux";
@@ -111,7 +113,7 @@ pub fn run_with_ops(
         .unwrap_or_default();
 
     if has_ocr && ctx.config.enable_inpaint && ctx.inpainted_video.is_none() {
-        tracing::info!("Removing burned-in subtitles via inpainting...");
+        info!("Removing burned-in subtitles via inpainting...");
         let inpainted = ctx.work_dir.join(format!("{stem}_inpainted{ext}"));
         let ocr_results = ctx.ocr_results.clone().unwrap_or_default();
         executor.inpaint(
@@ -191,7 +193,7 @@ pub fn run_with_ops(
                 if let Some(inpainted) = &ctx.inpainted_video
                     && inpainted.exists()
                 {
-                    let _ = std::fs::remove_file(inpainted);
+                    let _ = fs::remove_file(inpainted);
                 }
             } else {
                 replace_original(&ctx.video_path, &temp_video, ops)?;
@@ -201,7 +203,7 @@ pub fn run_with_ops(
     })();
 
     if result.is_err() && temp_video.exists() {
-        let _ = std::fs::remove_file(&temp_video);
+        let _ = fs::remove_file(&temp_video);
     }
     result?;
 
@@ -231,11 +233,11 @@ fn replace_original(video_path: &Path, temp_video: &Path, ops: &dyn MuxOps) -> R
         s.push(".backup");
         PathBuf::from(s)
     };
-    std::fs::copy(video_path, &backup_path)?;
+    fs::copy(video_path, &backup_path)?;
 
     // (2) Swap in the verified output, then re-verify in place.
     let outcome = (|| -> Result<()> {
-        std::fs::rename(temp_video, video_path)?;
+        fs::rename(temp_video, video_path)?;
         ops.verify_result(video_path, None)?;
         Ok(())
     })();
@@ -243,23 +245,23 @@ fn replace_original(video_path: &Path, temp_video: &Path, ops: &dyn MuxOps) -> R
     match outcome {
         Ok(()) => {
             // Success: drop the backup (never orphan it).
-            std::fs::remove_file(&backup_path)?;
+            fs::remove_file(&backup_path)?;
             Ok(())
         }
         Err(e) => {
             // (3) Restore the original from backup, then clean the backup up so
             // it's never left orphaned. Restore is best-effort but reported.
             if video_path.exists() {
-                let _ = std::fs::remove_file(video_path);
+                let _ = fs::remove_file(video_path);
             }
             if backup_path.exists()
-                && let Err(rename_err) = std::fs::rename(&backup_path, video_path)
+                && let Err(rename_err) = fs::rename(&backup_path, video_path)
             {
                 // The muxed file was already removed but we couldn't move the
                 // backup back into place. No data is lost — the original is
                 // preserved at the `.backup` path — but it isn't where the
                 // user expects it. Tell them so manual recovery is possible.
-                tracing::error!(
+                error!(
                     "failed to restore original from backup ({rename_err}); \
                          your original is preserved at {} — rename it back to {} \
                          to recover",
@@ -283,7 +285,7 @@ fn replace_original(video_path: &Path, temp_video: &Path, ops: &dyn MuxOps) -> R
 /// and the temp untouched (the caller unlinks it).
 fn replace_in_place(video_path: &Path, temp_video: &Path, ops: &dyn MuxOps) -> Result<()> {
     ops.verify_result(temp_video, None)?;
-    std::fs::rename(temp_video, video_path)?;
+    fs::rename(temp_video, video_path)?;
     Ok(())
 }
 
@@ -295,6 +297,8 @@ mod tests {
         BurnedInResult, DialogueLine, FontInfo, OCRResult, OriginalTrack, PipelineConfig,
     };
     use std::cell::RefCell;
+    use std::fs;
+    use tempfile::tempdir;
 
     // ── Fake GpuExecutor recording inpaint calls ──────────────────────────
     #[derive(Default)]
@@ -324,7 +328,7 @@ mod tests {
         ) -> Result<PathBuf> {
             self.inpaint_calls.borrow_mut().push(video.to_path_buf());
             // Simulate inpaint output creation.
-            std::fs::write(out, b"inpainted").unwrap();
+            fs::write(out, b"inpainted").unwrap();
             Ok(out.to_path_buf())
         }
         fn hardsub_ocr_clean(&self, _v: &Path, _o: &Path, _l: &str) -> Result<Option<PathBuf>> {
@@ -380,7 +384,7 @@ mod tests {
             *self.observed_orig_index.borrow_mut() = original_sub_index;
             *self.observed_orig_title.borrow_mut() = original_sub_title.map(|s| s.to_string());
             *self.observed_fonts.borrow_mut() = font_attachments.map(|f| f.to_vec());
-            std::fs::write(output, b"muxed content").unwrap();
+            fs::write(output, b"muxed content").unwrap();
             Ok(())
         }
         fn verify_result(&self, _o: &Path, _e: Option<&[SubtitleFile]>) -> Result<()> {
@@ -403,11 +407,11 @@ mod tests {
 
     fn make_ctx(tmp: &Path, dry_run: bool) -> PipelineContext {
         let video = tmp.join("ep01.mkv");
-        std::fs::write(&video, b"fake video").unwrap();
+        fs::write(&video, b"fake video").unwrap();
         let work = tmp.join("work");
-        std::fs::create_dir_all(&work).unwrap();
+        fs::create_dir_all(&work).unwrap();
         let pol = tmp.join("pol.ass");
-        std::fs::write(&pol, b"").unwrap();
+        fs::write(&pol, b"").unwrap();
         let config = PipelineConfig {
             dry_run,
             ..Default::default()
@@ -447,7 +451,7 @@ mod tests {
 
     #[test]
     fn passes_original_track_to_mux() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let ctx = make_ctx(dir.path(), false);
         let gpu = RecordGpu::default();
         let ops = FakeOps::new();
@@ -461,7 +465,7 @@ mod tests {
 
     #[test]
     fn no_original_track_passes_none() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut ctx = make_ctx(dir.path(), false);
         ctx.original_english_track = None;
         let gpu = RecordGpu::default();
@@ -472,18 +476,18 @@ mod tests {
 
     #[test]
     fn dry_run_does_not_replace_original() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let ctx = make_ctx(dir.path(), true);
         let video = ctx.video_path.clone();
         let gpu = RecordGpu::default();
         let ops = FakeOps::new();
         run_with_ops(ctx, &gpu, &ops).unwrap();
-        assert_eq!(std::fs::read_to_string(&video).unwrap(), "fake video");
+        assert_eq!(fs::read_to_string(&video).unwrap(), "fake video");
     }
 
     #[test]
     fn verify_result_failure_raises() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let ctx = make_ctx(dir.path(), false);
         let gpu = RecordGpu::default();
         let mut ops = FakeOps::new();
@@ -494,12 +498,12 @@ mod tests {
 
     #[test]
     fn font_attachments_passed_to_mux() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut ctx = make_ctx(dir.path(), false);
         let fa = dir.path().join("FontA.ttf");
         let fb = dir.path().join("FontB.otf");
-        std::fs::write(&fa, b"").unwrap();
-        std::fs::write(&fb, b"").unwrap();
+        fs::write(&fa, b"").unwrap();
+        fs::write(&fb, b"").unwrap();
         ctx.font_info = Some(FontInfo {
             supports_polish: true,
             font_attachments: vec![fa.clone(), fb.clone()],
@@ -513,7 +517,7 @@ mod tests {
 
     #[test]
     fn empty_font_attachments_passed_as_none() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let ctx = make_ctx(dir.path(), false);
         let gpu = RecordGpu::default();
         let ops = FakeOps::new();
@@ -525,7 +529,7 @@ mod tests {
 
     #[test]
     fn inpainting_called_when_ocr_results_and_inpaint_enabled() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut ctx = make_ctx(dir.path(), false);
         ctx.config.enable_inpaint = true;
         ctx.ocr_results = Some(vec![OCRResult {
@@ -543,7 +547,7 @@ mod tests {
 
     #[test]
     fn inpainting_skipped_when_already_inpainted() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut ctx = make_ctx(dir.path(), false);
         ctx.config.enable_inpaint = true;
         ctx.ocr_results = Some(vec![OCRResult {
@@ -552,7 +556,7 @@ mod tests {
             boxes: vec![],
         }]);
         let pre = dir.path().join("already_inpainted.mkv");
-        std::fs::write(&pre, b"inpainted video").unwrap();
+        fs::write(&pre, b"inpainted video").unwrap();
         ctx.inpainted_video = Some(pre.clone());
         let gpu = RecordGpu::default();
         let ops = FakeOps::new();
@@ -563,7 +567,7 @@ mod tests {
 
     #[test]
     fn inpainting_not_called_when_disabled() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut ctx = make_ctx(dir.path(), false);
         ctx.config.enable_inpaint = false;
         ctx.ocr_results = Some(vec![OCRResult {
@@ -587,7 +591,7 @@ mod tests {
 
     #[test]
     fn in_place_writes_temp_beside_original_then_replaces() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let ctx = make_in_place_ctx(dir.path());
         let video = ctx.video_path.clone();
         let expected_temp = in_place_temp_path(&video);
@@ -598,13 +602,13 @@ mod tests {
             ops.observed_outputs.borrow().as_slice(),
             std::slice::from_ref(&expected_temp)
         );
-        assert_eq!(std::fs::read_to_string(&video).unwrap(), "muxed content");
+        assert_eq!(fs::read_to_string(&video).unwrap(), "muxed content");
         assert!(!expected_temp.exists());
     }
 
     #[test]
     fn in_place_makes_no_backup() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let ctx = make_in_place_ctx(dir.path());
         let video = ctx.video_path.clone();
         let gpu = RecordGpu::default();
@@ -617,7 +621,7 @@ mod tests {
 
     #[test]
     fn in_place_failure_unlinks_temp() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let ctx = make_in_place_ctx(dir.path());
         let video = ctx.video_path.clone();
         let expected_temp = in_place_temp_path(&video);
@@ -626,13 +630,13 @@ mod tests {
         ops.verify_err = Some("bad track count".into());
         let err = run_with_ops(ctx, &gpu, &ops).unwrap_err();
         assert!(err.to_string().contains("bad track count"));
-        assert_eq!(std::fs::read_to_string(&video).unwrap(), "fake video");
+        assert_eq!(fs::read_to_string(&video).unwrap(), "fake video");
         assert!(!expected_temp.exists());
     }
 
     #[test]
     fn in_place_dry_run_leaves_temp() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut ctx = make_in_place_ctx(dir.path());
         ctx.config.dry_run = true;
         let video = ctx.video_path.clone();
@@ -640,7 +644,7 @@ mod tests {
         let gpu = RecordGpu::default();
         let ops = FakeOps::new();
         run_with_ops(ctx, &gpu, &ops).unwrap();
-        assert_eq!(std::fs::read_to_string(&video).unwrap(), "fake video");
+        assert_eq!(fs::read_to_string(&video).unwrap(), "fake video");
         assert!(expected_temp.exists());
     }
 
@@ -648,14 +652,14 @@ mod tests {
 
     #[test]
     fn replace_original_creates_backup_and_replaces() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let video = dir.path().join("ep01.mkv");
-        std::fs::write(&video, b"original content").unwrap();
+        fs::write(&video, b"original content").unwrap();
         let temp = dir.path().join("ep01_temp.mkv");
-        std::fs::write(&temp, b"muxed content").unwrap();
+        fs::write(&temp, b"muxed content").unwrap();
         let ops = FakeOps::new();
         replace_original(&video, &temp, &ops).unwrap();
-        assert_eq!(std::fs::read_to_string(&video).unwrap(), "muxed content");
+        assert_eq!(fs::read_to_string(&video).unwrap(), "muxed content");
         let mut backup = video.clone().into_os_string();
         backup.push(".backup");
         assert!(!PathBuf::from(backup).exists());
@@ -672,18 +676,18 @@ mod tests {
     /// untouched and no backup is created (nothing to orphan).
     #[test]
     fn replace_original_temp_verify_failure_leaves_original_intact() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let video = dir.path().join("ep01.mkv");
-        std::fs::write(&video, b"original content").unwrap();
+        fs::write(&video, b"original content").unwrap();
         let temp = dir.path().join("ep01_temp.mkv");
-        std::fs::write(&temp, b"muxed content").unwrap();
+        fs::write(&temp, b"muxed content").unwrap();
         let mut ops = FakeOps::new();
         ops.verify_err = Some("temp verification failed".into());
         let err = replace_original(&video, &temp, &ops).unwrap_err();
         assert!(err.to_string().contains("temp verification failed"));
         // Original unchanged; no backup orphaned; temp still present (the
         // run_with_ops caller unlinks it, not replace_original).
-        assert_eq!(std::fs::read_to_string(&video).unwrap(), "original content");
+        assert_eq!(fs::read_to_string(&video).unwrap(), "original content");
         assert!(!backup_of(&video).exists(), "no backup should be orphaned");
     }
 
@@ -693,11 +697,11 @@ mod tests {
     /// with unverified output.
     #[test]
     fn replace_original_restores_on_post_rename_verify_failure() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let video = dir.path().join("ep01.mkv");
-        std::fs::write(&video, b"original content").unwrap();
+        fs::write(&video, b"original content").unwrap();
         let temp = dir.path().join("ep01_temp.mkv");
-        std::fs::write(&temp, b"muxed content").unwrap();
+        fs::write(&temp, b"muxed content").unwrap();
         let mut ops = FakeOps::new();
         // First verify (the temp) passes; second verify (in place) fails.
         ops.verify_fail_after = Some((1, "in-place verification failed".into()));
@@ -705,7 +709,7 @@ mod tests {
         assert!(err.to_string().contains("in-place verification failed"));
         // Original restored from backup; backup removed (not orphaned).
         assert_eq!(
-            std::fs::read_to_string(&video).unwrap(),
+            fs::read_to_string(&video).unwrap(),
             "original content",
             "original must be restored, never left as unverified output"
         );
@@ -719,7 +723,7 @@ mod tests {
     #[test]
     #[ignore = "requires ffmpeg and real media"]
     fn run_via_ffmpeg() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let ctx = make_ctx(dir.path(), true);
         let executor = DirectGpuExecutor::new();
         let _ = run(ctx, &executor);

@@ -140,7 +140,7 @@ impl SubtitleExtractor {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let error_lines: Vec<&str> = stderr
+            let error_lines: Vec<_> = stderr
                 .lines()
                 .filter(|l| {
                     let ll = l.to_ascii_lowercase();

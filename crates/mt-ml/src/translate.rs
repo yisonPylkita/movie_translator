@@ -55,6 +55,7 @@ pub fn translate(req: &TranslateRequest) -> Result<Vec<DialogueLine>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::to_value;
 
     #[test]
     fn translate_request_serialize_shape() {
@@ -69,7 +70,7 @@ mod tests {
             model: "apple".to_string(),
             proper_nouns: Some(vec!["Luffy".to_string()]),
         };
-        let json = serde_json::to_value(&req).expect("serialize");
+        let json = to_value(&req).expect("serialize");
         assert_eq!(json["device"], "cpu");
         assert_eq!(json["batch_size"], 8);
         assert_eq!(json["model"], "apple");
@@ -86,7 +87,7 @@ mod tests {
             model: "apple".to_string(),
             proper_nouns: None,
         };
-        let json = serde_json::to_value(&req).expect("serialize");
+        let json = to_value(&req).expect("serialize");
         assert!(json.get("proper_nouns").is_none());
     }
 

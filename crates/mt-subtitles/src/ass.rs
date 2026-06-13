@@ -1,5 +1,9 @@
 //! ASS (Advanced SubStation Alpha) parser and serializer.
 
+use std::collections::HashMap;
+
+use tracing::warn;
+
 use crate::error::ParseError;
 use crate::model::{AssTime, Event, EventKind, RawSection, Style, Subtitles};
 
@@ -196,7 +200,7 @@ fn parse_event(line: &str, field_order: &[String], line_no: usize) -> Result<Eve
 
     let rest = rest.trim_start_matches(' ');
     let n = field_order.len();
-    let fields: Vec<&str> = rest.splitn(n, ',').collect();
+    let fields = rest.splitn(n, ',').collect::<Vec<_>>();
     if fields.len() < n {
         return Err(ParseError::malformed_at(
             format!("expected {n} fields, got {}", fields.len()),
@@ -205,7 +209,7 @@ fn parse_event(line: &str, field_order: &[String], line_no: usize) -> Result<Eve
     }
 
     // Build map from field name to raw value
-    let field_map: std::collections::HashMap<&str, &str> = field_order
+    let field_map: HashMap<&str, &str> = field_order
         .iter()
         .map(|s| s.as_str())
         .zip(fields.iter().copied())
@@ -342,7 +346,7 @@ pub fn to_ass_string(subs: &Subtitles) -> String {
                 other => {
                     // Never corrupt subtitle output with a sentinel string for
                     // an unrecognised event-format field — warn and emit empty.
-                    tracing::warn!(
+                    warn!(
                         field = other,
                         "unknown event-format field; emitting empty value"
                     );

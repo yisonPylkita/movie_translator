@@ -100,7 +100,7 @@ pub fn hardsub_download(
     let written = if best {
         // Best mode uses %(ext)s, find the real file
         let stem = out_path.with_extension("");
-        let candidates: Vec<PathBuf> = std::fs::read_dir(stem.parent().unwrap_or(Path::new(".")))
+        let candidates: Vec<_> = std::fs::read_dir(stem.parent().unwrap_or(Path::new(".")))
             .map_err(MtError::Io)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
@@ -119,17 +119,16 @@ pub fn hardsub_download(
             out_path.to_path_buf()
         } else {
             // yt-dlp may have added an extension
-            let candidates: Vec<PathBuf> =
-                std::fs::read_dir(out_path.parent().unwrap_or(Path::new(".")))
-                    .map_err(MtError::Io)?
-                    .filter_map(|e| e.ok())
-                    .map(|e| e.path())
-                    .filter(|p| {
-                        let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                        let expected = out_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                        stem == expected && p.is_file() && p.metadata().is_ok_and(|m| m.len() > 0)
-                    })
-                    .collect();
+            let candidates: Vec<_> = std::fs::read_dir(out_path.parent().unwrap_or(Path::new(".")))
+                .map_err(MtError::Io)?
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| {
+                    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    let expected = out_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    stem == expected && p.is_file() && p.metadata().is_ok_and(|m| m.len() > 0)
+                })
+                .collect();
             candidates
                 .into_iter()
                 .max_by_key(|p| p.metadata().map(|m| m.modified().ok()).ok().flatten())
@@ -165,7 +164,7 @@ pub fn hardsub_ocr_clean(video: &Path, out_dir: &Path, language: &str) -> Result
             return Ok(None);
         }
 
-        let frame_texts: Vec<(i64, String)> = result
+        let frame_texts: Vec<_> = result
             .ocr_results
             .iter()
             .map(|r| (r.timestamp_ms, r.text.clone()))
@@ -200,7 +199,7 @@ pub fn hardsub_ocr_clean(video: &Path, out_dir: &Path, language: &str) -> Result
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (language, video, out_dir);
-        tracing::warn!("hardsub_ocr_clean requires macOS (Vision framework)");
+        warn!("hardsub_ocr_clean requires macOS (Vision framework)");
         Ok(None)
     }
 }
@@ -267,7 +266,7 @@ fn best_variant(variants: &[String]) -> String {
         *counts.entry(v.as_str()).or_insert(0) += 1;
     }
     let top_count = counts.values().max().copied().unwrap_or(0);
-    let tied: Vec<&String> = variants
+    let tied: Vec<_> = variants
         .iter()
         .filter(|v| counts.get(v.as_str()).copied().unwrap_or(0) == top_count)
         .collect();

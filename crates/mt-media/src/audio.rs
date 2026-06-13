@@ -1,7 +1,10 @@
 //! Audio track extraction for ASR (16 kHz mono s16le WAV).
 
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use tracing::info;
 
 use mt_core::{MtError, Result};
 
@@ -27,7 +30,7 @@ pub fn find_audio_stream(video: &Path, language: &str) -> Result<Option<i64>> {
         code: None,
         stderr: e.to_string(),
     })?;
-    let audio_streams: Vec<&crate::ffmpeg::FfprobeStream> = info
+    let audio_streams: Vec<_> = info
         .streams
         .iter()
         .filter(|s| s.codec_type.as_deref() == Some("audio"))
@@ -51,7 +54,7 @@ pub fn find_audio_stream(video: &Path, language: &str) -> Result<Option<i64>> {
 /// Extract `stream_index` to a 16 kHz mono pcm_s16le WAV at `out_wav`.
 pub fn extract_wav(video: &Path, stream_index: i64, out_wav: &Path) -> Result<PathBuf> {
     if let Some(parent) = out_wav.parent() {
-        std::fs::create_dir_all(parent).map_err(MtError::Io)?;
+        fs::create_dir_all(parent).map_err(MtError::Io)?;
     }
 
     let ffmpeg = get_ffmpeg().map_err(|e| MtError::Subprocess {
@@ -84,7 +87,7 @@ pub fn extract_wav(video: &Path, stream_index: i64, out_wav: &Path) -> Result<Pa
         });
     }
 
-    tracing::info!(
+    info!(
         "Extracted audio stream {} -> {}",
         stream_index,
         out_wav.display()
@@ -94,7 +97,7 @@ pub fn extract_wav(video: &Path, stream_index: i64, out_wav: &Path) -> Result<Pa
 
 /// Get WAV duration in milliseconds.
 pub fn wav_duration_ms(wav: &Path) -> Result<i64> {
-    let data = std::fs::read(wav).map_err(MtError::Io)?;
+    let data = fs::read(wav).map_err(MtError::Io)?;
     if data.len() < 44 {
         return Err(MtError::Parse("invalid WAV file".into()));
     }

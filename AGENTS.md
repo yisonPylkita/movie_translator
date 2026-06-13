@@ -206,6 +206,60 @@ Every entry below cost real debugging time. Read once, save hours later.
 - **`.translate_temp/` and `test_workdir/` are scratch** (gitignored).
   `--keep-artifacts` populates the former for debugging.
 
+### Import hygiene rules (MUST follow every edit)
+
+Every function, macro, or type used with a qualified path (`std::process::exit`,
+`tracing::info!`, `serde_json::from_str`, `tempfile::tempdir`, `tokio::spawn`, etc.)
+must be imported at the top of the file with `use` and called in short form.
+
+**Correct:**
+```rust
+use std::process::exit;
+use tracing::{info, warn, error};
+use serde_json::{from_str, Value};
+
+info!("translation complete");
+exit(0);
+let val: Value = from_str(json)?;
+```
+
+**Incorrect:**
+```rust
+tracing::info!("translation complete");
+std::process::exit(0);
+let val: serde_json::Value = serde_json::from_str(json)?;
+```
+
+**Exceptions** (keep fully-qualified):
+- `#[from] std::io::Error` / `#[source] std::io::Error` in derive macros
+- `pub type Result<T> = std::result::Result<T, MtError>;` (type alias)
+- Doc-comment backtick references like ``[`tokio::sync::Semaphore`]``
+- `clap::Parser` / `thiserror::Error` / `serde::Deserialize` in derives
+  (these are imported and used in derives, which is fine)
+
+**After adding ANY import, ALWAYS run `cargo fmt`.**
+rustfmt sorts imports into groups (std → external → crate) and
+alphabetically within groups. Skipping this step will produce
+format-check failures at the gate.
+
+### No unnecessary type annotations
+
+Don't write `let x: Vec<String> = Vec::new()` — the RHS makes the type
+obvious. Remove the annotation:
+
+```rust
+// Bad
+let mut rebuilt: Vec<String> = Vec::with_capacity(argv.len());
+
+// Good
+let mut rebuilt = Vec::with_capacity(argv.len());
+```
+
+**Exceptions** (annotation needed):
+- `let x: HashSet<_> = expr.collect();` — collect() needs a collection hint
+- `let x: SomeType = serde_json::from_str(json)?;` — serde needs the target type
+  (or use turbofish: `from_str::<SomeType>(json)?`)
+
 ### Agentic workflow rules
 
 - **Parallelize by DISJOINT file lanes.** Two non-overlapping lanes:
@@ -217,6 +271,9 @@ Every entry below cost real debugging time. Read once, save hours later.
   are destructive/outward — confirm, don't parallelize.
 - **Verify via the gate chain, cite evidence.** Run `just check` / `just test`
   and quote the output; never assert "done" without having run it.
+- **After any batch of edits that touches imports, run `cargo fmt` before
+  claiming done.** This fixes import ordering automatically and avoids
+  the most common gate failure.
 - **No code index — plain grep/ripgrep is the default.** For structural Rust
   edits across crates, prefer compiler-driven refactors (rename via the type
   system, then `just check`) over text munging.

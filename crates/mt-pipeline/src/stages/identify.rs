@@ -4,13 +4,14 @@ use mt_core::PipelineContext;
 use mt_discovery::identify_media;
 
 use crate::error::Result;
+use tracing::info;
 
 /// Stage role name.
 pub const NAME: &str = "identify";
 
 /// Identify the media and store it on the context.
 pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
-    tracing::info!(
+    info!(
         "Identifying: {}",
         ctx.video_path
             .file_name()

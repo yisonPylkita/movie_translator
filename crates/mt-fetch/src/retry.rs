@@ -2,6 +2,9 @@
 //!
 //! Inject a sleep function for deterministic testing.
 
+use std::io::{Error, ErrorKind};
+use tracing::debug;
+
 /// Error kinds that are worth retrying (transient network issues): network
 /// errors and the `io::Error` kinds corresponding to connection failures.
 fn is_retryable(e: &FetchError) -> bool {
@@ -9,13 +12,13 @@ fn is_retryable(e: &FetchError) -> bool {
         FetchError::Network(_) => true,
         FetchError::Io(io_err) => matches!(
             io_err.kind(),
-            std::io::ErrorKind::ConnectionRefused
-                | std::io::ErrorKind::ConnectionReset
-                | std::io::ErrorKind::ConnectionAborted
-                | std::io::ErrorKind::TimedOut
-                | std::io::ErrorKind::NotConnected
-                | std::io::ErrorKind::BrokenPipe
-                | std::io::ErrorKind::UnexpectedEof
+            ErrorKind::ConnectionRefused
+                | ErrorKind::ConnectionReset
+                | ErrorKind::ConnectionAborted
+                | ErrorKind::TimedOut
+                | ErrorKind::NotConnected
+                | ErrorKind::BrokenPipe
+                | ErrorKind::UnexpectedEof
         ),
         _ => false,
     }
@@ -27,7 +30,7 @@ pub enum FetchError {
     #[error("network error: {0}")]
     Network(String),
     #[error("I/O error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(#[from] Error),
     #[error("HTTP error {status}: {body}")]
     Http { status: u16, body: String },
     #[error("parse error: {0}")]
@@ -63,14 +66,14 @@ where
             Err(e) if is_retryable(&e) => {
                 last_err = Some(e);
                 if attempt < retries {
-                    tracing::debug!(
+                    debug!(
                         "{label} attempt {} failed, retrying in {}s",
                         attempt + 1,
                         delay_secs
                     );
                     sleep_fn(delay_secs);
                 } else {
-                    tracing::debug!("{label} all {total} attempts failed");
+                    debug!("{label} all {total} attempts failed");
                 }
             }
             Err(e) => return Err(e),
@@ -84,6 +87,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+    // Error is imported at module level
 
     fn no_sleep(_: f64) {}
 
@@ -95,7 +100,7 @@ mod tests {
 
     #[test]
     fn retries_on_network_error() {
-        let calls = std::cell::Cell::new(0usize);
+        let calls = Cell::new(0usize);
         let result = with_retry(
             || {
                 let n = calls.get();
@@ -117,16 +122,13 @@ mod tests {
 
     #[test]
     fn retries_on_timed_out_io_error() {
-        let calls = std::cell::Cell::new(0usize);
+        let calls = Cell::new(0usize);
         let result = with_retry(
             || {
                 let n = calls.get();
                 calls.set(n + 1);
                 if n == 0 {
-                    Err(FetchError::Io(std::io::Error::new(
-                        std::io::ErrorKind::TimedOut,
-                        "timed out",
-                    )))
+                    Err(FetchError::Io(Error::new(ErrorKind::TimedOut, "timed out")))
                 } else {
                     Ok("ok")
                 }
@@ -153,7 +155,7 @@ mod tests {
 
     #[test]
     fn non_retryable_error_not_retried() {
-        let calls = std::cell::Cell::new(0usize);
+        let calls = Cell::new(0usize);
         let result = with_retry(
             || {
                 calls.set(calls.get() + 1);
@@ -172,8 +174,8 @@ mod tests {
 
     #[test]
     fn sleep_fn_called_between_retries() {
-        let sleep_count = std::cell::Cell::new(0usize);
-        let calls = std::cell::Cell::new(0usize);
+        let sleep_count = Cell::new(0usize);
+        let calls = Cell::new(0usize);
         let _ = with_retry(
             || {
                 calls.set(calls.get() + 1);
@@ -196,7 +198,7 @@ mod tests {
 
     #[test]
     fn http_error_not_retried() {
-        let calls = std::cell::Cell::new(0usize);
+        let calls = Cell::new(0usize);
         let _ = with_retry(
             || {
                 calls.set(calls.get() + 1);

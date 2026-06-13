@@ -6,14 +6,17 @@
 //! Uses a multi-threaded tokio runtime: `run_all` overlaps file IO/CPU work
 //! across worker threads while serialising GPU work on a single worker.
 
-use anyhow::Result;
+use std::env;
+use std::process::exit;
+
 use clap::Parser;
 
 use mt_cli::commands::{extract, translate};
+use tracing::error;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
-    let argv: Vec<String> = std::env::args().collect();
+    let argv = env::args().collect::<Vec<_>>();
 
     // Subcommand routing: dispatch on the first positional.
     // Each `run` returns `anyhow::Result<i32>`: `Ok(code)` is a deliberate exit
@@ -21,7 +24,7 @@ async fn main() {
     // semantics), while `Err` is a propagated failure whose full `.context()`
     // chain — including the structured thiserror causes bubbled up from the
     // library crates — is printed to stderr before exiting 1.
-    let result: Result<i32> = match argv.get(1).map(String::as_str) {
+    let result = match argv.get(1).map(String::as_str) {
         Some("extract") => {
             // clap parses argv[0] (prog) + the args after `extract`.
             let args = parse_or_exit::<extract::ExtractArgs>(&argv, 2, "extract");
@@ -38,12 +41,12 @@ async fn main() {
         Ok(code) => code,
         Err(e) => {
             // `{:#}` prints the whole anyhow context chain on one line.
-            eprintln!("Error: {e:#}");
+            error!("Error: {e:#}");
             1
         }
     };
 
-    std::process::exit(code);
+    exit(code);
 }
 
 /// Parse a subcommand's args from `argv` starting after `skip` tokens.
@@ -52,7 +55,7 @@ async fn main() {
 /// stream and we exit with its suggested code.
 fn parse_or_exit<T: Parser>(argv: &[String], skip: usize, prog: &str) -> T {
     // Rebuild an argv where index 0 is the program name clap expects.
-    let mut rebuilt: Vec<String> = Vec::with_capacity(argv.len());
+    let mut rebuilt = Vec::with_capacity(argv.len());
     rebuilt.push(prog.to_string());
     rebuilt.extend(argv.iter().skip(skip).cloned());
 

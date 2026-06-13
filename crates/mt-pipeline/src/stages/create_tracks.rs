@@ -1,11 +1,18 @@
 //! Create subtitle track files and build the track list.
+use std::fs;
 
 use std::path::{Path, PathBuf};
 
 use mt_core::{MediaIdentity, PipelineContext, SubtitleFile};
-use mt_subtitles::SubtitleProcessor;
+use mt_subtitles::{create_polish_subtitles, override_font_name};
+
+use serde_json::from_str;
 
 use crate::error::Result;
+use tracing::{info, warn};
+
+#[cfg(test)]
+use tempfile::tempdir;
 
 /// Stage role name.
 pub const NAME: &str = "create_tracks";
@@ -70,7 +77,7 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
 
     if !font_info.supports_polish {
         if is_mkv && !font_info.font_attachments.is_empty() {
-            tracing::info!(
+            info!(
                 "Will embed font \"{}\"",
                 font_info.font_attachments[0]
                     .file_name()
@@ -78,7 +85,7 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
                     .to_string_lossy()
             );
         } else if is_mkv {
-            tracing::warn!("No system font with Polish support, replacing characters");
+            warn!("No system font with Polish support, replacing characters");
             replace_chars = true;
         } else {
             replace_chars = true;
@@ -98,7 +105,7 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
     let primary_ass = ctx
         .work_dir
         .join(format!("{stem}_polish_{primary_model}.ass"));
-    SubtitleProcessor::create_polish_subtitles(
+    create_polish_subtitles(
         &english_source,
         &translated_lines,
         &primary_ass,
@@ -113,12 +120,7 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
             let extra_ass = ctx
                 .work_dir
                 .join(format!("{stem}_polish_{extra_model}.ass"));
-            SubtitleProcessor::create_polish_subtitles(
-                &english_source,
-                extra_lines,
-                &extra_ass,
-                replace_chars,
-            )?;
+            create_polish_subtitles(&english_source, extra_lines, &extra_ass, replace_chars)?;
             polish_files.push((extra_model.clone(), extra_ass));
         }
     }
@@ -131,18 +133,13 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
         let extra_ass = ctx
             .work_dir
             .join(format!("{stem}_polish_{extra_model}.ass"));
-        SubtitleProcessor::create_polish_subtitles(
-            &english_source,
-            extra_lines,
-            &extra_ass,
-            replace_chars,
-        )?;
+        create_polish_subtitles(&english_source, extra_lines, &extra_ass, replace_chars)?;
         polish_files.push((extra_model.clone(), extra_ass));
     }
 
     if let Some(fallback) = &font_info.fallback_font_family {
         for (_, ass_path) in &polish_files {
-            SubtitleProcessor::override_font_name(ass_path, fallback)?;
+            override_font_name(ass_path, fallback)?;
         }
     }
 
@@ -164,7 +161,7 @@ pub fn run(mut ctx: PipelineContext) -> Result<PipelineContext> {
             is_default: i == 0,
         });
         if let Some(fallback) = &font_info.fallback_font_family {
-            SubtitleProcessor::override_font_name(&fetched_pol.path, fallback)?;
+            override_font_name(&fetched_pol.path, fallback)?;
         }
     }
 
@@ -242,13 +239,13 @@ struct ManifestSub {
 pub fn load_external_subs(external_dir: &Path, identity: &MediaIdentity) -> Vec<SubtitleFile> {
     let manifest_path = external_dir.join("manifest.json");
     if !manifest_path.exists() {
-        tracing::warn!("No manifest.json found in {}", external_dir.display());
+        warn!("No manifest.json found in {}", external_dir.display());
         return Vec::new();
     }
 
-    let manifest: Manifest = match std::fs::read_to_string(&manifest_path)
+    let manifest: Manifest = match fs::read_to_string(&manifest_path)
         .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
+        .and_then(|s| from_str(&s).ok())
     {
         Some(m) => m,
         None => return Vec::new(),
@@ -288,7 +285,7 @@ pub fn load_external_subs(external_dir: &Path, identity: &MediaIdentity) -> Vec<
         for sub in &entry.subtitles {
             let sub_path = external_dir.join(&sub.file);
             if !sub_path.exists() {
-                tracing::warn!("External subtitle not found: {}", sub_path.display());
+                warn!("External subtitle not found: {}", sub_path.display());
                 continue;
             }
             let lang_code = lang_to_track(&sub.language);
@@ -300,7 +297,7 @@ pub fn load_external_subs(external_dir: &Path, identity: &MediaIdentity) -> Vec<
                 title,
                 is_default: false,
             });
-            tracing::info!("Adding external subtitle: {}", sub.file);
+            info!("Adding external subtitle: {}", sub.file);
         }
     }
 
@@ -312,14 +309,15 @@ mod tests {
     use super::*;
     use mt_core::{DialogueLine, FetchedSubtitle, FontInfo, PipelineConfig};
     use std::collections::HashMap;
+    use std::fs;
 
     fn base_ctx(tmp: &Path) -> PipelineContext {
         let video = tmp.join("ep01.mkv");
-        std::fs::write(&video, b"fake").unwrap();
+        fs::write(&video, b"fake").unwrap();
         let eng = tmp.join("eng.srt");
-        std::fs::write(&eng, "1\n00:00:01,000 --> 00:00:02,000\nHello\n").unwrap();
+        fs::write(&eng, "1\n00:00:01,000 --> 00:00:02,000\nHello\n").unwrap();
         let work = tmp.join("work");
-        std::fs::create_dir_all(&work).unwrap();
+        fs::create_dir_all(&work).unwrap();
         let mut c = PipelineContext::new(video, work, PipelineConfig::default());
         c.english_source = Some(eng);
         c.dialogue_lines = Some(vec![DialogueLine {
@@ -373,17 +371,17 @@ mod tests {
 
     #[test]
     fn creates_ai_polish_track() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let result = run(base_ctx(dir.path())).unwrap();
         assert!(titles(&result).contains(&"Polish (MLX)".to_string()));
     }
 
     #[test]
     fn fetched_polish_includes_source_and_is_default() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut ctx = base_ctx(dir.path());
         let pol = dir.path().join("pol.ass");
-        std::fs::write(&pol, "[Script Info]\n\n[Events]\n").unwrap();
+        fs::write(&pol, "[Script Info]\n\n[Events]\n").unwrap();
         let mut m = HashMap::new();
         m.insert(
             "pol".to_string(),
@@ -411,7 +409,7 @@ mod tests {
 
     #[test]
     fn ai_is_default_when_no_fetched() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let result = run(base_ctx(dir.path())).unwrap();
         let defaults: Vec<_> = result
             .subtitle_tracks
@@ -426,7 +424,7 @@ mod tests {
 
     #[test]
     fn extra_translations_emit_extra_track_primary_first() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let mut ctx = base_ctx(dir.path());
         ctx.config.extra_models = vec!["apple".into()];
         ctx.extra_translations.insert(

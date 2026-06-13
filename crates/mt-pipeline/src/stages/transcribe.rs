@@ -8,10 +8,16 @@
 //! pipeline falls through to its normal `NoEnglishSource` skip.
 
 use mt_core::PipelineContext;
-use mt_subtitles::SubtitleProcessor;
+use mt_subtitles::extract_dialogue_lines;
 
 use crate::error::Result;
 use crate::gpu::GpuExecutor;
+use tracing::{info, warn};
+
+#[cfg(test)]
+use std::fs;
+#[cfg(test)]
+use tempfile::tempdir;
 
 pub const NAME: &str = "transcribe";
 
@@ -28,16 +34,16 @@ pub fn run(ctx: PipelineContext, executor: &dyn GpuExecutor) -> Result<PipelineC
         &ctx.config.transcribe_engine,
     )?;
     let Some(srt) = srt else {
-        tracing::info!("transcribe: no English audio transcription available");
+        info!("transcribe: no English audio transcription available");
         return Ok(ctx);
     };
 
-    let lines = SubtitleProcessor::extract_dialogue_lines(&srt)?;
+    let lines = extract_dialogue_lines(&srt)?;
     if lines.is_empty() {
-        tracing::warn!("transcribe: SRT parsed to zero dialogue lines");
+        warn!("transcribe: SRT parsed to zero dialogue lines");
         return Ok(ctx);
     }
-    tracing::info!(
+    info!(
         "transcribe: {} lines from the English audio track ({})",
         lines.len(),
         ctx.config.transcribe_engine
@@ -127,9 +133,9 @@ mod tests {
 
     #[test]
     fn adopts_transcribed_srt_and_marks_asr_provenance() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir().unwrap();
         let srt = dir.path().join("transcribed_en.srt");
-        std::fs::write(&srt, "1\n00:00:01,000 --> 00:00:02,000\nHello there\n").unwrap();
+        fs::write(&srt, "1\n00:00:01,000 --> 00:00:02,000\nHello there\n").unwrap();
         let exec = SpyExec {
             result: Some(srt.clone()),
             ..SpyExec::default()

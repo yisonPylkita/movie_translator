@@ -4,9 +4,14 @@
 //! When the key is absent or any request fails, returns `None` silently —
 //! TMDB enrichment is always optional.
 
+use std::env;
+use std::time::Duration;
+
 use mt_core::{MtError, Result};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+use reqwest::blocking::Client;
 use serde::Deserialize;
+use serde_json::from_str;
 
 const TMDB_BASE: &str = "https://api.themoviedb.org/3";
 
@@ -41,7 +46,7 @@ struct DetailResponse {
 ///
 /// Factored out from HTTP so it can be unit-tested against captured JSON.
 pub(crate) fn parse_search_response(json: &str) -> Option<i32> {
-    let resp: SearchResponse = serde_json::from_str(json).ok()?;
+    let resp = from_str::<SearchResponse>(json).ok()?;
     // Treat a missing id and id == 0 alike as "no result".
     resp.results
         .into_iter()
@@ -52,7 +57,7 @@ pub(crate) fn parse_search_response(json: &str) -> Option<i32> {
 
 /// Parse a TMDB detail / external_ids response JSON and extract `imdb_id`.
 pub(crate) fn parse_detail_response(json: &str) -> Option<String> {
-    let resp: DetailResponse = serde_json::from_str(json).ok()?;
+    let resp = from_str::<DetailResponse>(json).ok()?;
     resp.imdb_id
 }
 
@@ -82,7 +87,7 @@ pub(crate) fn build_search_url(
         params.push((year_key, y.to_string()));
     }
 
-    let qs: Vec<String> = params
+    let qs: Vec<_> = params
         .iter()
         .map(|(k, v)| format!("{}={}", k, url_encode(v)))
         .collect();
@@ -106,7 +111,7 @@ fn url_encode(s: &str) -> String {
 /// - No results are found.
 /// - Any HTTP or parsing error occurs.
 pub fn lookup_tmdb(title: &str, year: Option<i32>, media_type: &str) -> Option<TmdbResult> {
-    let api_key = std::env::var("TMDB_API_KEY").unwrap_or_default();
+    let api_key = env::var("TMDB_API_KEY").unwrap_or_default();
     lookup_tmdb_with_key(&api_key, title, year, media_type)
 }
 
@@ -142,9 +147,9 @@ fn lookup_tmdb_with_client(
 ) -> Result<Option<TmdbResult>> {
     let search_url = build_search_url(api_key, title, year, media_type);
 
-    let client = reqwest::blocking::Client::builder()
+    let client = Client::builder()
         .user_agent("MovieTranslator/1.0")
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(Duration::from_secs(10))
         .build()
         .map_err(|e| MtError::Network(e.to_string()))?;
 
@@ -168,12 +173,7 @@ fn lookup_tmdb_with_client(
     Ok(Some(TmdbResult { tmdb_id, imdb_id }))
 }
 
-fn fetch_imdb_id(
-    client: &reqwest::blocking::Client,
-    api_key: &str,
-    tmdb_id: i32,
-    media_type: &str,
-) -> Option<String> {
+fn fetch_imdb_id(client: &Client, api_key: &str, tmdb_id: i32, media_type: &str) -> Option<String> {
     let detail_path = if media_type == "episode" {
         format!("/tv/{tmdb_id}/external_ids")
     } else {

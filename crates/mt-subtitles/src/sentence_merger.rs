@@ -238,7 +238,7 @@ pub fn split_output(
 
     if !group.is_fragment_merge {
         // Split on `||`
-        let parts: Vec<&str> = translated.split("||").collect();
+        let parts = translated.split("||").collect::<Vec<_>>();
         if parts.len() == n_lines {
             return parts.iter().map(|p| strip_pipes(p.trim())).collect();
         }
@@ -256,7 +256,7 @@ fn proportional_split(
     original_texts: &[String],
 ) -> Vec<String> {
     let cleaned = strip_pipes(translated);
-    let words: Vec<&str> = cleaned.split_whitespace().collect();
+    let words = cleaned.split_whitespace().collect::<Vec<_>>();
     let total_translated = words.len();
     if total_translated == 0 {
         return vec!["".to_string(); group.line_indices.len()];
@@ -297,7 +297,7 @@ fn proportional_split(
 /// corresponds to one `TranslationGroup`.
 pub fn merge_for_translation(texts: &[String]) -> (Vec<String>, Vec<TranslationGroup>) {
     let groups = group_lines(texts);
-    let merged: Vec<String> = groups.iter().map(|g| build_input(texts, g)).collect();
+    let merged: Vec<_> = groups.iter().map(|g| build_input(texts, g)).collect();
     (merged, groups)
 }
 
@@ -349,7 +349,7 @@ mod tests {
     fn test_group_lines_short_sentences_solo() {
         // "Hello." (1 word) and "How are you?" (3 words) are both
         // <= SHORT_LINE_MAX_WORDS (3), so each gets its own group.
-        let texts: Vec<String> = vec!["Hello.".into(), "How are you?".into()];
+        let texts = vec!["Hello.".into(), "How are you?".into()];
         let groups = group_lines(&texts);
         assert_eq!(groups.len(), 2);
         assert_eq!(groups[0].line_indices, vec![0]);
@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn test_group_lines_longer_sentences_batch() {
         // Longer (>3 words) complete sentences batch together.
-        let texts: Vec<String> = vec![
+        let texts = vec![
             "I am going to the store.".into(),
             "Do you need anything?".into(),
         ];
@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn test_group_lines_fragment() {
-        let texts: Vec<String> = vec!["In the beginning,".into(), "there was nothing.".into()];
+        let texts = vec!["In the beginning,".into(), "there was nothing.".into()];
         let groups = group_lines(&texts);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].line_indices, vec![0, 1]);
@@ -380,14 +380,14 @@ mod tests {
 
     #[test]
     fn test_group_lines_speaker_solo() {
-        let texts: Vec<String> = vec!["- Hello.".into(), "- How are you?".into()];
+        let texts = vec!["- Hello.".into(), "- How are you?".into()];
         let groups = group_lines(&texts);
         assert_eq!(groups.len(), 2);
     }
 
     #[test]
     fn test_build_input_fragment() {
-        let texts: Vec<String> = vec!["In the beginning,".into(), "there was nothing.".into()];
+        let texts = vec!["In the beginning,".into(), "there was nothing.".into()];
         let group = TranslationGroup {
             line_indices: vec![0, 1],
             is_fragment_merge: true,
@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn test_build_input_separator() {
-        let texts: Vec<String> = vec!["Hello.".into(), "How are you?".into()];
+        let texts = vec!["Hello.".into(), "How are you?".into()];
         let group = TranslationGroup {
             line_indices: vec![0, 1],
             is_fragment_merge: false,
@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn test_round_trip() {
         // Use long enough (>3 words) sentences so they batch together
-        let texts: Vec<String> = vec![
+        let texts = vec![
             "I am going to the store.".into(),
             "Do you need anything from there?".into(),
             "Please pick up some milk.".into(),
@@ -426,7 +426,7 @@ mod tests {
     #[test]
     fn test_short_sentences_round_trip() {
         // Short sentences each get their own group
-        let texts: Vec<String> = vec!["Hi.".into(), "Bye.".into()];
+        let texts = vec!["Hi.".into(), "Bye.".into()];
         let (merged, groups) = merge_for_translation(&texts);
         assert_eq!(merged.len(), 2);
         assert_eq!(groups.len(), 2);

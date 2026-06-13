@@ -24,7 +24,7 @@ fn has_word(text: &str) -> bool {
 }
 
 fn pieces(text: &str) -> Vec<String> {
-    let raw: Vec<&str> = SENTENCE_RE
+    let raw: Vec<_> = SENTENCE_RE
         .find_iter(text)
         .map(|m| m.as_str().trim())
         .filter(|s| !s.is_empty())
@@ -67,7 +67,7 @@ pub fn split_segment(seg: &DialogueLine, boundaries: Option<&[i64]>) -> Vec<Dial
     }
 
     // Narrow to boundaries that actually fall inside this segment.
-    let inner: Vec<i64> = boundaries
+    let inner: Vec<_> = boundaries
         .map(|b| {
             b.iter()
                 .filter(|&&b| seg.start_ms < b && b < seg.end_ms)
@@ -77,7 +77,7 @@ pub fn split_segment(seg: &DialogueLine, boundaries: Option<&[i64]>) -> Vec<Dial
         .unwrap_or_default();
 
     // Cap to number of sentence pieces
-    let inner: Vec<i64> = if inner.len() >= text_pieces.len() {
+    let inner = if inner.len() >= text_pieces.len() {
         inner[..text_pieces.len() - 1].to_vec()
     } else {
         inner
@@ -130,7 +130,7 @@ fn boundary_split(seg: &DialogueLine, pieces: &[String], boundaries: &[i64]) -> 
     let mut idx = 0;
     for b in 0..=num_boundaries {
         let count = base + if b < rem { 1 } else { 0 };
-        let group: Vec<&str> = pieces[idx..idx + count]
+        let group = pieces[idx..idx + count]
             .iter()
             .map(|s| s.as_str())
             .collect();
