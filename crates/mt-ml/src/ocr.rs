@@ -7,14 +7,20 @@
 //! step on top of parsed PGS bitmaps, as well as burned-in subtitle extraction
 //! via frame-level change detection and OCR.
 
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use std::process::Command;
 
-use mt_core::{BoundingBox, BurnedInResult, MtError, OCRResult, Result};
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
+use mt_core::{BoundingBox, OCRResult};
+use mt_core::{BurnedInResult, MtError, Result};
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use serde_json::{Value, from_slice};
+#[cfg_attr(not(target_os = "macos"), allow(unused_imports))]
 use tracing::{info, warn};
 
 // ── Public API ─────────────────────────────────────────────────────────────

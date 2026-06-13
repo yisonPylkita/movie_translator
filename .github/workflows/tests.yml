@@ -39,6 +39,9 @@ jobs:
       - name: Build workspace
         run: cargo build --workspace
 
+      - name: Install cargo-sort
+        run: cargo install cargo-sort
+
       - name: Cargo.toml dependency sorting
         run: cargo sort -w --check
 
