@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use mt_core::{MtError, Result};
-use tracing::info;
+#[cfg_attr(target_os = "macos", allow(unused_imports))]
+use tracing::{info, warn};
 
 /// Default minimum height for OCR-legible download (480p).
 const DEFAULT_MIN_HEIGHT: u32 = 480;
