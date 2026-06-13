@@ -39,7 +39,7 @@ pub fn ocr_burned_in(
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (video, output_dir, crop_ratio, fps);
-        Err(MtError::Parse(
+        Err(mt_core::MtError::Parse(
             "Burned-in OCR requires macOS (Vision framework)".into(),
         ))
     }

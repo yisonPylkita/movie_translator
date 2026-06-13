@@ -38,3 +38,8 @@ rule:
           - pattern: core::$A::$B::$C($$$)
           - pattern: alloc::$A::$B($$$)
           - pattern: alloc::$A::$B::$C($$$)
+    # Error enum variants like Crate::ErrorType::Variant(...) are idiomatic
+    # fully-qualified in cfg-guarded branches where importing the type would
+    # produce unused-import warnings on the other platform.
+    - not:
+        pattern: mt_core::MtError::$FUNC($$$)

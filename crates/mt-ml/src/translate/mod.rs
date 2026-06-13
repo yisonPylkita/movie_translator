@@ -60,7 +60,9 @@ pub fn translate(req: &TranslateRequest) -> Result<Vec<DialogueLine>> {
     #[cfg(not(target_os = "macos"))]
     {
         let _ = proper;
-        Err(MtError::Parse("Apple Translation requires macOS".into()))
+        Err(mt_core::MtError::Parse(
+            "Apple Translation requires macOS".into(),
+        ))
     }
 }
 
