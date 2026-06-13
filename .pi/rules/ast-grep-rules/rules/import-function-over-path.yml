@@ -1,6 +1,6 @@
 id: import-function-over-path
 language: Rust
-severity: info
+severity: warn
 message: "Use `use $CRATE::$FUNC;` instead of calling `$CRATE::$FUNC(...)` inline"
 note: |
   Functions and macros used repeatedly in a file should be imported at the top

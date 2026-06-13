@@ -4,6 +4,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use mt_core::swift_bridge::macos_at_least;
 use serde_json::{Value, from_slice};
 use tracing::{error, info, warn};
 
@@ -81,7 +82,7 @@ fn apple_translation_available_uncached() -> bool {
         return false;
     }
     // macOS major version >= 26.
-    if !mt_core::swift_bridge::macos_at_least(26) {
+    if !macos_at_least(26) {
         return false;
     }
     // _ensure_binary: compile the bridge if missing or stale, then probe.
