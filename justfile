@@ -54,9 +54,9 @@ run input *args:
 extract input *args:
     cargo run --release --quiet --bin movie-translator -- extract "{{ input }}" {{ args }}
 
-# Download a whole anime season from ogladajanime.pl: `just anime-dl "<name>" [flags]`.
-anime-dl name *args:
-    cargo run --release --quiet --bin anime-dl -- "{{ name }}" {{ args }}
+# Download anime from ogladajanime.pl: `just anime-dl "<name>"` or `just anime-dl -- --file list.txt`.
+anime-dl *args:
+    cargo run --release --quiet --bin anime-dl -- {{ args }}
 
 # ─── Tests ─────────────────────────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ fix-swift:
 fix-json:
     @if command -v jq >/dev/null 2>&1; then \
         find . -name '*.json' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' -not -path './.pi/*' \
-            -not -name 'package-lock.json' -not -name 'Cargo.lock' \
+            -not -path './.pi-subagents/*' -not -name 'package-lock.json' -not -name 'Cargo.lock' \
             -exec sh -c 'jq --sort-keys . "{}" > "{}.tmp" && mv "{}.tmp" "{}"' \; 2>/dev/null || true; \
     fi
 
@@ -154,7 +154,7 @@ check-fmt-swift:
 check-fmt-json:
     @if command -v jq >/dev/null 2>&1; then \
         find . -name '*.json' -not -path './.git/*' -not -path './target/*' -not -path './vendor/*' -not -path './.pi/*' \
-            -not -name 'package-lock.json' -not -name 'Cargo.lock' \
+            -not -path './.pi-subagents/*' -not -name 'package-lock.json' -not -name 'Cargo.lock' \
             -print0 | xargs -0 -I{} sh -c 'jq --sort-keys . "{}" | diff - "{}" >/dev/null 2>&1 || { echo "JSON formatting issue: {}"; exit 1; }'; \
     fi
 

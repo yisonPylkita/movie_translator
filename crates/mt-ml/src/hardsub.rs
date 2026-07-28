@@ -7,11 +7,64 @@
 //! downloaded video using the Rust-native OCR pipeline.
 
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use mt_core::{MtError, Result};
 use tracing::info;
+
+/// One parsed progress update from yt-dlp `--newline` stderr.
+#[derive(Debug, Clone, Default)]
+pub struct DownloadProgress {
+    pub percent: f64,
+    pub speed: Option<String>,
+    pub eta: Option<String>,
+    pub total_bytes_str: Option<String>,
+}
+
+/// Parse a single yt-dlp `--newline` progress line.
+/// Formats:
+///   `[download]  10.5% of ~498.00MiB at  3.2MiB/s ETA 02:15`
+///   `[download] 100% of  498.00MiB in 02:30 at 3.32MiB/s`
+fn parse_progress_line(line: &str) -> Option<DownloadProgress> {
+    let rest = line.trim().strip_prefix("[download]")?.trim();
+
+    let pct_end = rest.find('%')?;
+    let pct: f64 = rest[..pct_end].trim().parse().ok()?;
+
+    let after_pct = &rest[pct_end + 1..];
+
+    // Total size is between "of" and " at" / " in"
+    let total_bytes_str = after_pct.find("of").map(|i| {
+        let after = after_pct[i + 2..].trim();
+        let after = after.strip_prefix('~').unwrap_or(after);
+        let end = after
+            .find(" at")
+            .or_else(|| after.find(" in"))
+            .unwrap_or(after.len());
+        after[..end].trim().to_string()
+    });
+
+    // Speed after "at"
+    let speed = after_pct.find(" at ").map(|i| {
+        let after = after_pct[i + 4..].trim();
+        let end = after.find(' ').unwrap_or(after.len());
+        after[..end].to_string()
+    });
+
+    // ETA after "ETA "
+    let eta = after_pct
+        .find("ETA ")
+        .map(|i| after_pct[i + 4..].trim().to_string());
+
+    Some(DownloadProgress {
+        percent: pct,
+        speed,
+        eta,
+        total_bytes_str,
+    })
+}
 
 /// Default minimum height for OCR-legible download (480p).
 const DEFAULT_MIN_HEIGHT: u32 = 480;
@@ -146,6 +199,120 @@ pub fn hardsub_download(
         written.display(),
         written.metadata().map(|m| m.len()).unwrap_or(0)
     );
+
+    Ok(written)
+}
+
+/// Like [`hardsub_download`], but spawns yt-dlp with `--progress --newline`
+/// and calls `on_progress` with parsed progress (percentage, speed, ETA)
+/// every time yt-dlp emits a progress line. Best-quality mode only.
+///
+/// The callback is invoked from the calling thread while the subprocess runs;
+/// use it to drive a progress bar (e.g. `indicatif`).
+pub fn hardsub_download_with_progress(
+    embed_url: &str,
+    out_path: &Path,
+    best: bool,
+    referer: Option<&str>,
+    on_progress: impl Fn(DownloadProgress),
+) -> Result<PathBuf> {
+    // Create output directory
+    if let Some(parent) = out_path.parent() {
+        fs::create_dir_all(parent).map_err(MtError::Io)?;
+    }
+
+    let mut cmd = Command::new("yt-dlp");
+    cmd.arg("--progress")
+        .arg("--newline")
+        .arg("--force-overwrites")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+
+    if best {
+        let stem = out_path.with_extension("");
+        let stem_str = stem.to_string_lossy().to_string();
+        cmd.arg("-f").arg("bv*+ba/b");
+        cmd.arg("-o").arg(format!("{stem_str}.%(ext)s"));
+        cmd.arg("--merge-output-format").arg("mkv");
+    } else {
+        let out_str = out_path.to_string_lossy().to_string();
+        cmd.arg("-f").arg(build_format_selector(DEFAULT_MIN_HEIGHT));
+        cmd.arg("-o").arg(&out_str);
+        cmd.arg("--format-sort").arg("+size,+res");
+    }
+
+    if let Some(r) = referer {
+        cmd.arg("--add-header").arg(format!("Referer: {}", r));
+        cmd.arg("--user-agent")
+            .arg("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+    }
+
+    cmd.arg(embed_url);
+
+    let mut child = cmd.spawn().map_err(MtError::Io)?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| MtError::Parse("failed to capture yt-dlp stdout".into()))?;
+    let reader = BufReader::new(stdout);
+
+    for line in reader.lines() {
+        let line = line.map_err(|e| MtError::Parse(format!("reading yt-dlp stdout: {e}")))?;
+        if let Some(p) = parse_progress_line(&line) {
+            on_progress(p);
+        }
+    }
+
+    let status = child.wait().map_err(MtError::Io)?;
+    if !status.success() {
+        return Err(MtError::Subprocess {
+            cmd: "yt-dlp".to_string(),
+            code: status.code(),
+            stderr: "yt-dlp exited with error (see log above)".to_string(),
+        });
+    }
+
+    // Find the actual written file (same logic as hardsub_download)
+    let written = if best {
+        let stem = out_path.with_extension("");
+        let candidates: Vec<_> = std::fs::read_dir(stem.parent().unwrap_or(Path::new(".")))
+            .map_err(MtError::Io)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_stem() == stem.file_stem()
+                    && p.is_file()
+                    && p.metadata().is_ok_and(|m| m.len() > 0)
+            })
+            .collect();
+        candidates
+            .into_iter()
+            .max_by_key(|p| p.metadata().map(|m| m.modified().ok()).ok().flatten())
+            .unwrap_or_else(|| out_path.to_path_buf())
+    } else {
+        if out_path.exists() && out_path.metadata().is_ok_and(|m| m.len() > 0) {
+            out_path.to_path_buf()
+        } else {
+            let candidates: Vec<_> = std::fs::read_dir(out_path.parent().unwrap_or(Path::new(".")))
+                .map_err(MtError::Io)?
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| {
+                    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    let expected = out_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                    stem == expected && p.is_file() && p.metadata().is_ok_and(|m| m.len() > 0)
+                })
+                .collect();
+            candidates
+                .into_iter()
+                .max_by_key(|p| p.metadata().map(|m| m.modified().ok()).ok().flatten())
+                .ok_or_else(|| MtError::Subprocess {
+                    cmd: "yt-dlp".to_string(),
+                    code: None,
+                    stderr: "yt-dlp produced no output file".to_string(),
+                })?
+        }
+    };
 
     Ok(written)
 }

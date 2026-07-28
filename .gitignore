@@ -11,6 +11,7 @@ test_output.srt  # Test translation output
 # Temp directories
 .translate_temp/
 test_workdir/
+.pi-subagents/artifacts/
 
 # Vendor build artifacts (Rust)
 vendor/ilass/target/

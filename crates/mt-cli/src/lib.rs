@@ -5,6 +5,7 @@
 pub mod commands;
 pub mod common;
 pub mod tui;
+pub mod tui_download;
 
 use std::io::stderr;
 use std::sync::Once;

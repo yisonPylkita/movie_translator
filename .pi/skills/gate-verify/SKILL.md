@@ -9,11 +9,10 @@ Run the full gate chain on this repo and report whether it's GREEN or RED.
 
 ## The gate chain
 
-```
-just check → cargo clippy --workspace --all-targets -D warnings
-             + cargo fmt --check
+```text
+just check → clippy -D warnings + cargo +nightly fmt --check
+             + TOML/shell/Swift/JSON/import checks
 just test  → cargo test --workspace
-just ci    → check + test
 just fix   → format + clippy-fix + cargo sort
 ```
 
@@ -25,7 +24,7 @@ just fix   → format + clippy-fix + cargo sort
 
 ## What you return
 
-```
+```text
 just check:    <pass | fail>
 just test:     <N passed | M failed>
 deps sorted:   <pass | fail>

@@ -9,14 +9,14 @@ All ML stages in this project run in pure Rust — zero Python
 dependencies. Stages are called through the serialised GPU worker
 (`crates/mt-pipeline/src/worker.rs`).
 
-## Translation (`crates/mt-ml/src/apple_translate.rs`)
+## Translation (`crates/mt-ml/src/translate/apple.rs`)
 
 Apple Translation framework via compiled Swift bridge. macOS 26+.
 Sentence merging in `crates/mt-subtitles/src/sentence_merger.rs`.
 
-## OCR (`crates/mt-ml/src/ocr.rs`)
+## OCR (`crates/mt-ml/src/ocr/vision.rs`)
 
-Apple Vision via Swift bridge (`crates/mt-ml/swift/ocr_bridge.swift`).
+Apple Vision via compiled Swift bridge.
 PGS parsing in `crates/mt-media/src/pgs_parser.rs`. macOS only.
 
 ## Inpainting (`crates/mt-ml/src/inpaint.rs`)

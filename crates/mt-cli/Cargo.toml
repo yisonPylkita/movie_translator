@@ -20,6 +20,7 @@ path = "src/bin/anime_dl.rs"
 anyhow = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }
+indicatif = { workspace = true }
 
 mt-core = { workspace = true }
 mt-discovery = { workspace = true }

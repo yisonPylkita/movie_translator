@@ -12,7 +12,7 @@ GPU.
 
 ## The path, in order
 
-```
+```text
 discover media identity (mt-discovery)
   → fetch candidates from providers (fetcher.rs, providers/)
   → validate vs the English reference (validator.rs, scoring.rs)
@@ -40,8 +40,8 @@ discover media identity (mt-discovery)
 ### "No Polish subs found"
 
 1. Did discovery get the right identity? Bad title/season/episode parse
-   means every provider query misses. Check `mt-discovery` output (it
-   calls the Python `parse_filename`).
+   means every provider query misses. Check `mt-discovery` output from
+   pure-Rust `parser.rs` / `rust_parser.rs` (`anitomy-pure` + regex).
 2. Did a provider return candidates at all? If all empty, suspect
    rate-limit/backoff (`retry.rs`) or a remote-format change in that one
    `providers/<x>.rs`. Test providers in isolation.
@@ -79,7 +79,7 @@ reproduce a parsing bug — capture one response and test against it.
 
 ## What you return
 
-```
+```text
 Stage:      discovery | fetch | validate | align | classify
 Cause:      <inference + the test/output evidence>
 Module:     <file:func>

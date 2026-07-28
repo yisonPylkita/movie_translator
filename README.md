@@ -126,14 +126,30 @@ Run `just check && just test` before committing.
 
 ### Anime Downloader
 
-Download whole anime seasons for offline OCR processing:
+Download whole anime seasons (or a curated episode list) for offline watching /
+OCR processing:
 
 ```bash
+# One title — whole season/series
 just anime-dl "One Piece"
+
+# Batch from a text file (one entry per line)
+just anime-dl -- --file watchlist.txt
 ```
 
-This opens ogladajanime.pl in the browser, waits for the resolver userscript,
-then downloads every episode at best available quality (no translation, no OCR).
+List file format (`--file`):
+
+```text
+# comments and blank lines ignored
+One Piece                 # all episodes
+Naruto 1                  # episode 1 only
+Naruto E02                # episode 2
+Bleach S01E03             # episode 3 (season tag ignored)
+```
+
+Same-title lines are grouped so the browser/userscript runs once per anime.
+Opens ogladajanime.pl, waits for the resolver userscript JSON in Downloads,
+then downloads at best available quality (no translation, no OCR).
 
 ## macOS Dependencies
 

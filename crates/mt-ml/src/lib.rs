@@ -14,7 +14,9 @@ pub mod ocr;
 pub mod transcription;
 pub mod translate;
 
-pub use hardsub::{hardsub_download, hardsub_ocr_clean};
+pub use hardsub::{
+    DownloadProgress, hardsub_download, hardsub_download_with_progress, hardsub_ocr_clean,
+};
 pub use inpaint::inpaint;
 pub use ocr::{is_vision_ocr_available, ocr_burned_in, ocr_pgs};
 pub use transcription::transcribe_to_srt;
