@@ -124,32 +124,47 @@ Run `just check && just test` before committing.
 - `--model apple` — use the Apple Translation backend (macOS 26+, the only
   supported backend).
 
-### Anime Downloader
+### Anime downloader
 
-Download whole anime seasons (or a curated episode list) for offline watching /
-OCR processing:
+Download anime episodes from ogladajanime.pl using a canonical JSON episode list.
 
 ```bash
-# One title — whole season/series
-just anime-dl "One Piece"
-
-# Batch from a text file (one entry per line)
-just anime-dl -- --file watchlist.txt
+just anime-dl episodes.json
+# or
+just anime-dl episodes.json --ui dashboard --episodes 1,2,3
 ```
 
-List file format (`--file`):
+### Resolving episode URLs
 
-```text
-# comments and blank lines ignored
-One Piece                 # all episodes
-Naruto 1                  # episode 1 only
-Naruto E02                # episode 2
-Bleach S01E03             # episode 3 (season tag ignored)
+ogladajanime.pl is the primary source of anime episodes with Polish hardsubs.
+Player embed URLs are behind Cloudflare Turnstile and anti-debug, so they must
+be resolved in a real browser via a Tampermonkey userscript:
+
+1. Install [Tampermonkey](https://www.tampermonkey.net/) (Chrome/Firefox)
+2. Install `scripts/ogladajanime_resolver.user.js` as a new userscript
+3. Navigate to `ogladajanime.pl/anime/{series}` in your browser
+4. Click one of the panel buttons:
+   - **⏬ All N episodes** — walks every episode, resolves curated mirrors,
+     downloads `anime-{slug}.json`
+   - **▶ This episode** — resolves a single episode, downloads
+     `anime-{slug}-ep{N}.json`
+5. Run `just anime-dl anime-{slug}.json` to download the episode files
+
+**Canonical JSON format:**
+
+```json
+{
+  "title": "One Piece",
+  "episodes": [
+    {"episode": 1, "urls": ["https://cda.pl/video/...", "https://sibnet.ru/..."]},
+    {"episode": 2, "urls": ["https://cda.pl/video/..."]}
+  ]
+}
 ```
 
-Same-title lines are grouped so the browser/userscript runs once per anime.
-Opens ogladajanime.pl, waits for the resolver userscript JSON in Downloads,
-then downloads at best available quality (no translation, no OCR).
+- `episodes[].urls` is required (at least one URL per episode).
+- Optional `quality` metadata per episode: `{"height": 1080}`.
+- Run `anime-dl --help` for all flags (`--out`, `--episodes`, `--ui`, concurrency).
 
 ## macOS Dependencies
 

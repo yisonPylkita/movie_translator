@@ -54,9 +54,9 @@ run input *args:
 extract input *args:
     cargo run --release --quiet --bin movie-translator -- extract "{{ input }}" {{ args }}
 
-# Download anime from ogladajanime.pl: `just anime-dl "<name>"` or `just anime-dl -- --file list.txt`.
-anime-dl *args:
-    cargo run --release --quiet --bin anime-dl -- {{ args }}
+# Download anime: just anime-dl <json_path> [extra args]
+anime-dl json_path *args:
+    cargo run --release --quiet --bin anime-dl -- --input "{{ json_path }}" {{ args }}
 
 # ─── Tests ─────────────────────────────────────────────────────────────────
 

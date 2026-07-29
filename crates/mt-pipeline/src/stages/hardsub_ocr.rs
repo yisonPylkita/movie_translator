@@ -40,8 +40,8 @@ pub fn run(
         info!("hardsub-ocr: no episode number identified; skipping");
         return Ok(ctx);
     };
-    let players = plan.pl_players(episode as i64);
-    if players.is_empty() {
+    let urls = plan.pl_players(episode as i64);
+    if urls.is_empty() {
         info!("hardsub-ocr: no PL player resolved for episode {episode}; skipping");
         return Ok(ctx);
     }
@@ -57,30 +57,22 @@ pub fn run(
     // extractor hosts that set their own headers; an ogladajanime Referer leaks
     // onto cda's internal API calls and breaks extraction.
     let mut downloaded = false;
-    for player in &players {
-        info!(
-            "hardsub-ocr: episode {episode} -> trying {} {} ({})",
-            player.host.as_deref().unwrap_or("?"),
-            player.quality.as_deref().unwrap_or("?"),
-            player.embed_url
-        );
-        match mt_ml::hardsub_download(&player.embed_url, &video, MIN_HEIGHT, false, None) {
+    for url in &urls {
+        info!("hardsub-ocr: episode {episode} -> trying {url}");
+        match mt_ml::hardsub_download(url, &video, MIN_HEIGHT, false, None) {
             Ok(_) => {
                 downloaded = true;
                 break;
             }
             Err(e) => {
-                warn!(
-                    "hardsub-ocr: {} mirror failed for episode {episode} ({e}); trying next",
-                    player.host.as_deref().unwrap_or("?")
-                );
+                warn!("hardsub-ocr: mirror failed for episode {episode} ({e}); trying next");
             }
         }
     }
     if !downloaded {
         warn!(
             "hardsub-ocr: all {} mirror(s) failed for episode {episode}; skipping",
-            players.len()
+            urls.len()
         );
         return Ok(ctx);
     }

@@ -4,8 +4,16 @@
 
 pub mod commands;
 pub mod common;
+pub mod download_types;
+pub mod downloader;
+pub mod plain_output;
 pub mod tui;
 pub mod tui_download;
+pub mod ui_model;
+pub mod ui_render;
+
+#[cfg(test)]
+mod download_tests;
 
 use std::io::stderr;
 use std::sync::Once;

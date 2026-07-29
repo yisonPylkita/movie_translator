@@ -1,107 +1,62 @@
-//! Ratatui-based multi-episode download progress UI.
+//! Read-only auto-display TUI for anime downloader.
 //!
-//! One panel per episode. During measurement, each mirror's speed is shown.
-//! When the fastest mirror is selected, the panel collapses to a single
-//! download bar. Completed panels show a green checkmark and file size.
-//!
-//! Episode threads send [`EpEvent`]s through a [`std::sync::mpsc::Sender`].
-//! The TUI thread receives them and redraws.
+//! No keyboard/mouse input. Displays all episodes with progress bars, mirrors,
+//! and gauge indicators. Automatically pages through episodes if they exceed
+//! viewport height. Exits automatically when all episodes reach terminal state.
+//! No user interaction — Ctrl+C handled by SIGINT cancellation in engine.
 
 use std::io::{self, Stdout, stdout};
-use std::sync::mpsc::Receiver;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-};
+use crossterm::execute;
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+use ratatui::backend::CrosstermBackend;
 use ratatui::{
     Frame, Terminal,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, Gauge, List, ListItem, Paragraph},
 };
+use tokio::time::sleep;
 
-// ── Event types ───────────────────────────────────────────────────────────
-
-/// Events sent from episode threads to the TUI.
-#[derive(Debug, Clone)]
-pub enum EpEvent {
-    /// Started measuring this mirror.
-    Measuring { ep: i64, host: String },
-    /// Measurement result: average bytes/sec.
-    Measured { ep: i64, host: String, bps: f64 },
-    /// Mirror skipped because another episode holds the host lock.
-    MirrorBusy { ep: i64, host: String },
-    /// A mirror was selected as the winner; full download starting.
-    Winner { ep: i64, host: String },
-    /// Download progress update from the winning mirror.
-    Progress {
-        ep: i64,
-        host: String,
-        pct: f64,
-        speed: String,
-        eta: String,
-    },
-    /// Episode downloaded successfully.
-    Done { ep: i64, host: String, size_mb: f64 },
-    /// All mirrors for this episode failed.
-    Failed { ep: i64 },
-    /// Mirror measurement/attempt ended (killed or failed), remove from list.
-    MirrorDone {
-        ep: i64,
-        host: String,
-        success: bool,
-    },
-}
+pub use crate::download_types::EpEvent;
+use crate::download_types::Phase;
 
 // ── Internal UI state ─────────────────────────────────────────────────────
 
 struct Mirror {
     host: String,
-    bps: Option<f64>, // measured speed, if any
-    active: bool,     // still running (measuring or downloading)
+    bps: Option<f64>,
+    active: bool,
 }
 
 struct Episode {
     number: i64,
     mirrors: Vec<Mirror>,
-    winner: Option<String>, // host name of selected mirror
+    winner: Option<String>,
     phase: Phase,
-}
-
-enum Phase {
-    Measuring,
-    Downloading {
-        pct: f64,
-        speed: String,
-        eta: String,
-    },
-    Done {
-        host: String,
-        size_mb: f64,
-    },
-    Failed,
 }
 
 // ── Public API ────────────────────────────────────────────────────────────
 
-/// Build a [`DownloadUi`], spawn episode threads, then call [`DownloadUi::run`].
 pub struct DownloadUi {
-    rx: Receiver<EpEvent>,
+    rx: tokio::sync::broadcast::Receiver<EpEvent>,
     episodes: Vec<Episode>,
     terminal: Terminal<CrosstermBackend<Stdout>>,
+    page_offset: usize,
+    total_done: u64,
+    total_failed: u64,
+    total_bytes: u64,
+    sum_bytes: u64,
 }
 
-type CrosstermBackend<W> = ratatui::backend::CrosstermBackend<W>;
-
 impl DownloadUi {
-    /// Create the UI. `rx` receives events from all episode threads.
-    pub fn new(rx: Receiver<EpEvent>, episodes: &[i64]) -> io::Result<Self> {
-        enable_raw_mode()?;
+    pub fn new(
+        rx: tokio::sync::broadcast::Receiver<EpEvent>,
+        episodes: &[i64],
+    ) -> io::Result<Self> {
         let mut stdout = stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        execute!(stdout, EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
 
@@ -111,7 +66,7 @@ impl DownloadUi {
                 number: e,
                 mirrors: Vec::new(),
                 winner: None,
-                phase: Phase::Measuring,
+                phase: Phase::Queued,
             })
             .collect();
 
@@ -119,90 +74,171 @@ impl DownloadUi {
             rx,
             episodes,
             terminal,
+            page_offset: 0,
+            total_done: 0,
+            total_failed: 0,
+            total_bytes: 0,
+            sum_bytes: 0,
         })
     }
 
-    /// Run the event loop. Blocks until all episodes finish or the user
-    /// presses `q` / `Esc`.
-    pub fn run(mut self) -> io::Result<()> {
+    pub async fn run(mut self) -> io::Result<()> {
         let tick = Duration::from_millis(100);
-        let deadline = Instant::now() + Duration::from_secs(7200); // 2h max
-        let mut all_done = false;
+        let page_cycle = Duration::from_secs(3);
+        let mut last_page_cycle = std::time::Instant::now();
 
-        while !all_done && Instant::now() < deadline {
-            // Drain pending events
+        loop {
+            // Drain events
             while let Ok(ev) = self.rx.try_recv() {
                 self.handle(ev);
             }
 
-            // Check for keyboard input
-            if event::poll(tick)?
-                && let Ok(Event::Key(key)) = event::read()
-                && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
-            {
+            // Auto-page: cycle page_offset every 3s if total episodes > visible
+            let visible = self.visible_count();
+            if self.episodes.len() > visible {
+                let now = std::time::Instant::now();
+                if now.duration_since(last_page_cycle) >= page_cycle {
+                    let new_offset = self.page_offset + visible;
+                    if new_offset >= self.episodes.len() {
+                        self.page_offset = 0;
+                    } else {
+                        self.page_offset = new_offset;
+                    }
+                    last_page_cycle = now;
+                }
+            }
+
+            // Capture state for render (avoids borrow conflict)
+            let episodes: Vec<_> = self
+                .episodes
+                .iter()
+                .map(|e| Episode {
+                    number: e.number,
+                    mirrors: e
+                        .mirrors
+                        .iter()
+                        .map(|m| Mirror {
+                            host: m.host.clone(),
+                            bps: m.bps,
+                            active: m.active,
+                        })
+                        .collect(),
+                    winner: e.winner.clone(),
+                    phase: e.phase.clone(),
+                })
+                .collect();
+            let total_done = self.total_done;
+            let total_failed = self.total_failed;
+            let total_bytes = self.total_bytes;
+            let sum_bytes = self.sum_bytes;
+            let page_offset = self.page_offset;
+
+            // Redraw
+            self.terminal.draw(|f| {
+                Self::draw(
+                    f,
+                    &episodes,
+                    page_offset,
+                    total_done,
+                    total_failed,
+                    sum_bytes,
+                    total_bytes,
+                )
+            })?;
+
+            if self.all_terminal() {
+                sleep(Duration::from_millis(500)).await;
                 break;
             }
 
-            self.terminal.draw(|f| Self::draw(f, &self.episodes))?;
-
-            all_done = self
-                .episodes
-                .iter()
-                .all(|e| matches!(e.phase, Phase::Done { .. } | Phase::Failed));
+            sleep(tick).await;
         }
 
-        // Final draw
-        self.terminal.draw(|f| Self::draw(f, &self.episodes))?;
+        // Final redraw — capture state again
+        let episodes: Vec<_> = self
+            .episodes
+            .iter()
+            .map(|e| Episode {
+                number: e.number,
+                mirrors: e
+                    .mirrors
+                    .iter()
+                    .map(|m| Mirror {
+                        host: m.host.clone(),
+                        bps: m.bps,
+                        active: m.active,
+                    })
+                    .collect(),
+                winner: e.winner.clone(),
+                phase: e.phase.clone(),
+            })
+            .collect();
+        let total_done = self.total_done;
+        let total_failed = self.total_failed;
+        let total_bytes = self.total_bytes;
+        let sum_bytes = self.sum_bytes;
+        let page_offset = self.page_offset;
 
-        // Cleanup
-        disable_raw_mode()?;
-        execute!(
-            self.terminal.backend_mut(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
-        )?;
+        self.terminal.draw(|f| {
+            Self::draw(
+                f,
+                &episodes,
+                page_offset,
+                total_done,
+                total_failed,
+                sum_bytes,
+                total_bytes,
+            )
+        })?;
 
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         Ok(())
     }
 
-    // ── Event handler ──────────────────────────────────────────────────
+    fn all_terminal(&self) -> bool {
+        self.episodes.iter().all(|e| e.phase.is_terminal())
+    }
+
+    fn visible_count(&self) -> usize {
+        let area = self.terminal.size().unwrap_or_default();
+        (area.height.saturating_sub(3) as usize).max(1) / 4
+    }
 
     fn handle(&mut self, ev: EpEvent) {
-        match &ev {
+        match ev {
             EpEvent::Measuring { ep, host } => {
-                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == *ep) {
-                    // Don't duplicate
-                    if !ep_state.mirrors.iter().any(|m| m.host == *host) {
-                        ep_state.mirrors.push(Mirror {
-                            host: host.clone(),
-                            bps: None,
-                            active: true,
-                        });
-                    }
+                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == ep)
+                    && !ep_state.mirrors.iter().any(|m| m.host == host)
+                {
+                    ep_state.mirrors.push(Mirror {
+                        host,
+                        bps: None,
+                        active: true,
+                    });
+                    ep_state.phase = Phase::Measuring;
                 }
             }
             EpEvent::Measured { ep, host, bps } => {
-                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == *ep)
-                    && let Some(m) = ep_state.mirrors.iter_mut().find(|m| m.host == *host)
+                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == ep)
+                    && let Some(m) = ep_state.mirrors.iter_mut().find(|m| m.host == host)
                 {
-                    m.bps = Some(*bps);
+                    m.bps = Some(bps);
                 }
             }
             EpEvent::MirrorBusy { ep, host } => {
-                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == *ep) {
+                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == ep) {
                     ep_state.mirrors.push(Mirror {
-                        host: host.clone(),
+                        host,
                         bps: None,
                         active: false,
                     });
                 }
             }
             EpEvent::Winner { ep, host } => {
-                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == *ep) {
-                    ep_state.winner = Some(host.clone());
-                    // Mark all non-winner mirrors as inactive
+                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == ep) {
+                    ep_state.winner = Some(host);
                     for m in &mut ep_state.mirrors {
-                        if m.host != *host {
+                        if m.host != ep_state.winner.as_deref().unwrap_or("") {
                             m.active = false;
                         }
                     }
@@ -210,6 +246,8 @@ impl DownloadUi {
                         pct: 0.0,
                         speed: String::new(),
                         eta: String::new(),
+                        downloaded: 0,
+                        total: 0,
                     };
                 }
             }
@@ -219,193 +257,285 @@ impl DownloadUi {
                 pct,
                 speed,
                 eta,
+                downloaded,
+                total,
             } => {
-                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == *ep) {
+                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == ep) {
                     ep_state.phase = Phase::Downloading {
-                        pct: *pct,
+                        pct,
                         speed: speed.clone(),
                         eta: eta.clone(),
+                        downloaded,
+                        total,
                     };
+                    self.sum_bytes = downloaded;
                 }
             }
             EpEvent::Done { ep, host, size_mb } => {
-                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == *ep) {
+                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == ep) {
                     ep_state.phase = Phase::Done {
                         host: host.clone(),
-                        size_mb: *size_mb,
+                        size_mb,
                     };
                     ep_state.mirrors.clear();
+                    self.total_done += 1;
+                    self.total_bytes += (size_mb * 1_048_576.0) as u64;
                 }
             }
             EpEvent::Failed { ep } => {
-                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == *ep) {
+                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == ep) {
                     ep_state.phase = Phase::Failed;
+                    self.total_failed += 1;
                 }
             }
             EpEvent::MirrorDone { ep, host, .. } => {
-                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == *ep)
-                    && let Some(m) = ep_state.mirrors.iter_mut().find(|m| m.host == *host)
+                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == ep)
+                    && let Some(m) = ep_state.mirrors.iter_mut().find(|m| m.host == host)
                 {
                     m.active = false;
                 }
             }
+            EpEvent::MeasurementComplete { .. } => {}
+            EpEvent::Cancelled { ep } => {
+                if let Some(ep_state) = self.episodes.iter_mut().find(|e| e.number == ep) {
+                    ep_state.phase = Phase::Cancelled;
+                }
+            }
         }
     }
 
-    // ── Rendering ──────────────────────────────────────────────────────
+    // ── Rendering (static, avoids borrow conflicts) ────────────────
 
-    fn draw(f: &mut Frame, episodes: &[Episode]) {
+    fn draw(
+        f: &mut Frame,
+        episodes: &[Episode],
+        page_offset: usize,
+        total_done: u64,
+        total_failed: u64,
+        sum_bytes: u64,
+        total_bytes: u64,
+    ) {
         let area = f.area();
+        let (title_bar, body, summary_bar) = Self::layout_rects(area);
 
-        // Title bar
-        let title = Paragraph::new("anime-dl — download progress").style(
+        let title = Paragraph::new(" anime-dl — download progress").style(
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         );
-        f.render_widget(title, Rect::new(area.x, area.y, area.width, 1));
+        f.render_widget(title, title_bar);
 
-        // Episodes stacked vertically
-        let body = Rect::new(
-            area.x,
-            area.y + 1,
-            area.width,
-            area.height.saturating_sub(1),
+        if episodes.is_empty() {
+            let empty = Paragraph::new(" No episodes to download")
+                .style(Style::default().fg(Color::DarkGray));
+            f.render_widget(empty, body);
+        } else {
+            Self::render_episodes(f, episodes, page_offset, body);
+        }
+
+        Self::render_summary(
+            f,
+            summary_bar,
+            episodes.len(),
+            total_done,
+            total_failed,
+            sum_bytes,
+            total_bytes,
         );
+    }
 
-        let constraints: Vec<Constraint> = episodes
-            .iter()
-            .map(|ep| {
-                let lines = match &ep.phase {
-                    Phase::Measuring => 2u16 + ep.mirrors.len().max(1) as u16,
-                    Phase::Downloading { .. } => 3,
-                    Phase::Done { .. } | Phase::Failed => 3,
-                };
-                Constraint::Length(lines)
-            })
-            .collect();
-
+    fn layout_rects(area: Rect) -> (Rect, Rect, Rect) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(constraints)
-            .split(body);
+            .constraints([
+                Constraint::Length(1),
+                Constraint::Min(1),
+                Constraint::Length(1),
+            ])
+            .split(area);
+        (chunks[0], chunks[1], chunks[2])
+    }
 
-        for (i, ep) in episodes.iter().enumerate() {
-            if i >= chunks.len() {
+    fn render_episodes(f: &mut Frame, episodes: &[Episode], page_offset: usize, area: Rect) {
+        let max_visible = area.height as usize;
+        let mut used = 0usize;
+        let mut idx = page_offset;
+
+        while used < max_visible && idx < episodes.len() {
+            let ep = &episodes[idx];
+            let h = Self::episode_height(ep);
+            if h == 0 {
+                idx += 1;
+                continue;
+            }
+            let remaining = max_visible - used;
+            let actual_h = h.min(remaining);
+            if actual_h < 2 {
                 break;
             }
-            Self::draw_episode(f, chunks[i], ep);
+            let item_area = Rect::new(area.x, area.y + used as u16, area.width, actual_h as u16);
+            Self::render_episode(f, item_area, ep);
+            used += actual_h;
+            idx += 1;
         }
     }
 
-    fn draw_episode(f: &mut Frame, area: Rect, ep: &Episode) {
-        match &ep.phase {
-            Phase::Measuring => Self::draw_measuring(f, area, ep),
-            Phase::Downloading { pct, speed, eta } => {
-                Self::draw_downloading(f, area, ep, *pct, speed, eta)
+    fn episode_height(ep: &Episode) -> usize {
+        match ep.phase {
+            Phase::Queued => 3,
+            Phase::Measuring => 3 + ep.mirrors.len().min(3),
+            Phase::Downloading { .. } => 4,
+            Phase::Done { .. } | Phase::Failed | Phase::Cancelled => 3,
+        }
+    }
+
+    fn render_episode(f: &mut Frame, area: Rect, ep: &Episode) {
+        let (border_color, _title_str) = Self::episode_style(ep);
+
+        let mut title = format!(" Ep {} ", ep.number);
+        if let Some(ref w) = ep.winner {
+            title.push_str(&format!("— {w} "));
+        }
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(title)
+            .border_style(Style::default().fg(border_color));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+
+        match ep.phase {
+            Phase::Queued => {
+                let text = Paragraph::new("  waiting for slot...")
+                    .style(Style::default().fg(Color::DarkGray));
+                f.render_widget(text, inner);
             }
-            Phase::Done { host, size_mb } => Self::draw_done(f, area, ep, host, *size_mb),
-            Phase::Failed => Self::draw_failed(f, area, ep),
-        }
-    }
-
-    fn draw_measuring(f: &mut Frame, area: Rect, ep: &Episode) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(format!(" Episode {} — measuring ", ep.number))
-            .border_style(Style::default().fg(Color::Yellow));
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-
-        if ep.mirrors.is_empty() {
-            let p = Paragraph::new("  waiting for host locks...")
-                .style(Style::default().fg(Color::DarkGray));
-            f.render_widget(p, inner);
-            return;
-        }
-
-        let items: Vec<ListItem> = ep
-            .mirrors
-            .iter()
-            .map(|m| {
-                let icon = if m.active { "⠿" } else { " " };
-                let speed_str = match m.bps {
-                    Some(bps) => {
-                        let mbps = bps / 1_048_576.0;
-                        format!("{mbps:.1} MiB/s")
-                    }
-                    None if m.active => "measuring...".to_string(),
-                    None => "skipped".to_string(),
-                };
-                let color = if m.active {
-                    Color::Cyan
+            Phase::Measuring => {
+                if ep.mirrors.is_empty() {
+                    let text = Paragraph::new("  waiting for host locks...")
+                        .style(Style::default().fg(Color::DarkGray));
+                    f.render_widget(text, inner);
                 } else {
-                    Color::DarkGray
-                };
-                let content = format!("  {icon} {:<10} {}", m.host, speed_str);
-                ListItem::new(content).style(Style::default().fg(color))
-            })
-            .collect();
-
-        let list = List::new(items);
-        f.render_widget(list, inner);
+                    let items: Vec<ListItem> = ep
+                        .mirrors
+                        .iter()
+                        .take(3)
+                        .map(|m| {
+                            let icon = if m.active { "⠿" } else { " " };
+                            let speed = match m.bps {
+                                Some(bps) => {
+                                    let mbps = bps / 1_048_576.0;
+                                    format!("{mbps:.1} MiB/s")
+                                }
+                                None if m.active => "measuring...".into(),
+                                None => "skipped".into(),
+                            };
+                            let color = if m.active {
+                                Color::Cyan
+                            } else {
+                                Color::DarkGray
+                            };
+                            ListItem::new(format!("  {icon} {:<10} {}", m.host, speed))
+                                .style(Style::default().fg(color))
+                        })
+                        .collect();
+                    let list = List::new(items);
+                    f.render_widget(list, inner);
+                }
+            }
+            Phase::Downloading {
+                pct,
+                ref speed,
+                ref eta,
+                ..
+            } => Self::render_gauge(f, inner, pct, speed, eta, border_color),
+            Phase::Done { ref host, size_mb } => {
+                let msg = format!("  ✓  {size_mb:.1} MB  ({host})");
+                let text = Paragraph::new(msg).style(
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                );
+                f.render_widget(text, inner);
+            }
+            Phase::Failed => {
+                let text = Paragraph::new("  ✗  all mirrors failed")
+                    .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD));
+                f.render_widget(text, inner);
+            }
+            Phase::Cancelled => {
+                let text =
+                    Paragraph::new("  ✕  cancelled").style(Style::default().fg(Color::DarkGray));
+                f.render_widget(text, inner);
+            }
+        }
     }
 
-    fn draw_downloading(f: &mut Frame, area: Rect, ep: &Episode, pct: f64, speed: &str, eta: &str) {
-        let host = ep.winner.as_deref().unwrap_or("?");
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(format!(" Episode {} — {}", ep.number, host))
-            .border_style(Style::default().fg(Color::Cyan));
-        let inner = block.inner(area);
-        f.render_widget(block, area);
+    fn episode_style(ep: &Episode) -> (Color, String) {
+        match ep.phase {
+            Phase::Queued => (Color::DarkGray, "queued".into()),
+            Phase::Measuring => (Color::Yellow, "measuring".into()),
+            Phase::Downloading { .. } => (Color::Cyan, "downloading".into()),
+            Phase::Done { .. } => (Color::Green, "done".into()),
+            Phase::Failed => (Color::Red, "failed".into()),
+            Phase::Cancelled => (Color::DarkGray, "cancelled".into()),
+        }
+    }
 
+    fn render_gauge(f: &mut Frame, area: Rect, pct: f64, speed: &str, eta: &str, color: Color) {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(1), Constraint::Length(1)])
-            .split(inner);
+            .split(area);
 
-        // Progress bar
+        let gauge_color = if pct > 90.0 {
+            Color::Green
+        } else if pct > 60.0 {
+            Color::LightGreen
+        } else if pct > 30.0 {
+            Color::Yellow
+        } else {
+            color
+        };
+
         let gauge = Gauge::default()
-            .block(Block::default())
-            .gauge_style(Style::default().fg(Color::Cyan).bg(Color::DarkGray))
-            .percent(pct as u16)
+            .gauge_style(
+                Style::default()
+                    .fg(gauge_color)
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .percent((pct as u16).min(100))
             .label(format!("{pct:.1}%"));
         f.render_widget(gauge, chunks[0]);
 
-        // Speed + ETA
         let info = format!("  {speed:>12}  ETA {eta}");
         let text = Paragraph::new(info).style(Style::default().fg(Color::White));
         f.render_widget(text, chunks[1]);
     }
 
-    fn draw_done(f: &mut Frame, area: Rect, ep: &Episode, host: &str, size_mb: f64) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(format!(" Episode {} ", ep.number))
-            .border_style(Style::default().fg(Color::Green));
-        let inner = block.inner(area);
-        f.render_widget(block, area);
+    fn render_summary(
+        f: &mut Frame,
+        area: Rect,
+        ep_count: usize,
+        done: u64,
+        failed: u64,
+        sum_bytes: u64,
+        total_bytes: u64,
+    ) {
+        let active = ep_count as u64 - done - failed;
+        let total_mb = if total_bytes > 0 {
+            total_bytes as f64 / 1_048_576.0
+        } else {
+            0.0
+        };
+        let sum_mb = sum_bytes as f64 / 1_048_576.0;
 
-        let msg = format!("  ✓  {size_mb:.1} MB  ({host})");
-        let text = Paragraph::new(msg).style(
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
+        let summary = format!(
+            " {done} done · {active} active · {failed} failed · Total: {sum_mb:.1} MB / {total_mb:.1} MB"
         );
-        f.render_widget(text, inner);
-    }
-
-    fn draw_failed(f: &mut Frame, area: Rect, ep: &Episode) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(format!(" Episode {} ", ep.number))
-            .border_style(Style::default().fg(Color::Red));
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-
-        let text = Paragraph::new("  ✗  all mirrors failed")
-            .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD));
-        f.render_widget(text, inner);
+        let text =
+            Paragraph::new(summary).style(Style::default().fg(Color::White).bg(Color::Black));
+        f.render_widget(text, area);
     }
 }

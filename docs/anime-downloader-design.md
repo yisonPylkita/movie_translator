@@ -1,7 +1,15 @@
 # Anime Downloader — Design Document
 
-**Last updated:** 2026-07-28  
-**Status:** Phase 1 implemented · Phase 2–3 specified below
+> **OBSOLETE — 2025-07-29**
+> This document describes the legacy anime-dl architecture (browser-based resolver,
+> userscript, `--json`/`--file`/name-search flows). The current CLI accepts only
+> canonical JSON via `--input <path>` (or positional `.json`). The resolver
+> userscript lives at `scripts/ogladajanime_resolver.user.js` — install in
+> Tampermonkey to generate `anime-<slug>.json` files. For current usage see
+> `anime-dl --help` and the README.
+
+**Last updated:** 2026-07-28
+**Status:** Phase 1 implemented + stabilized · Phase 2–3 specified below · Visual renderers A/B/C/D deferred
 
 ---
 
@@ -244,16 +252,18 @@ the main thread while episode threads run in the background.
 
 ### 7.4 Interaction
 
-- `q` or `Esc` — quit early. Running downloads are left to finish (threads
-  are not killed).
-- TUI auto-exits when all episodes reach Done or Failed state.
+- **No keyboard/mouse input.** The TUI is read-only auto-display.
+- Ctrl+C cancels all downloads (handled by the engine via `CancellationToken`).
+- TUI auto-exits when all episodes reach Done or Failed state (with 500ms final
+  display).
 - 100ms refresh tick.
+- If episodes exceed viewport height, the display auto-pages every 3 seconds.
 
 ---
 
 ## 8. Event Flow
 
-Episode threads communicate with the TUI via `mpsc::Sender<EpEvent>`:
+Episode threads communicate with the TUI via `broadcast::Sender<EpEvent>`:
 
 ```rust
 enum EpEvent {
@@ -261,15 +271,17 @@ enum EpEvent {
     Measured   { ep, host, bps },      // measurement result
     MirrorBusy { ep, host },           // host locked by another episode
     Winner     { ep, host },           // this host selected for full dl
-    Progress   { ep, host, pct, speed, eta },  // download progress update
+    Progress   { ep, host, pct, speed, eta, downloaded, total },  // dl progress
     Done       { ep, host, size_mb },  // download completed
     Failed     { ep },                 // all mirrors exhausted
     MirrorDone { ep, host, success },  // measurement ended (killed/failed)
+    MeasurementComplete { ep },        // all mirrors measured
+    Cancelled  { ep },                 // cancelled via CancellationToken
 }
 ```
 
-Events are sent from the episode threads (one per episode) and consumed by the
-TUI on the main thread.
+Events are broadcast to all consumers (TUI, plain output, etc.) and consumed
+by the renderer on its own task.
 
 ---
 
@@ -346,7 +358,104 @@ The ratatui TUI in §7 is implemented. Next session should polish:
 
 ---
 
-## 11. Testing the Current Implementation
+## 11. Canonical JSON Schema (--input flow)
+
+New `--input PATH` CLI arg accepts a JSON file with the following schema:
+
+```json
+{
+  "title": "string (optional display name)",
+  "episodes": [
+    {
+      "episode": 1,
+      "urls": ["https://cdn1.example.com/video.mp4"],
+      "quality": {"height": 1080}
+    }
+  ]
+}
+```
+
+- `title`: optional display name shown in TUI.
+- `episodes`: non-empty array. Each entry must have `episode` (positive int, unique) and `urls` (non-empty array of non-empty strings).
+- `quality`: optional object with `height` (u32) for quality-first mirror selection.
+
+Validation rejects: zero-url episodes, empty URL strings, missing episode numbers, duplicate episodes, empty episode array, malformed JSON.
+
+### Quality-first semantics
+
+1. Inspect quality metadata per mirror.
+2. Rank: higher height > lower height. Unknown height (0) = lowest.
+3. Only mirrors in global maximum quality tier race. All equal → all race.
+4. Single mirror in max tier → skip race, go direct.
+5. Tie-break: speed → height → host preference rank → URL alphabetically.
+
+### Concurrency defaults
+
+- `--episode-concurrency`: default 4, max simultaneous episode downloads.
+- `--host-concurrency`: default 1, max simultaneous downloads from one host.
+
+### Temp / cancellation behavior
+
+- Downloads go to `.part` files, renamed on completion.
+- Cancellation kills subprocess, deletes `.part`/loser files.
+- CancellationToken wired through all workers.
+- SIGINT / Ctrl+C triggers cancel-all.
+
+### `--ui` flag and plain output mode
+
+A `--ui <MODE>` flag selects the output renderer. All five modes with their aliases:
+
+| Alias | Full name   | Description                          |
+|-------|-------------|--------------------------------------|
+| a     | dashboard   | Pinned header/footer, row per ep     |
+| b     | timeline    | Row-per-ep timeline with stage glyphs |
+| c     | scoreboard  | Compact multi-column auto-paging grid |
+| d     | stream      | Styled recent event stream            |
+| tui   | dashboard   | Legacy compatibility alias            |
+| plain | plain       | Pipe-safe structured log lines        |
+
+**Default selection:** When stdout is a TTY, the default is `dashboard` (alias `a`
+or `tui`). When stdout is not a TTY (piped, redirected), `plain` is auto-selected.
+Explicit `--ui` always wins over auto-detection.
+
+The plain renderer writes timestamped `[INFO/WARN]` lines to stdout with no
+ANSI codes, suitable for logging or CI. Warnings about lagged events remain on
+stderr.
+
+### Extension seam
+
+Renderers implement an `EpEvent` consumer trait. New renderers can be plugged
+in via the `--ui <name>` flag without modifying engine code.
+
+### TUI is read-only
+
+The TUI has no keyboard or mouse input handling. It is a passive progress
+display only. All control flows through the download engine's
+`CancellationToken` (Ctrl+C triggers cancel-all). The Paused/Resumed event
+variants were removed entirely from the type system; the engine no longer
+supports per-episode pause/resume.
+
+### Example workflows
+
+```bash
+# New --input flow (canonical JSON)
+just anime-dl --input docs/anime-dl-example.json --episode-concurrency 6
+
+# Smart routing: positional .json detected as --input
+just anime-dl path/to/episodes.json
+
+# Smart routing with dashboard UI
+just anime-dl episodes.json --ui a
+
+# Legacy ogladajanime flow (unchanged)
+just anime-dl "Boku no Hero Academia"
+just anime-dl -- --file watchlist.txt --out ~/Videos/anime
+
+# Pre-resolved JSON (skip browser)
+just anime-dl -- --json ~/Downloads/anime.json
+```
+
+## 12. Testing
 
 ```bash
 # Build

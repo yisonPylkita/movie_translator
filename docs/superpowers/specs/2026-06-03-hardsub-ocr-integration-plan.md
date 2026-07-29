@@ -5,10 +5,11 @@ PoC under `scripts/hardsub_poc/` has been consolidated into the app and removed;
 the original reverse-engineering record is `2026-06-03-hardsub-ocr-poc-design.md`.
 
 Final layout:
+
 - Python ML in `movie_translator/hardsub/` (`download_episode`, `ocr_and_clean`),
   exposed via `crates/mt-ml` (`hardsub_download`, `hardsub_ocr_clean`).
 - OCR quality lives in the shared `movie_translator/ocr` stage: sign-text filter
-  + changed-pixel-fraction transition metric (tuned via the golden-sample
+  - changed-pixel-fraction transition metric (tuned via the golden-sample
   harness `scripts/ocr_golden_analysis.py`; ablation `scripts/ocr_experiment.py`).
 - Discovery + open-browser + watch-`~/Downloads` + JSON parse + best/fallback
   player selection in `crates/mt-fetch/src/ogladajanime.rs`.
@@ -66,11 +67,11 @@ movie-translator run <video-or-dir> --hardsub-ocr
    `open`, Linux `xdg-open`). Print a one-line instruction: "Run the resolver
    userscript (⏬ All / ▶ This episode), then press Enter."
 4. **Wait for the signal — auto-watch `~/Downloads`** for a new
-   `oga-<slug>-*.players.json` (no Enter needed). Must guard against picking up
+   `anime-<slug>.json` (no Enter needed). Must guard against picking up
    a download still in flight — see "Detecting a fully-downloaded file" below.
 5. **Per episode** in the JSON: pick the best PL player (CDA preferred) →
    yt-dlp download the lowest legible track → Vision OCR → clean (merge jitter
-   + drop garbage) → **align to the local episode's English reference** →
+   - drop garbage) → **align to the local episode's English reference** →
    produce a Polish `.srt`.
 6. **Mux** the aligned Polish track into the output, like any other found
    subtitle track.
@@ -78,7 +79,7 @@ movie-translator run <video-or-dir> --hardsub-ocr
 ## Where the code lives (respecting the Rust-orchestration / Python-ML split)
 
 | Concern | Home | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `--hardsub-ocr` flag, discovery, browser-open, Downloads-watch, interactive wait, orchestration | **Rust** | new `crates/mt-fetch/src/ogladajanime.rs` + a `mt-pipeline` stage + `mt-cli` flag |
 | Download (yt-dlp) + OCR + clean (merge/garbage-filter) | **Python** | graduate `scripts/hardsub_poc/{download,postprocess}.py` into `movie_translator/hardsub/`, reuse `movie_translator/ocr`, expose via `crates/mt-ml` |
 | Alignment to the local timeline | **reuse Rust `mt-fetch`** | drop the PoC's `align.py` duplicate — call the existing ilass (`align_ilass.rs`) + xcorr fallback against the local English reference |
@@ -114,7 +115,7 @@ file. Layered guards, all required:
 1. **Ignore in-flight partials.** Browsers download to a temp name and rename
    to the final name only on completion — Chrome `*.crdownload`, Firefox
    `*.part`, Safari `*.download`. So we only ever consider files matching
-   `oga-<slug>-*.players.json` (the final name); a partial simply isn't
+   `anime-<slug>.json` (the final name); a partial simply isn't
    matched yet. This is the primary, near-sufficient signal (rename is atomic).
 2. **Freshness.** Only accept files whose `mtime` is **after** the browser was
    opened, so a stale JSON from a previous run is never picked up.

@@ -2,13 +2,13 @@
 //!
 //! The site can't be driven headlessly (Cloudflare Turnstile + anti-debug), so
 //! the actual player-URL resolution happens in the user's real browser via a
-//! Tampermonkey userscript that downloads a JSON. This module does the parts
-//! the app *can* automate: discover the anime page, open the browser there, and
-//! watch `~/Downloads` for the userscript's JSON — guarded so a download still
-//! in flight is never read.
+//! Tampermonkey userscript that downloads a canonical JSON. This module does
+//! the parts the app *can* automate: discover the anime page, open the browser
+//! there, and watch `~/Downloads` for the userscript's JSON — guarded so a
+//! download still in flight is never read.
 //!
-//! Pure helpers (`slugify`, `parse_plan`, `best_pl_player`) are unit-tested
-//! without network or filesystem.
+//! Pure helpers (`slugify`, `parse_plan`) are unit-tested without network or
+//! filesystem.
 
 use std::collections::HashMap;
 use std::env;
@@ -28,62 +28,20 @@ const BASE_URL: &str = "https://ogladajanime.pl";
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
      AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
-/// Host preference for picking the best player (CDA resolves cleanest in
-/// yt-dlp). Lower index = more preferred; unknown hosts sort last.
-const HOST_PREFERENCE: &[&str] = &[
-    "cda",
-    "sibnet",
-    "vk",
-    "mega",
-    "ok",
-    "dood",
-    "myvi",
-    "google",
-    "hqq",
-    "voe",
-    "mp4upload",
-];
-
-/// One resolved player from the userscript JSON (`resolved[]` entry).
-#[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct ResolvedPlayer {
-    #[serde(default)]
-    pub host: Option<String>,
-    #[serde(default)]
-    pub sub: Option<String>,
-    #[serde(default)]
-    pub quality: Option<String>,
-    pub embed_url: String,
-    #[serde(default)]
-    pub sub_group: Option<String>,
-}
-
-/// Parsed resolver JSON: episode number -> its resolved players.
+/// Parsed canonical resolver JSON: episode number -> its resolved URLs.
 #[derive(Debug, Clone)]
 pub struct HardsubPlan {
     pub slug: String,
-    pub episodes: HashMap<i64, Vec<ResolvedPlayer>>,
+    pub episodes: HashMap<i64, Vec<String>>,
 }
 
 impl HardsubPlan {
-    /// The best PL-sub player for `episode` (CDA preferred, then resolution).
-    pub fn best_player(&self, episode: i64) -> Option<&ResolvedPlayer> {
-        best_pl_player(self.episodes.get(&episode)?)
-    }
-
-    /// All PL-sub players for `episode`, ordered best-first (host preference,
-    /// then resolution). Used to fall back to the next mirror when a download
-    /// fails — a dead/410 cda link then drops to vk/mega/etc. automatically.
-    pub fn pl_players(&self, episode: i64) -> Vec<&ResolvedPlayer> {
-        let Some(players) = self.episodes.get(&episode) else {
-            return Vec::new();
-        };
-        let mut v: Vec<&ResolvedPlayer> = players
-            .iter()
-            .filter(|p| p.sub.as_deref() == Some("pl") && !p.embed_url.is_empty())
-            .collect();
-        v.sort_by_key(|p| (host_rank(p), -quality_height(p)));
-        v
+    /// All URLs for `episode`, ordered best-first (userscript already curates).
+    pub fn pl_players(&self, episode: i64) -> Vec<&str> {
+        self.episodes
+            .get(&episode)
+            .map(|v| v.iter().map(|s| s.as_str()).collect())
+            .unwrap_or_default()
     }
 
     pub fn episode_count(&self) -> usize {
@@ -100,22 +58,20 @@ pub enum Discovery {
     Search { url: String },
 }
 
-// --- JSON shapes (userscript output) -------------------------------------
+// --- Canonical JSON shapes (userscript output) ---------------------------
 
 #[derive(Deserialize)]
-struct ResolverJson {
+struct CanonicalJson {
     #[serde(default)]
-    anime_slug: Option<String>,
-    #[serde(default)]
-    episodes: Vec<EpisodeEntry>,
+    title: Option<String>,
+    episodes: Vec<CanonicalEpisode>,
 }
 
 #[derive(Deserialize)]
-struct EpisodeEntry {
+struct CanonicalEpisode {
+    episode: i64,
     #[serde(default)]
-    episode: Option<i64>,
-    #[serde(default)]
-    resolved: Vec<ResolvedPlayer>,
+    urls: Vec<String>,
 }
 
 /// Lowercase, ASCII-fold-ish, non-alphanumeric → single dash, trimmed.
@@ -203,13 +159,11 @@ pub fn default_downloads_dir() -> PathBuf {
 }
 
 fn is_resolver_json(name: &str, slug: Option<&str>) -> bool {
-    // The userscript downloads `oga-<slug>-*.players.json`. When the browser
-    // hits a duplicate name it inserts ` (N)` BEFORE `.json` (e.g.
-    // `oga-...-all.players (4).json`), so we match on `.players` + `.json`
-    // rather than a literal `.players.json` suffix. In-flight partials end in
-    // `.crdownload`/`.part`/`.download` (not `.json`), so requiring a `.json`
-    // tail already excludes them.
-    if !(name.starts_with("oga-") && name.contains(".players") && name.ends_with(".json")) {
+    if !(name.starts_with("anime-") && name.ends_with(".json")) {
+        return false;
+    }
+    // Exclude in-flight partials
+    if name.ends_with(".crdownload") || name.ends_with(".part") || name.contains(".download") {
         return false;
     }
     match slug {
@@ -221,9 +175,9 @@ fn is_resolver_json(name: &str, slug: Option<&str>) -> bool {
 /// Watch `downloads_dir` for a finished resolver JSON newer than `since`.
 ///
 /// Guards against reading a download in flight: only matches the final
-/// `oga-<slug>-*.players.json` name (browsers rename atomically on completion),
+/// `anime-<slug>.json` name (browsers rename atomically on completion),
 /// requires the file's mtime to be at/after `since`, and accepts it only once
-/// its size is stable across two polls and it parses as a valid resolver JSON.
+/// its size is stable across two polls and it parses as a valid canonical JSON.
 pub fn wait_for_resolver_json(
     slug: Option<&str>,
     since: SystemTime,
@@ -250,7 +204,7 @@ pub fn wait_for_resolver_json(
         }
         if start.elapsed() >= timeout {
             return Err(FetchError::NotFound(format!(
-                "no resolver JSON (oga-*.players.json) appeared in {} within {}s",
+                "no resolver JSON (anime-*.json) appeared in {} within {}s",
                 downloads_dir.display(),
                 timeout.as_secs()
             )));
@@ -283,49 +237,25 @@ fn newest_match(dir: &Path, slug: Option<&str>, cutoff: SystemTime) -> Option<Pa
     best.map(|(_, p)| p)
 }
 
-/// Parse a resolver JSON file into a [`HardsubPlan`]. `fallback_slug` is used
-/// when the JSON omits `anime_slug`.
+/// Parse a canonical resolver JSON file into a [`HardsubPlan`]. `fallback_slug`
+/// is used when the JSON omits `title`.
 pub fn parse_plan(path: &Path, fallback_slug: &str) -> Result<HardsubPlan, FetchError> {
     let text = fs::read_to_string(path)?;
-    let json: ResolverJson = from_str(&text).map_err(|e| FetchError::Parse(e.to_string()))?;
+    let json: CanonicalJson = from_str(&text).map_err(|e| FetchError::Parse(e.to_string()))?;
     let slug = json
-        .anime_slug
+        .title
+        .as_deref()
         .filter(|s| !s.is_empty())
+        .map(slugify)
         .unwrap_or_else(|| fallback_slug.to_string());
     let mut episodes = HashMap::new();
     for ep in json.episodes {
-        if let Some(n) = ep.episode
-            && !ep.resolved.is_empty()
-        {
-            episodes.insert(n, ep.resolved);
+        let urls: Vec<String> = ep.urls.into_iter().filter(|u| !u.is_empty()).collect();
+        if !urls.is_empty() {
+            episodes.insert(ep.episode, urls);
         }
     }
     Ok(HardsubPlan { slug, episodes })
-}
-
-fn host_rank(player: &ResolvedPlayer) -> usize {
-    player
-        .host
-        .as_deref()
-        .and_then(|h| HOST_PREFERENCE.iter().position(|x| *x == h))
-        .unwrap_or(HOST_PREFERENCE.len())
-}
-
-fn quality_height(player: &ResolvedPlayer) -> i32 {
-    player
-        .quality
-        .as_deref()
-        .map(|q| q.chars().filter(|c| c.is_ascii_digit()).collect::<String>())
-        .and_then(|d| d.parse::<i32>().ok())
-        .unwrap_or(0)
-}
-
-/// Pick the best PL-sub player: host preference first, then highest resolution.
-pub fn best_pl_player(players: &[ResolvedPlayer]) -> Option<&ResolvedPlayer> {
-    players
-        .iter()
-        .filter(|p| p.sub.as_deref() == Some("pl") && !p.embed_url.is_empty())
-        .min_by_key(|p| (host_rank(p), -quality_height(p)))
 }
 
 #[cfg(test)]
@@ -341,136 +271,129 @@ mod tests {
 
     #[test]
     fn is_resolver_json_matches_final_only() {
-        assert!(is_resolver_json("oga-isekai-ojisan-all.players.json", None));
+        assert!(is_resolver_json("anime-isekai-ojisan.json", None));
         assert!(is_resolver_json(
-            "oga-isekai-ojisan-all.players.json",
+            "anime-isekai-ojisan.json",
             Some("isekai-ojisan")
         ));
         // browser duplicate-name suffix: ` (N)` is inserted before `.json`
         assert!(is_resolver_json(
-            "oga-isekai-ojisan-all.players (4).json",
+            "anime-isekai-ojisan (4).json",
             Some("isekai-ojisan")
         ));
         // in-flight partials never match the final suffix
-        assert!(!is_resolver_json(
-            "oga-isekai-ojisan-all.players.json.crdownload",
-            None
-        ));
-        assert!(!is_resolver_json("oga-x.players.json.part", None));
+        assert!(!is_resolver_json("anime-x.json.crdownload", None));
+        assert!(!is_resolver_json("anime-x.json.part", None));
         // slug filter
-        assert!(!is_resolver_json(
-            "oga-other-anime-all.players.json",
-            Some("isekai-ojisan")
-        ));
+        assert!(!is_resolver_json("anime-other.json", Some("isekai-ojisan")));
         // unrelated files
         assert!(!is_resolver_json("something.json", None));
     }
 
     #[test]
-    fn best_player_prefers_cda_pl() {
-        let players = vec![
-            ResolvedPlayer {
-                host: Some("sibnet".into()),
-                sub: Some("pl".into()),
-                quality: Some("720p".into()),
-                embed_url: "https://sibnet/x".into(),
-                sub_group: None,
-            },
-            ResolvedPlayer {
-                host: Some("cda".into()),
-                sub: Some("pl".into()),
-                quality: Some("1080p".into()),
-                embed_url: "https://cda/x".into(),
-                sub_group: None,
-            },
-            ResolvedPlayer {
-                host: Some("cda".into()),
-                sub: Some("en".into()),
-                quality: Some("1080p".into()),
-                embed_url: "https://cda/en".into(),
-                sub_group: None,
-            },
-        ];
-        let best = best_pl_player(&players).unwrap();
-        assert_eq!(best.host.as_deref(), Some("cda"));
-        assert_eq!(best.sub.as_deref(), Some("pl"));
-    }
-
-    #[test]
-    fn pl_players_ordered_best_first_for_fallback() {
+    fn pl_players_returns_urls_from_canonical() {
         let mut episodes = HashMap::new();
         episodes.insert(
             4,
             vec![
-                ResolvedPlayer {
-                    host: Some("vk".into()),
-                    sub: Some("pl".into()),
-                    quality: Some("1080p".into()),
-                    embed_url: "https://vk/4".into(),
-                    sub_group: Some("Mioro-Subs".into()),
-                },
-                ResolvedPlayer {
-                    host: Some("cda".into()),
-                    sub: Some("pl".into()),
-                    quality: Some("1080p".into()),
-                    embed_url: "https://cda/4".into(),
-                    sub_group: None,
-                },
-                ResolvedPlayer {
-                    host: Some("mp4upload".into()),
-                    sub: Some("en".into()),
-                    quality: Some("720p".into()),
-                    embed_url: "https://mp4/4".into(),
-                    sub_group: None,
-                },
+                "https://cda.pl/4".to_string(),
+                "https://vk.com/4".to_string(),
             ],
         );
         let plan = HardsubPlan {
             slug: "x".into(),
             episodes,
         };
-        let order: Vec<_> = plan
-            .pl_players(4)
-            .iter()
-            .map(|p| p.host.clone().unwrap())
-            .collect();
-        // cda first (fallback target = vk next); en player excluded.
-        assert_eq!(order, vec!["cda", "vk"]);
+        let urls = plan.pl_players(4);
+        assert_eq!(urls, vec!["https://cda.pl/4", "https://vk.com/4"]);
         assert!(plan.pl_players(99).is_empty());
     }
 
     #[test]
-    fn best_player_none_when_no_pl() {
-        let players = vec![ResolvedPlayer {
-            host: Some("cda".into()),
-            sub: Some("en".into()),
-            quality: Some("1080p".into()),
-            embed_url: "https://cda/en".into(),
-            sub_group: None,
-        }];
-        assert!(best_pl_player(&players).is_none());
-    }
-
-    #[test]
-    fn parse_plan_from_userscript_json() {
+    fn parse_plan_from_canonical_json() {
         let json = r#"{
-            "anime_slug": "isekai-ojisan",
+            "title": "Isekai Ojisan",
             "episodes": [
-                {"episode": 1, "episode_url": "u1", "resolved": [
-                    {"host": "cda", "sub": "pl", "quality": "1080p", "embed_url": "https://cda/1"}
-                ]},
-                {"episode": 2, "episode_url": "u2", "resolved": []}
+                {"episode": 1, "urls": ["https://cda.pl/v/1", "https://sibnet.ru/2"]},
+                {"episode": 2, "urls": []}
             ]
         }"#;
         let dir = env::temp_dir();
-        let path = dir.join("oga-test-parse.players.json");
+        let path = dir.join("anime-test-canonical.json");
         fs::write(&path, json).unwrap();
         let plan = parse_plan(&path, "fallback").unwrap();
         fs::remove_file(&path).ok();
-        assert_eq!(plan.slug, "isekai-ojisan");
-        // episode 2 had no resolved players → dropped
+        assert_eq!(plan.slug, "isekai-ojisan"); // slugified from title
+        assert_eq!(plan.episode_count(), 1); // ep 2 had empty urls -> dropped
+        let urls = plan.pl_players(1);
+        assert_eq!(urls.len(), 2);
+        assert_eq!(urls[0], "https://cda.pl/v/1");
+        assert_eq!(urls[1], "https://sibnet.ru/2");
+    }
+
+    #[test]
+    fn parse_plan_fallback_slug_when_no_title() {
+        let json = r#"{
+            "episodes": [
+                {"episode": 1, "urls": ["https://cda.pl/v/1"]}
+            ]
+        }"#;
+        let dir = env::temp_dir();
+        let path = dir.join("anime-test-no-title.json");
+        fs::write(&path, json).unwrap();
+        let plan = parse_plan(&path, "fallback-slug").unwrap();
+        fs::remove_file(&path).ok();
+        assert_eq!(plan.slug, "fallback-slug");
         assert_eq!(plan.episode_count(), 1);
-        assert_eq!(plan.best_player(1).unwrap().host.as_deref(), Some("cda"));
-        assert!(plan.best_player(2).is_none());
+    }
+
+    #[test]
+    fn parse_plan_skips_empty_urls() {
+        let json = r#"{
+            "episodes": [
+                {"episode": 1, "urls": ["https://cda.pl/v/1", ""]},
+                {"episode": 2, "urls": ["", ""]},
+                {"episode": 3, "urls": ["https://vk.com/3"]}
+            ]
+        }"#;
+        let dir = env::temp_dir();
+        let path = dir.join("anime-test-empty.json");
+        fs::write(&path, json).unwrap();
+        let plan = parse_plan(&path, "fallback").unwrap();
+        fs::remove_file(&path).ok();
+        // ep1: one url kept (non-empty), ep2: all empty -> dropped, ep3: kept
+        assert_eq!(plan.episode_count(), 2);
+        let urls1 = plan.pl_players(1);
+        assert_eq!(urls1.len(), 1);
+        assert_eq!(urls1[0], "https://cda.pl/v/1");
+        let urls3 = plan.pl_players(3);
+        assert_eq!(urls3.len(), 1);
+        assert_eq!(urls3[0], "https://vk.com/3");
+    }
+
+    /// Verify round-trip: canonical JSON -> parse_plan -> each episode accessible.
+    #[test]
+    fn canonical_round_trip() {
+        let json = r#"{
+            "title": "Test Series",
+            "episodes": [
+                {"episode": 1, "urls": ["https://cda.pl/a", "https://sibnet.ru/b"]},
+                {"episode": 5, "urls": ["https://vk.com/c"]},
+                {"episode": 10, "urls": []}
+            ]
+        }"#;
+        let dir = env::temp_dir();
+        let path = dir.join("anime-roundtrip.json");
+        fs::write(&path, json).unwrap();
+        let plan = parse_plan(&path, "fallback").unwrap();
+        fs::remove_file(&path).ok();
+        assert_eq!(plan.slug, "test-series");
+        assert_eq!(plan.episode_count(), 2);
+        assert_eq!(
+            plan.pl_players(1),
+            vec!["https://cda.pl/a", "https://sibnet.ru/b"]
+        );
+        assert_eq!(plan.pl_players(5), vec!["https://vk.com/c"]);
+        assert!(plan.pl_players(10).is_empty());
     }
 }
