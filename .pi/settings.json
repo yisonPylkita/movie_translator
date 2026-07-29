@@ -17,7 +17,7 @@
       "context-builder": { "model": "deepseek/deepseek-v4-flash", "thinking": "low" },
       "researcher": { "model": "deepseek/deepseek-v4-flash", "thinking": "low" },
       "reviewer": { "model": "deepseek/deepseek-v4-flash", "thinking": "medium" },
-      "oracle": { "model": "deepseek/deepseek-v4-pro", "thinking": "medium" }
+      "oracle": { "model": "deepseek/deepseek-v4-flash", "thinking": "low" }
     }
   }
 }

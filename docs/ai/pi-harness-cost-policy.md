@@ -9,15 +9,18 @@
 | Role | Project default | Thinking | Work |
 | --- | --- | --- | --- |
 | Session lead | Owner-selected | as needed | Decompose, decide, steer, accept, report |
-| `stage_owner` | `deepseek/deepseek-v4-pro` | medium | One bounded package through writer/review/verify |
+| `stage_owner` | `deepseek/deepseek-v4-flash` | low | One bounded package through writer/review/verify |
 | `bounded_worker` / builtin `worker` | `deepseek/deepseek-v4-flash` | medium | Exclusive-scope implementation and checks |
 | `fast_explorer` / scout | `deepseek/deepseek-v4-flash` | low | Read-only repository evidence |
 | `spec_analyst` | `deepseek/deepseek-v4-flash` | medium | Read-only design and invariant analysis |
-| builtin `oracle` | `deepseek/deepseek-v4-pro` | medium | Hard decision-consistency review |
+| builtin `oracle` | `deepseek/deepseek-v4-flash` | low | Hard decision-consistency review |
 
-Override per run only when risk or complexity needs stronger model.
+Pro (`deepseek/deepseek-v4-pro`) allowed for explicit per-call escalation only when risk or complexity requires stronger model.
 
 ## Lead discipline
+
+Trivial/small (~1–2-file) work: lead handles directly. No mandatory delegation.
+Long/mechanical work, repeated inventory, full gate runs: delegate to workers.
 
 Prefer delegating:
 

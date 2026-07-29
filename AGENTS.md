@@ -8,12 +8,8 @@ One-shot orientation. English→Polish video subtitle translator (MKV/MP4).
 
 ### Hierarchy
 
-- **Parent (GPT-5.6 solo).** User dialogue, high-level goals. Spawns one Pro initiative
-  owner per substantive initiative. Never directly fans out Flash leaves.
-- **Initiative Owner (`stage_owner`, DeepSeek v4 Pro).** Sole orchestrator per package.
-  Validates whole result, returns ≤1000-token handoff. Spawns Flash leaf children.
-  Never edits files directly. Escalates only genuine product/architecture/destructive/
-  outward ambiguity.
+- **Parent (GPT-5.6 solo).** Product discussion, discovery, and trivial-to-small (~1–2-file) work directly. May spawn one focused Flash leaf for narrow tasks. No mandatory Pro hop.
+- **Initiative Owner (`stage_owner`, DeepSeek v4 Flash).** Reserved for broad, cross-cutting, or risky packages. Sole orchestrator per package. Validates whole result, returns ≤1000-token handoff. Spawns Flash leaf children. Never edits files directly. Escalates only genuine product/architecture/destructive/outward ambiguity.
 - **Leaf Children (DeepSeek v4 Flash).** Execute exclusive scope. Never delegate
   recursively. Contact owner for ambiguity.
 
@@ -38,8 +34,8 @@ One-shot orientation. English→Polish video subtitle translator (MKV/MP4).
 ## Project agents
 
 Configured in `.pi/agents/<name>.md`. Default model: `deepseek/deepseek-v4-flash`.
-`stage_owner` uses `deepseek/deepseek-v4-pro` (justified: recursive-orchestrator
-needs higher intelligence).
+`stage_owner` uses `deepseek/deepseek-v4-flash` (safe: delegates to Flash
+worker children; orchestrator role alone does not require Pro).
 
 | Agent | When to use | Model | Role |
 | ------- | ------------- | ----- | ---- |
@@ -47,7 +43,7 @@ needs higher intelligence).
 | `spec_analyst` | Read-only design, pipeline, platform, benchmark, acceptance analysis | flash | analyst |
 | `bounded_worker` | Exclusive-scope implementation + focused tests | flash | writer |
 | `reviewer` | Read-only independent review of changes | flash | reviewer |
-| `stage_owner` | Broader package, sole writer, independent review, one verify pass | pro | orchestrator |
+| `stage_owner` | Broader package, sole orchestrator, independent review, one verify pass | flash | orchestrator |
 
 ## Specialist skills
 
@@ -65,5 +61,5 @@ Defined in `.pi/skills/<name>/SKILL.md`. Loaded on demand by children; parent ne
 See `docs/ai/pi-harness-cost-policy.md` for full model ladder and cost discipline.
 
 - Session lead: owner-selected model (expensive; judgment).
-- Custom project agents: flash by default; pro only for `stage_owner` (orchestrator) and builtin `oracle` (hard decision-consistency).
+- Custom project agents: flash by default; oracle flash too; Pro explicit per-call hard reasoning only.
 - Builtin reviewer, scout, worker, delegate, planner, context-builder, researcher: all flash (configured in `.pi/settings.json`).
