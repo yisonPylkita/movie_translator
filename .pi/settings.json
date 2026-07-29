@@ -1,6 +1,14 @@
 {
   "subagents": {
     "defaultModel": "deepseek/deepseek-v4-flash",
+    "maxSubagentDepth": 2,
+    "modelScope": {
+      "enforce": true,
+      "allow": [
+        "deepseek/deepseek-v4-flash",
+        "deepseek/deepseek-v4-pro"
+      ]
+    },
     "agentOverrides": {
       "worker": { "model": "deepseek/deepseek-v4-flash", "thinking": "medium" },
       "scout": { "model": "deepseek/deepseek-v4-flash", "thinking": "low" },
