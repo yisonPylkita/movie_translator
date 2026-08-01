@@ -34,8 +34,8 @@ quick-xml = "0.40"
 ratatui = "0.29"
 regex = "1"
 reqwest = { version = "0.13", features = [
-    "json",
-    "rustls",
+  "json",
+  "rustls",
 ], default-features = false }
 scraper = "0.27"
 serde = { version = "1", features = ["derive"] }
