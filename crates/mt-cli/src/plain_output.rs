@@ -3,7 +3,10 @@
 //! Writes pipe-safe, rate-limited progress lines to stdout when stdout is
 //! not a TTY or when `--ui plain` is specified. No ANSI escape sequences,
 //! no cursor control. Produces machine-readable timestamps and log levels.
-//! URLs are redacted everywhere (`<url>`); output stays automation-safe.
+//! URLs are redacted everywhere (`[URL]`, token values `[REDACTED]`); output
+//! stays automation-safe. Redaction delegates to the shared
+//! [`crate::downloader::redact_urls`] — single source of truth (the engine
+//! pre-redacts events; this layer is defense in depth).
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -12,6 +15,7 @@ use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
 
 use crate::download_types::EpEvent;
+pub(crate) use crate::downloader::redact_urls;
 
 const PROGRESS_COOLDOWN: Duration = Duration::from_secs(1);
 
@@ -267,26 +271,6 @@ pub(crate) fn iso_timestamp() -> String {
     format!("{ms}")
 }
 
-/// Redact URLs from a string (contract: URLs never rendered in any output).
-/// Replaces `http(s)://...` runs with `<url>`.
-pub(crate) fn redact_urls(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    while let Some(pos) = rest.find("http://").or_else(|| rest.find("https://")) {
-        out.push_str(&rest[..pos]);
-        let after = &rest[pos..];
-        let scheme_len = if after.starts_with("https://") { 8 } else { 7 };
-        let url_rest = &after[scheme_len..];
-        let end = url_rest
-            .find(|c: char| c.is_whitespace())
-            .unwrap_or(url_rest.len());
-        out.push_str("<url>");
-        rest = &url_rest[end..];
-    }
-    out.push_str(rest);
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,13 +300,30 @@ mod tests {
     fn redacts_http_and_https_urls() {
         assert_eq!(
             redact_urls("retry https://cda.pl/video/abc attempt 1 in 2s"),
-            "retry <url> attempt 1 in 2s"
+            "retry [URL] attempt 1 in 2s"
         );
         assert_eq!(
             redact_urls("host http://x.y/z trailing"),
-            "host <url> trailing"
+            "host [URL] trailing"
         );
         assert_eq!(redact_urls("no url here"), "no url here");
+    }
+
+    /// Defense-in-depth path (reason lines + emit) must produce the SAME
+    /// markers as the shared downloader redactor — single source of truth.
+    #[test]
+    fn redaction_path_matches_shared_function() {
+        let last_host = HashMap::new();
+        let lines = final_summary_reason_lines(
+            &[(1, "x token=abc123 https://a.b/c?k=v".into())],
+            &last_host,
+        );
+        let expected = format!(
+            "E01 ?: {}",
+            crate::downloader::redact_urls("x token=abc123 https://a.b/c?k=v")
+        );
+        assert_eq!(lines[0], expected, "plain_output redaction = shared fn");
+        assert_eq!(lines[0], "E01 ?: x token=[REDACTED] [URL]");
     }
 
     #[test]

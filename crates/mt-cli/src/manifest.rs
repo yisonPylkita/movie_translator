@@ -17,6 +17,9 @@ use serde::{Deserialize, Serialize};
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
 /// Attempt history cap per episode (oldest dropped beyond this).
 pub const MAX_ATTEMPTS: usize = 8;
+/// Validation cache size cap: the entry with the OLDEST `checked_at` is
+/// evicted beyond this (bounding memory across runs).
+pub const MAX_VALIDATION_CACHE_ENTRIES: usize = 512;
 
 // ── Data model ─────────────────────────────────────────────────────────────
 
@@ -107,7 +110,6 @@ pub struct Manifest {
     pub schema_version: u32,
     pub input: InputIdentity,
     pub episodes: Vec<EpisodeRecord>,
-    pub failures: Vec<String>,
     pub summary: Summary,
     pub validation_cache: HashMap<String, CacheEntry>,
 }
@@ -123,10 +125,14 @@ impl Manifest {
     }
 
     /// Load a manifest. Missing or corrupt file → `None` (caller warns;
-    /// the user's file is left untouched).
+    /// the user's file is left untouched). Legacy manifests whose validation
+    /// cache exceeds [`MAX_VALIDATION_CACHE_ENTRIES`] are pruned down to cap
+    /// (oldest `checked_at` first).
     pub fn load(path: &Path) -> Option<Manifest> {
         let bytes = fs::read(path).ok()?;
-        serde_json::from_slice::<Manifest>(&bytes).ok()
+        let mut m = serde_json::from_slice::<Manifest>(&bytes).ok()?;
+        m.prune_validation_cache();
+        Some(m)
     }
 
     /// Atomically persist: write tmp in the same directory, fsync, rename over.
@@ -209,9 +215,37 @@ impl Manifest {
         }
     }
 
-    /// Store a validation result in the cache.
+    /// Store a validation result in the cache. When the cache is over
+    /// [`MAX_VALIDATION_CACHE_ENTRIES`], the entry with the OLDEST
+    /// `checked_at` is evicted (ISO-8601 Z strings compare lexically; `None`
+    /// counts as oldest). Eviction is deterministic — no HashMap iteration
+    /// order dependence: ties on `checked_at` break on the path key.
     pub fn cache_put(&mut self, path: String, entry: CacheEntry) {
         self.validation_cache.insert(path, entry);
+        if self.validation_cache.len() > MAX_VALIDATION_CACHE_ENTRIES {
+            self.evict_oldest_validation_entry();
+        }
+    }
+
+    /// Evict the validation-cache entry with the oldest `checked_at`
+    /// (`None` sorts first). Bounded work: O(n) scan over ≤ cap + 1 entries.
+    fn evict_oldest_validation_entry(&mut self) {
+        let oldest_key = self
+            .validation_cache
+            .iter()
+            .min_by(|(ka, a), (kb, b)| a.checked_at.cmp(&b.checked_at).then_with(|| ka.cmp(kb)))
+            .map(|(k, _)| k.clone());
+        if let Some(k) = oldest_key {
+            self.validation_cache.remove(&k);
+        }
+    }
+
+    /// Prune the validation cache down to [`MAX_VALIDATION_CACHE_ENTRIES`]
+    /// (oldest `checked_at` evicted first).
+    fn prune_validation_cache(&mut self) {
+        while self.validation_cache.len() > MAX_VALIDATION_CACHE_ENTRIES {
+            self.evict_oldest_validation_entry();
+        }
     }
 
     /// Reconcile episode statuses against the set of files present on disk:
@@ -569,6 +603,87 @@ mod tests {
         assert!(m.cache_get(&key, 1000, 222).is_none());
         // Unknown path → miss
         assert!(m.cache_get("/other", 1000, 111).is_none());
+    }
+
+    fn cache_entry_at(checked_at: Option<&str>) -> CacheEntry {
+        CacheEntry {
+            size: 0,
+            mtime_ns: 0,
+            ok: true,
+            reason: None,
+            ffprobe_version: None,
+            checked_at: checked_at.map(String::from),
+        }
+    }
+
+    #[test]
+    fn manifest_validation_cache_bounded_evicts_oldest() {
+        let mut m = sample_manifest();
+        let cap = MAX_VALIDATION_CACHE_ENTRIES;
+        // Fill to cap with distinct ascending checked_at.
+        for i in 0..cap {
+            m.cache_put(
+                format!("path-{i}"),
+                cache_entry_at(Some(&format!("t{i:04}"))),
+            );
+        }
+        assert_eq!(m.validation_cache.len(), cap);
+        // One more put → the OLDEST entry (path-0) is evicted; newest stays.
+        m.cache_put("path-new".into(), cache_entry_at(Some("t9999")));
+        assert_eq!(
+            m.validation_cache.len(),
+            cap,
+            "cache stays at cap after eviction"
+        );
+        assert!(
+            !m.validation_cache.contains_key("path-0"),
+            "oldest checked_at evicted"
+        );
+        assert!(
+            m.validation_cache.contains_key("path-new"),
+            "newest entry kept"
+        );
+        assert!(
+            m.validation_cache.contains_key("path-1"),
+            "next-oldest kept"
+        );
+    }
+
+    #[test]
+    fn manifest_validation_cache_none_checked_at_evicted_first() {
+        let mut m = sample_manifest();
+        for i in 0..MAX_VALIDATION_CACHE_ENTRIES {
+            m.cache_put(format!("path-{i}"), cache_entry_at(Some("t1")));
+        }
+        // Entry with checked_at = None is the oldest → evicted immediately
+        // when the cache is over cap.
+        m.cache_put("path-none".into(), cache_entry_at(None));
+        assert_eq!(m.validation_cache.len(), MAX_VALIDATION_CACHE_ENTRIES);
+        assert!(!m.validation_cache.contains_key("path-none"));
+        assert!(m.validation_cache.contains_key("path-0"));
+    }
+
+    #[test]
+    fn manifest_validation_cache_pruned_on_load() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("manifest.json");
+        let mut m = sample_manifest();
+        for i in 0..(MAX_VALIDATION_CACHE_ENTRIES + 128) {
+            m.cache_put(
+                format!("path-{i}"),
+                cache_entry_at(Some(&format!("t{i:04}"))),
+            );
+        }
+        m.save_atomic(&path).expect("save oversized cache");
+        let loaded = Manifest::load(&path).expect("load");
+        assert_eq!(
+            loaded.validation_cache.len(),
+            MAX_VALIDATION_CACHE_ENTRIES,
+            "legacy oversized cache pruned to cap"
+        );
+        // Newest entries survive the prune, oldest are dropped.
+        assert!(loaded.validation_cache.contains_key("path-639"));
+        assert!(!loaded.validation_cache.contains_key("path-0"));
     }
 
     #[test]

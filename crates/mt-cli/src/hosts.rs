@@ -74,39 +74,73 @@ pub fn all_hosts() -> Vec<HostId> {
 
 /// Identify the host from a URL or bare hostname string.
 ///
-/// Marker substrings cover both full URL patterns (`vk.com/video_ext.php`,
-/// `rumble.com/embed/`) and bare hostnames (`vk.com`, `video.sibnet.ru`),
-/// so callers may pass either a raw URL or the output of a hostname extractor.
+/// The hostname component is extracted first (scheme, userinfo, port, path,
+/// query and fragment stripped — both full URLs and bare hostnames are
+/// accepted), then matched with exact-label semantics: `host == domain` or
+/// `host` is a subdomain of `domain`. Path-scoped markers from the substring
+/// era (`vk.com/video_ext.php`, `rumble.com/embed/`, `cda.pl/video/`,
+/// `ok.ru/video`) are gated on the hostname matching first and are subsumed
+/// by it: once the hostname matches, any path under it identifies the same
+/// host, and a path marker can never match a lookalike hostname
+/// (`notvk.com/video_ext.php` is Generic, not Vk).
 pub fn identify_host(s: &str) -> HostId {
-    let s_lower = s.to_lowercase();
-    let has = |pat: &str| s_lower.contains(pat);
-    if has("vk.com/video_ext.php") || has("vkvideo.ru") || has("vk.com") {
+    let Some(host) = extract_hostname(s) else {
+        return HostId::Generic;
+    };
+    let is = |domain: &str| host == domain || host.ends_with(&format!(".{domain}"));
+    if is("vk.com") || is("vkvideo.ru") {
         HostId::Vk
-    } else if has("rumble.com/embed/") || has("rumble.com") {
+    } else if is("rumble.com") {
         HostId::Rumble
-    } else if has("cda.pl/video/") || has("ebd.cda.pl") || has("cda.pl") {
+    } else if is("cda.pl") {
         HostId::Cda
-    } else if has("video.sibnet.ru") || has("sibnet.ru") {
+    } else if is("sibnet.ru") {
         HostId::Sibnet
-    } else if has("dood.yt") || has("dood.re") || has("dood.ws") || has("dood.la") {
+    } else if is("dood.yt") || is("dood.re") || is("dood.ws") || is("dood.la") {
         HostId::Dood
-    } else if has("hqq.tv") || has("hqq.to") || has("hqq.ac") {
+    } else if is("hqq.tv") || is("hqq.to") || is("hqq.ac") {
         HostId::Hqq
-    } else if has("mega.nz") {
+    } else if is("mega.nz") {
         HostId::Mega
-    } else if has("ok.ru/video") || has("ok.ru") {
+    } else if is("ok.ru") {
         HostId::Ok
-    } else if has("myvi.tv") || has("myvi.id") {
+    } else if is("myvi.tv") || is("myvi.id") {
         HostId::Myvi
-    } else if has("drive.google.com") {
+    } else if is("drive.google.com") {
         HostId::Google
-    } else if has("voe.sx") || has("voe-") {
+    } else if is("voe.sx") {
         HostId::Voe
-    } else if has("mp4upload.com") {
+    } else if is("mp4upload.com") {
         HostId::Mp4upload
     } else {
         HostId::Generic
     }
+}
+
+/// Extract the lowercase hostname component from a URL or bare hostname.
+///
+/// Strips scheme (`://`), protocol-relative `//`, userinfo (`user@`), port
+/// (numeric `:port` suffix), path, query and fragment. Returns `None` for
+/// empty / hostless input.
+fn extract_hostname(s: &str) -> Option<String> {
+    let mut h = s.trim().to_lowercase();
+    if let Some(idx) = h.find("://") {
+        h = h[idx + 3..].to_string();
+    } else if let Some(idx) = h.find("//") {
+        h = h[idx + 2..].to_string();
+    }
+    if let Some(idx) = h.find('@') {
+        h = h[idx + 1..].to_string();
+    }
+    let cut = h.find(['/', '?', '#']).unwrap_or(h.len());
+    h.truncate(cut);
+    if let Some(idx) = h.rfind(':') {
+        let port = &h[idx + 1..];
+        if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) {
+            h.truncate(idx);
+        }
+    }
+    if h.is_empty() { None } else { Some(h) }
 }
 
 // ── URL canonicalization ───────────────────────────────────────────────────
@@ -408,6 +442,52 @@ mod tests {
         assert_eq!(HostAdapter::recognize("ftp://example.com/v.mp4"), None);
         assert_eq!(HostAdapter::recognize("file:///tmp/v.mp4"), None);
         assert_eq!(HostAdapter::recognize("not a url"), None);
+    }
+
+    /// Lookalike / typosquat hostnames must NOT be absorbed by substring
+    /// matches — they all fall back to Generic.
+    #[test]
+    fn identify_host_rejects_lookalike_hostnames() {
+        for url in [
+            "https://notvk.com/video_ext.php",
+            "https://mycda.pl/video/123",
+            "https://bok.ru/video/123",
+            "https://omega.nz/file/abc",
+            "https://ok.ru.evil.com/video/123",
+            "https://evil-vk.com/video_ext.php",
+        ] {
+            assert_eq!(
+                HostAdapter::recognize(url),
+                Some(HostId::Generic),
+                "{url} must be Generic"
+            );
+        }
+    }
+
+    /// Subdomains and exact hosts keep matching (label semantics).
+    #[test]
+    fn identify_host_matches_labels_and_subdomains() {
+        for (url, expected) in [
+            ("https://www.cda.pl/video/123", HostId::Cda),
+            ("https://m.ok.ru/video/123", HostId::Ok),
+            ("https://video.sibnet.ru/v.mp4", HostId::Sibnet),
+            ("https://www.vk.com/video_ext.php?oid=1&id=2", HostId::Vk),
+            ("https://drive.google.com/file/d/1", HostId::Google),
+        ] {
+            assert_eq!(HostAdapter::recognize(url), Some(expected), "{url}");
+        }
+    }
+
+    /// Bare hostnames (no scheme/path) are still recognized.
+    #[test]
+    fn identify_host_bare_hostnames() {
+        assert_eq!(identify_host("sibnet.ru"), HostId::Sibnet);
+        assert_eq!(identify_host("cda.pl"), HostId::Cda);
+        assert_eq!(identify_host("video.sibnet.ru"), HostId::Sibnet);
+        assert_eq!(identify_host("m.ok.ru"), HostId::Ok);
+        assert_eq!(identify_host("voe.sx"), HostId::Voe);
+        assert_eq!(identify_host("notvk.com"), HostId::Generic);
+        assert_eq!(identify_host("example.com:8080"), HostId::Generic);
     }
 
     #[test]

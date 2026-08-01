@@ -21,9 +21,9 @@ use tokio::time::{sleep, timeout};
 use crate::download_types::*;
 use crate::downloader::test_factory::{FakeFactory, FakeOutcome};
 use crate::downloader::{
-    DownloadConfig, DownloadEngine, Outcome, RunMode, RunningSubprocess, SubprocessFactory,
-    cleanup_stale_part, existing_download, find_output_file, find_part_file, find_stem_output,
-    is_valid_output, redact_urls,
+    DownloadConfig, DownloadEngine, MIN_VALID_DOWNLOAD_BYTES, Outcome, RunMode, RunningSubprocess,
+    SubprocessFactory, cleanup_stale_part, existing_download, find_output_file, find_part_file,
+    find_stem_output, is_valid_output, is_valid_output_with_min, redact_urls,
 };
 use crate::manifest::{AttemptStatus, FinalStatus, Manifest, OutputMeta, sha256_file};
 use crate::plain_output::{iso_timestamp, spawn_plain_output};
@@ -580,6 +580,104 @@ fn fresh_resolved_at_no_warning() {
     );
 }
 
+// ── Strict ISO8601 validation ─────────────────────────────────────────────
+
+#[test]
+fn iso8601_accepts_valid_full_timestamp() {
+    // Roundtrip unchanged: 2025-07-30T12:00:00Z = 1753876800 unix seconds.
+    assert_eq!(
+        parse_iso8601_epoch("2025-07-30T12:00:00Z"),
+        Some(1_753_876_800)
+    );
+}
+
+#[test]
+fn iso8601_rejects_month_13() {
+    assert_eq!(parse_iso8601_epoch("2025-13-01T12:00:00Z"), None);
+}
+
+#[test]
+fn iso8601_rejects_day_45() {
+    assert_eq!(parse_iso8601_epoch("2025-01-45T12:00:00Z"), None);
+    // April has 30 days; 31 must be rejected per-month.
+    assert_eq!(parse_iso8601_epoch("2025-04-31T12:00:00Z"), None);
+}
+
+#[test]
+fn iso8601_rejects_hour_25() {
+    assert_eq!(parse_iso8601_epoch("2025-01-01T25:00:00Z"), None);
+    // Negative hours were accepted by the lenient parser; now rejected.
+    assert_eq!(parse_iso8601_epoch("2025-01-01T-5:00:00Z"), None);
+}
+
+#[test]
+fn iso8601_rejects_minute_60() {
+    assert_eq!(parse_iso8601_epoch("2025-01-01T12:60:00Z"), None);
+}
+
+#[test]
+fn iso8601_rejects_non_leap_feb_29() {
+    assert_eq!(parse_iso8601_epoch("2023-02-29T12:00:00Z"), None);
+}
+
+#[test]
+fn iso8601_accepts_leap_feb_29() {
+    // 2024 is a leap year; 2024-02-29 must be accepted.
+    assert!(parse_iso8601_epoch("2024-02-29T12:00:00Z").is_some());
+}
+
+#[test]
+fn iso8601_accepts_leap_second_60() {
+    // RFC 3339 leap second: second 60 tolerated (pre-existing parser accepted
+    // it; treated as +60s, only feeds the staleness heuristic).
+    assert!(parse_iso8601_epoch("2025-07-30T12:00:60Z").is_some());
+    // Second 61 is not a leap second and must be rejected.
+    assert_eq!(parse_iso8601_epoch("2025-07-30T12:00:61Z"), None);
+}
+
+#[test]
+fn iso8601_accepts_all_current_formats() {
+    // Every format the lenient parser accepted must still parse.
+    let base = 1_753_876_800; // 2025-07-30T12:00:00Z
+    assert_eq!(
+        parse_iso8601_epoch("2025-07-30T12:00:00+02:00"),
+        Some(base - 7200)
+    );
+    assert_eq!(
+        parse_iso8601_epoch("2025-07-30T12:00:00-05:00"),
+        Some(base + 18_000)
+    );
+    assert_eq!(parse_iso8601_epoch("2025-07-30T12:00:00.123Z"), Some(base));
+    assert_eq!(parse_iso8601_epoch("2025-07-30T12:00Z"), Some(base));
+    assert_eq!(parse_iso8601_epoch("2025-07-30T12:00:00"), Some(base));
+    assert_eq!(parse_iso8601_epoch("2025-7-3T5:6:7Z"), Some(1_751_519_167));
+    assert!(parse_iso8601_epoch("2025-12-31T23:59:59Z").is_some());
+    assert!(parse_iso8601_epoch("2025-02-28T00:00:00Z").is_some());
+}
+
+#[test]
+fn iso8601_invalid_resolved_at_warns_parse_failed() {
+    // Rejection stays a warning (never a hard error): the input parses, the
+    // timestamp is treated as invalid (no staleness check), warning emitted.
+    let json = r#"{
+        "schema_version": 2,
+        "resolved_at": "2025-13-01T12:00:00Z",
+        "episodes": [{"episode": 1, "mirrors": [{"url": "https://example.com/v.mp4"}]}]
+    }"#;
+    let (input, warnings) = parse_json_input_with_warnings(json).expect("parses");
+    assert_eq!(input.resolved_at.as_deref(), Some("2025-13-01T12:00:00Z"));
+    assert!(
+        warnings
+            .iter()
+            .any(|w| w.contains("could not be parsed as ISO8601")),
+        "parse-failed warning expected, got: {warnings:?}"
+    );
+    assert!(
+        !warnings.iter().any(|w| w.contains("stale")),
+        "invalid timestamp must not be treated as stale, got: {warnings:?}"
+    );
+}
+
 #[test]
 fn sanitize_slug_cleans_title() {
     assert_eq!(
@@ -620,6 +718,32 @@ fn redact_urls_strips_query_tokens() {
         "token=[REDACTED] inline"
     );
     assert_eq!(redact_urls("no secrets here"), "no secrets here");
+}
+
+#[test]
+fn redact_urls_token_value_and_quote_delimiters() {
+    // Bare token=value assignment → [REDACTED] (query-token coverage).
+    assert_eq!(redact_urls("token=abc123&x=1"), "token=[REDACTED]&x=1");
+    // URL-only case unchanged ([URL] marker, no token touch).
+    assert_eq!(
+        redact_urls("src https://cdn.example.com/v?plain=1 end"),
+        "src [URL] end"
+    );
+    // Quoted / backtick delimited URLs end the URL run at the delimiter.
+    assert_eq!(
+        redact_urls("url='https://a.b/c?v=1' done"),
+        "url='[URL]' done"
+    );
+    assert_eq!(
+        redact_urls("url=`https://a.b/c?v=1` done"),
+        "url=`[URL]` done"
+    );
+    assert_eq!(
+        redact_urls("url=\"https://a.b/c?v=1\" done"),
+        "url=\"[URL]\" done"
+    );
+    // token=value inside a quoted region still redacts.
+    assert_eq!(redact_urls("q='token=hunter2' x"), "q='token=[REDACTED]' x");
 }
 
 // ── Integration tests ─────────────────────────────────────────────────────
@@ -1149,17 +1273,20 @@ fn existing_download_finds_completed_file() {
 
     let stem = dir.path().join("ep1-E01");
 
-    assert!(existing_download(&stem).is_none(), "no file yet");
+    assert!(
+        existing_download(&stem, MIN_VALID_DOWNLOAD_BYTES).is_none(),
+        "no file yet"
+    );
 
     fs::write(dir.path().join("ep1-E01.mkv"), vec![0u8; 1_048_576]).expect("write mkv");
 
-    let found = existing_download(&stem);
+    let found = existing_download(&stem, MIN_VALID_DOWNLOAD_BYTES);
     assert!(found.is_some(), "should find completed download");
     let found = found.unwrap();
     assert_eq!(found.file_name().unwrap().to_string_lossy(), "ep1-E01.mkv");
 
     fs::write(dir.path().join("ep1-E01.mkv.part"), vec![0u8; 1_048_576]).expect("write part");
-    let still_mkv = existing_download(&stem);
+    let still_mkv = existing_download(&stem, MIN_VALID_DOWNLOAD_BYTES);
     assert!(
         still_mkv.is_some(),
         "existing_download still finds completed file"
@@ -1183,7 +1310,7 @@ fn find_output_file_works_for_any_video_ext() {
         let p = dir.path().join(format!("ep1-E01.{ext}"));
         fs::write(&p, vec![0u8; 1_048_576]).expect("write");
 
-        let found = find_output_file(&stem);
+        let found = find_output_file(&stem, MIN_VALID_DOWNLOAD_BYTES);
         assert!(
             found.is_some(),
             "find_output_file should find .{ext}: {:?}",
@@ -1413,19 +1540,103 @@ fn is_valid_output_accepts_valid_file() {
 }
 
 #[test]
+fn is_valid_output_with_min_uses_raised_floor() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("test.mp4");
+    let floor = 5 * 1_048_576;
+
+    fs::write(&path, vec![0u8; 2 * 1_048_576]).expect("write 2MB");
+    assert!(
+        !is_valid_output_with_min(&path, floor),
+        "2MB must be rejected below 5MB floor"
+    );
+    assert!(
+        is_valid_output(&path),
+        "2MB still passes the legacy 1MB floor"
+    );
+
+    fs::write(&path, vec![0u8; 6 * 1_048_576]).expect("write 6MB");
+    assert!(
+        is_valid_output_with_min(&path, floor),
+        "6MB must be accepted"
+    );
+}
+
+#[test]
+fn find_output_file_respects_effective_floor() {
+    let dir = tempdir().expect("tempdir");
+    let stem = dir.path().join("ep1-E01");
+    let floor = 5 * 1_048_576;
+
+    fs::write(dir.path().join("ep1-E01.mkv"), vec![0u8; 2 * 1_048_576]).expect("write 2MB");
+    assert!(
+        find_output_file(&stem, floor).is_none(),
+        "2MB must not match a 5MB acceptance floor"
+    );
+    assert!(
+        find_output_file(&stem, MIN_VALID_DOWNLOAD_BYTES).is_some(),
+        "2MB still matches the default 1MB floor"
+    );
+    assert!(
+        existing_download(&stem, floor).is_none(),
+        "existing_download must respect the effective floor"
+    );
+
+    fs::write(dir.path().join("ep1-E01.mkv"), vec![0u8; 6 * 1_048_576]).expect("write 6MB");
+    assert!(
+        find_output_file(&stem, floor).is_some(),
+        "6MB must match the 5MB floor"
+    );
+}
+
+#[test]
+fn heuristic_outcome_respects_raised_floor() {
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("test.mp4");
+
+    // Default config: exactly the legacy 1 MiB floor.
+    let default = DownloadEngine::new(DownloadConfig::default());
+    fs::write(&path, vec![0u8; 512 * 1024]).expect("write 512KiB");
+    assert!(
+        !default.heuristic_outcome(&path).valid,
+        "512KiB must fail the default heuristic"
+    );
+    fs::write(&path, vec![0u8; 1_048_576]).expect("write 1MiB");
+    assert!(
+        default.heuristic_outcome(&path).valid,
+        "1MiB must pass the default heuristic"
+    );
+
+    // Raised floor via config: heuristic must reject what ffprobe would.
+    let mut config = DownloadConfig::default();
+    config.validation.min_size_bytes = 5 * 1_048_576;
+    let raised = DownloadEngine::new(config);
+    fs::write(&path, vec![0u8; 2 * 1_048_576]).expect("write 2MiB");
+    assert!(
+        !raised.heuristic_outcome(&path).valid,
+        "2MiB must fail the 5MiB-floor heuristic"
+    );
+    fs::write(&path, vec![0u8; 6 * 1_048_576]).expect("write 6MiB");
+    assert!(
+        raised.heuristic_outcome(&path).valid,
+        "6MiB must pass the 5MiB-floor heuristic"
+    );
+}
+
+#[test]
 fn existing_download_ignores_invalid_artifact() {
     let dir = tempdir().expect("tempdir");
     let stem = dir.path().join("ep1-E01");
 
     fs::write(dir.path().join("ep1-E01.unknown_video"), vec![0u8; 3078]).expect("write");
     assert!(
-        existing_download(&stem).is_none(),
+        existing_download(&stem, MIN_VALID_DOWNLOAD_BYTES).is_none(),
         "existing_download must not match .unknown_video file"
     );
 
     fs::write(dir.path().join("ep1-E01.mkv"), vec![0u8; 1_048_576]).expect("write");
     assert!(
-        existing_download(&stem).is_some(),
+        existing_download(&stem, MIN_VALID_DOWNLOAD_BYTES).is_some(),
         "existing_download must find valid .mkv"
     );
 }
@@ -1494,7 +1705,7 @@ async fn cleanup_invalid_output_on_failure() {
     fs::write(dir.path().join("test-E01.unknown_video"), vec![0u8; 3078]).expect("write");
 
     assert!(
-        find_output_file(&stem).is_none(),
+        find_output_file(&stem, MIN_VALID_DOWNLOAD_BYTES).is_none(),
         "find_output_file must reject .unknown_video"
     );
     assert!(
@@ -1597,6 +1808,36 @@ async fn engine_retry_exhausted_marks_failed_with_reasons() {
     assert_eq!(outcome.per_episode_reasons.len(), 1);
     assert_eq!(outcome.per_episode_reasons[0].0, 1);
     assert_eq!(outcome.per_episode_reasons[0].1, "timeout");
+}
+
+#[tokio::test]
+async fn engine_failed_episode_lands_in_failed_and_missing() {
+    // Invariant (failed ⊆ missing_episodes): a failed episode must appear in
+    // BOTH the failed count and missing_episodes, so exit-code logic treats
+    // missing_episodes as the authoritative no-output set without double
+    // counting. Permanent failure skips retry → fast test.
+    let dir = tempdir().expect("tempdir");
+    let url = "https://h1.example.com/e1.mp4";
+    let config = DownloadConfig {
+        episode_concurrency: 1,
+        host_concurrency: 1,
+        out_dir: dir.path().to_path_buf(),
+        slug: "test-invariant".into(),
+        ..Default::default()
+    };
+    let factory = Arc::new(FakeFactory::new());
+    factory.set_outcomes(url, vec![FakeOutcome::Permanent]);
+    let (validator, _calls) = validators();
+
+    let episodes = vec![EpisodeInput::new(1, vec![url.into()])];
+    let (outcome, _events) = run(config, factory.clone(), episodes, validator).await;
+
+    assert_eq!(outcome.failed, 1, "permanent failure counts as failed");
+    assert_eq!(
+        outcome.missing_episodes,
+        vec![1],
+        "failed episode is also in missing_episodes (failed ⊆ missing)"
+    );
 }
 
 #[tokio::test]

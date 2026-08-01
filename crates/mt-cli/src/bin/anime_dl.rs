@@ -270,12 +270,18 @@ fn build_download_config(args: &Args, out_dir: PathBuf, slug: String) -> Downloa
 /// failed; 130 cancelled. Validate-only: 0 all valid; 3 some missing/invalid;
 /// 4 all missing/invalid. `requested` is the number of episodes the run
 /// covered (after `--episodes` filtering).
+///
+/// Invariant: `missing_episodes` is the authoritative count of episodes
+/// without valid output on disk — aggregation pushes every `Failed`/`Cancelled`
+/// episode into it alongside pure `Missing` ones, so `failed` must never be
+/// added on top of it (would double-count). Cancelled exits 130 before this
+/// branch is reached.
 fn outcome_exit_code(outcome: &Outcome, validate_only: bool, requested: usize) -> i32 {
     if outcome.cancelled {
         return 130;
     }
     if validate_only {
-        let invalid = outcome.failed as usize + outcome.missing_episodes.len();
+        let invalid = outcome.missing_episodes.len();
         if invalid == 0 {
             0
         } else if invalid >= requested {
@@ -528,6 +534,85 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(outcome_exit_code(&o, true, 3), 4);
+    }
+
+    #[test]
+    fn validate_only_with_failed_in_missing_partial() {
+        // failed ⊆ missing_episodes: 1 of 2 requested lacks output → partial.
+        let o = Outcome {
+            failed: 1,
+            missing_episodes: vec![1],
+            downloaded: 1,
+            skipped: 0,
+            ..Default::default()
+        };
+        assert_eq!(outcome_exit_code(&o, true, 2), 3);
+    }
+
+    #[test]
+    fn validate_only_with_failed_in_missing_all_failed() {
+        // 1 requested, 1 missing (same episode as failed) → all invalid.
+        let o = Outcome {
+            failed: 1,
+            missing_episodes: vec![1],
+            downloaded: 0,
+            ..Default::default()
+        };
+        assert_eq!(outcome_exit_code(&o, true, 1), 4);
+    }
+
+    #[test]
+    fn validate_only_all_missing_none_failed() {
+        // Pure missing (no failed count) still counts as invalid.
+        let o = Outcome {
+            failed: 0,
+            missing_episodes: vec![1, 2],
+            ..Default::default()
+        };
+        assert_eq!(outcome_exit_code(&o, true, 2), 4);
+    }
+
+    #[test]
+    fn validate_only_mixed_missing_and_ok() {
+        // 1 missing, 1 downloaded of 2 requested → partial.
+        let o = Outcome {
+            failed: 0,
+            missing_episodes: vec![2],
+            downloaded: 1,
+            ..Default::default()
+        };
+        assert_eq!(outcome_exit_code(&o, true, 2), 3);
+    }
+
+    #[test]
+    fn validate_only_cancelled_precedence() {
+        // Cancelled wins over every validate-only classification.
+        let o = Outcome {
+            cancelled: true,
+            failed: 1,
+            missing_episodes: vec![1, 2],
+            downloaded: 1,
+            ..Default::default()
+        };
+        assert_eq!(outcome_exit_code(&o, true, 3), 130);
+    }
+
+    #[test]
+    fn non_validate_overlap_semantics_unchanged() {
+        // Non-validate branch reads `failed` directly; must stay untouched.
+        let partial = Outcome {
+            failed: 1,
+            downloaded: 1,
+            ..Default::default()
+        };
+        assert_eq!(outcome_exit_code(&partial, false, 2), 3);
+        let all_failed = Outcome {
+            failed: 1,
+            downloaded: 0,
+            skipped: 0,
+            ..Default::default()
+        };
+        assert_eq!(outcome_exit_code(&all_failed, false, 1), 4);
     }
 
     // ── RunMode mapping ──────────────────────────────────────────────────

@@ -695,9 +695,30 @@ pub fn sanitize_slug(s: &str) -> String {
 
 // ── ISO8601 helper (no chrono; subset needed for resolved_at) ─────────────
 
+/// Days in `month` (1-12) of `year`, honouring Gregorian leap years.
+/// Returns 0 for an out-of-range month (caller rejects via month check).
+fn days_in_month(year: i64, month: i64) -> i64 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+            if leap { 29 } else { 28 }
+        }
+        _ => 0,
+    }
+}
+
 /// Parse a simplified ISO8601 UTC timestamp (`2025-07-30T12:34:56Z`, with
 /// optional `±HH:MM` offset and fractional seconds) into unix seconds.
-fn parse_iso8601_epoch(s: &str) -> Option<u64> {
+///
+/// Strict range validation: month 1-12, day within the month (leap years
+/// honoured), hour 0-23, minute 0-59, second 0-60. Second 60 is accepted as
+/// an RFC 3339 leap second (the pre-existing parser already tolerated it;
+/// it is treated as +60s — a 1s skew that only affects the staleness
+/// heuristic). Out-of-range values return `None` (rejected). Timezone
+/// handling is unchanged.
+pub(crate) fn parse_iso8601_epoch(s: &str) -> Option<u64> {
     let s = s.trim();
     let (date_part, rest) = s.split_once('T')?;
     let mut date_nums = date_part.split('-');
@@ -705,6 +726,12 @@ fn parse_iso8601_epoch(s: &str) -> Option<u64> {
     let month: i64 = date_nums.next()?.parse().ok()?;
     let day: i64 = date_nums.next()?.parse().ok()?;
     if date_nums.next().is_some() {
+        return None;
+    }
+    if !(1..=12).contains(&month) {
+        return None;
+    }
+    if !(1..=days_in_month(year, month)).contains(&day) {
         return None;
     }
 
@@ -721,6 +748,9 @@ fn parse_iso8601_epoch(s: &str) -> Option<u64> {
         return None;
     }
     let second: i64 = sec_str.split('.').next()?.parse().ok()?;
+    if !(0..=23).contains(&hour) || !(0..=59).contains(&minute) || !(0..=60).contains(&second) {
+        return None;
+    }
 
     let days = days_from_civil(year, month, day);
     let mut epoch = days * 86400 + hour * 3600 + minute * 60 + second;

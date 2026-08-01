@@ -37,7 +37,9 @@ use crate::download_types::{
     EpEvent, EpisodeInput, Phase, Quality, host_preference_rank, parse_speed_bps,
     quality_height_from_str, try_canonicalize_vk_url,
 };
-use crate::hosts::{ErrorClass, HostAdapter, PermanentKind, RetryableKind, classify};
+use crate::hosts::{
+    ErrorClass, HostAdapter, PermanentKind, RetryableKind, TimeoutProfile, classify,
+};
 use crate::manifest::{
     AttemptRecord, AttemptStatus, CacheEntry, FinalStatus, Manifest, OutputMeta, sha256_file,
 };
@@ -54,6 +56,20 @@ pub use crate::validator::{
 const MEASUREMENT_SECS: u64 = 3;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 const STALL_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Timeout profile for a download URL: known hosts use their per-host profile
+/// ([`HostAdapter::timeout_profile`]); generic http(s) hosts and non-http(s)
+/// URLs (recognize → `None`) keep the fixed default constants, preserving
+/// legacy behavior byte-for-byte.
+fn profile_for_url(url: &str) -> TimeoutProfile {
+    match HostAdapter::recognize(url) {
+        Some(host) => HostAdapter::timeout_profile(host),
+        None => TimeoutProfile {
+            startup_secs: STARTUP_TIMEOUT.as_secs(),
+            stall_secs: STALL_TIMEOUT.as_secs(),
+        },
+    }
+}
 const OVERALL_TIMEOUT: Duration = Duration::from_secs(7200);
 const DEFAULT_HOST_CONCURRENCY: usize = 1;
 const DEFAULT_EP_CONCURRENCY: usize = 4;
@@ -529,7 +545,12 @@ impl SubprocessFactory for RealYtDlpFactory {
             let child = cmd.spawn().ok()?;
             let pgid = child.id().unwrap_or(0);
 
-            let result = timeout(STARTUP_TIMEOUT, child.wait_with_output()).await;
+            let profile = profile_for_url(&url);
+            let result = timeout(
+                Duration::from_secs(profile.startup_secs),
+                child.wait_with_output(),
+            )
+            .await;
 
             match result {
                 Ok(Ok(output)) if output.status.success() => {
@@ -1155,7 +1176,7 @@ impl DownloadEngine {
                 .config
                 .out_dir
                 .join(format!("{}-E{:02}", self.config.slug, ep.episode));
-            if let Some(existing) = existing_download(&stem) {
+            if let Some(existing) = existing_download(&stem, self.heuristic_min_bytes()) {
                 let v = self.validate_media_quiet(&existing, ctx).await;
                 validated.push((ep.episode as u32, existing, v));
             }
@@ -1272,11 +1293,24 @@ impl DownloadEngine {
         }
     }
 
+    /// Effective minimum download size for the acceptance heuristics: the
+    /// configured ffprobe floor (`--min-size-mb`), never below the legacy
+    /// 1 MiB floor. Default config → exactly [`MIN_VALID_DOWNLOAD_BYTES`], so
+    /// default runs behave identically to the pre-config heuristic.
+    fn heuristic_min_bytes(&self) -> u64 {
+        self.config
+            .validation
+            .min_size_bytes
+            .max(MIN_VALID_DOWNLOAD_BYTES)
+    }
+
     /// Legacy extension+size heuristic outcome, used when `no_validate` is set.
     /// The ffprobe cache is deliberately not consulted nor written: heuristic
-    /// results must never satisfy a later default-mode cache hit.
-    fn heuristic_outcome(path: &Path) -> ValidationOutcome {
-        let ok = is_valid_output(path);
+    /// results must never satisfy a later default-mode cache hit. Applies the
+    /// effective size floor (`--min-size-mb` lifted, never below 1 MiB) so the
+    /// heuristic accepts exactly what the ffprobe validator would.
+    pub(crate) fn heuristic_outcome(&self, path: &Path) -> ValidationOutcome {
+        let ok = is_valid_output_with_min(path, self.heuristic_min_bytes());
         ValidationOutcome {
             valid: ok,
             reason: Some(if ok {
@@ -1298,7 +1332,7 @@ impl DownloadEngine {
     /// ([`Self::reconcile_existing_outputs`]).
     async fn validate_media_inner(&self, path: &Path, ctx: &Arc<RunContext>) -> ValidationOutcome {
         if self.config.no_validate {
-            return Self::heuristic_outcome(path);
+            return self.heuristic_outcome(path);
         }
         if !self.config.validate_force
             && let Some(cached) = self.validation_cache_get(path, ctx).await
@@ -1492,7 +1526,7 @@ impl DownloadEngine {
         }
 
         // Validate existing output first (Default + ValidateOnly).
-        if let Some(existing) = existing_download(&stem) {
+        if let Some(existing) = existing_download(&stem, self.heuristic_min_bytes()) {
             // Startup reconcile already validated + recorded this output this
             // run (manifest enabled): skip the duplicate probe but keep the
             // same event shape from the recorded result.
@@ -2343,6 +2377,7 @@ impl DownloadEngine {
         // Register whatever artifacts exist right after spawn.
         registry.register_prefix_artifacts(stem);
 
+        let profile = profile_for_url(url);
         let start = Instant::now();
         let mut started_flag = started;
         let mut stall_start: Option<Instant> = None;
@@ -2410,7 +2445,7 @@ impl DownloadEngine {
                     }
 
                     if !started_flag {
-                        if start.elapsed() > STARTUP_TIMEOUT {
+                        if start.elapsed() > Duration::from_secs(profile.startup_secs) {
                             let tail = drain_stderr.await;
                             let _ = tx.send(EpEvent::MirrorDone { ep: episode, host: host.clone(), success: false });
                             return Err(DownloadFailure {
@@ -2428,7 +2463,7 @@ impl DownloadEngine {
                         if current_bytes == prev_bytes {
                             match stall_start {
                                 None => stall_start = Some(Instant::now()),
-                                Some(s) if s.elapsed() > STALL_TIMEOUT => {
+                                Some(s) if s.elapsed() > Duration::from_secs(profile.stall_secs) => {
                                     let tail = drain_stderr.await;
                                     let _ = tx.send(EpEvent::MirrorDone { ep: episode, host: host.clone(), success: false });
                                     return Err(DownloadFailure {
@@ -2509,7 +2544,7 @@ impl DownloadEngine {
                     match status {
                         Ok(s) if s.success() => {
                             // Path 1: completed output via find_output_file.
-                            if let Some(path) = find_output_file(stem) {
+                            if let Some(path) = find_output_file(stem, self.heuristic_min_bytes()) {
                                 let _ = guard.take();
                                 return Ok(path);
                             }
@@ -2528,7 +2563,7 @@ impl DownloadEngine {
                                 );
                                 registry.promote(&meas_path);
                                 let _ = rename(&meas_path, &final_name).await;
-                                if is_valid_output(&final_name) {
+                                if is_valid_output_with_min(&final_name, self.heuristic_min_bytes()) {
                                     let _ = guard.take();
                                     return Ok(final_name);
                                 }
@@ -2552,7 +2587,7 @@ impl DownloadEngine {
                                         stem.with_extension("mkv")
                                     };
                                     let _ = rename(pp, &final_path).await;
-                                    if is_valid_output(&final_path) {
+                                    if is_valid_output_with_min(&final_path, self.heuristic_min_bytes()) {
                                         let _ = guard.take();
                                         return Ok(final_path);
                                     }
@@ -2769,6 +2804,10 @@ impl DownloadEngine {
                         *ep as u32,
                         out.reason.clone().unwrap_or_else(|| "failed".into()),
                     ));
+                    // Invariant: failed episodes are also pushed to
+                    // missing_episodes (failed ⊆ missing). `missing_episodes`
+                    // is the authoritative count of episodes without valid
+                    // output — exit-code logic must never add `failed` on top.
                     missing_episodes.push(*ep as u32);
                 }
                 EpisodeEndKind::Cancelled => {
@@ -3028,10 +3067,14 @@ const VIDEO_EXTS: &[&str] = &["mkv", "mp4", "webm", "flv", "mov", "avi"];
 
 /// Minimum valid download size in bytes (1 MB). Rejects tiny stubs/error pages
 /// while allowing legitimate short episodes (legitimate minimum ~50MB for 1min 1080p).
-const MIN_VALID_DOWNLOAD_BYTES: u64 = 1_048_576;
+/// Used as the floor for the extension+size heuristic; a raised
+/// [`ValidationConfig::min_size_bytes`] (CLI `--min-size-mb`) lifts the
+/// effective floor via [`DownloadEngine::heuristic_min_bytes`].
+pub(crate) const MIN_VALID_DOWNLOAD_BYTES: u64 = 1_048_576;
 
-/// Check if a path is a valid completed download: supported extension + minimum size.
-pub(crate) fn is_valid_output(path: &Path) -> bool {
+/// Check if a path is a valid completed download: supported extension + size
+/// at least `min_bytes`.
+pub(crate) fn is_valid_output_with_min(path: &Path, min_bytes: u64) -> bool {
     if !path.is_file() {
         return false;
     }
@@ -3043,9 +3086,15 @@ pub(crate) fn is_valid_output(path: &Path) -> bool {
         return false;
     }
     match fs::metadata(path).map(|m| m.len()) {
-        Ok(size) => size >= MIN_VALID_DOWNLOAD_BYTES,
+        Ok(size) => size >= min_bytes,
         Err(_) => false,
     }
+}
+
+/// Check if a path is a valid completed download: supported extension + minimum
+/// size (legacy 1 MB heuristic floor).
+pub(crate) fn is_valid_output(path: &Path) -> bool {
+    is_valid_output_with_min(path, MIN_VALID_DOWNLOAD_BYTES)
 }
 
 fn parse_speed_from_line(line: &str) -> Option<f64> {
@@ -3081,12 +3130,13 @@ fn collect_files(dir: &Path) -> Vec<PathBuf> {
 
 /// Find output file matching stem. Note: cannot match .mkv.part files
 /// (double-extension issue — file_stem is "ep1.mkv" not "ep1").
-pub(crate) fn find_output_file(stem: &Path) -> Option<PathBuf> {
+/// Only files at least `min_bytes` qualify (effective size floor).
+pub(crate) fn find_output_file(stem: &Path, min_bytes: u64) -> Option<PathBuf> {
     let parent = stem.parent()?;
     let name = stem.file_name()?;
     for entry in fs::read_dir(parent).ok()?.flatten() {
         let path = entry.path();
-        if path.file_stem() == Some(name) && is_valid_output(&path) {
+        if path.file_stem() == Some(name) && is_valid_output_with_min(&path, min_bytes) {
             return Some(path);
         }
     }
@@ -3255,8 +3305,8 @@ pub(crate) async fn cleanup_stale_part(path: &Path) {
     }
 }
 
-pub(crate) fn existing_download(stem: &Path) -> Option<PathBuf> {
-    find_output_file(stem)
+pub(crate) fn existing_download(stem: &Path, min_bytes: u64) -> Option<PathBuf> {
+    find_output_file(stem, min_bytes)
 }
 
 #[cfg(test)]
@@ -3298,5 +3348,125 @@ mod real_factory_tests {
         let resume = factory.download_args("/tmp/stem", true, url);
         let url_pos = resume.iter().position(|a| a == url).unwrap();
         assert_eq!(resume[url_pos - 3], "-c", "resume keeps -c before extras");
+    }
+}
+
+#[cfg(test)]
+mod timeout_profile_tests {
+    use super::*;
+
+    #[test]
+    fn profile_for_url_cda_uses_slow_startup() {
+        let p = profile_for_url("https://cda.pl/video/123");
+        assert_eq!(p.startup_secs, 45);
+        assert_eq!(p.stall_secs, 120);
+    }
+
+    #[test]
+    fn profile_for_url_hqq_uses_slow_startup_and_long_stall() {
+        let p = profile_for_url("https://hqq.tv/watch/abc");
+        assert_eq!(p.startup_secs, 60);
+        assert_eq!(p.stall_secs, 180);
+    }
+
+    #[test]
+    fn profile_for_url_rumble_uses_long_stall() {
+        let p = profile_for_url("https://rumble.com/embed/abc/");
+        assert_eq!(p.startup_secs, 30);
+        assert_eq!(p.stall_secs, 180);
+    }
+
+    #[test]
+    fn profile_for_url_generic_uses_defaults() {
+        let p = profile_for_url("https://example.com/v.mp4");
+        assert_eq!(p.startup_secs, 30);
+        assert_eq!(p.stall_secs, 120);
+    }
+
+    #[test]
+    fn profile_for_url_unknown_scheme_falls_back_to_defaults() {
+        let p = profile_for_url("ftp://example.com/v.mp4");
+        assert_eq!(
+            p,
+            TimeoutProfile {
+                startup_secs: 30,
+                stall_secs: 120,
+            }
+        );
+    }
+}
+
+#[cfg(test)]
+mod backoff_tests {
+    use super::*;
+
+    fn test_engine(jitter: f64) -> DownloadEngine {
+        let config = DownloadConfig {
+            backoff_base_secs: 2.0,
+            backoff_cap_secs: 60.0,
+            jitter_secs: jitter,
+            ..DownloadConfig::default()
+        };
+        DownloadEngine::new(config)
+    }
+
+    /// Pure computation, no sleeps: capped at `backoff_cap_secs` plus
+    /// jitter below 1s.
+    #[test]
+    fn backoff_capped_at_cap_secs_plus_jitter() {
+        let e = test_engine(1.0);
+        let v = e.backoff_for(5, "https://cdn.example.com/v.mp4", 3);
+        assert!((60.0..61.0).contains(&v), "retry=5 must cap at 60s: {v}");
+        let v10 = e.backoff_for(10, "https://cdn.example.com/v.mp4", 3);
+        assert!((60.0..61.0).contains(&v10), "retry=10 also capped: {v10}");
+    }
+
+    #[test]
+    fn backoff_retry_zero_is_base_plus_jitter() {
+        let e = test_engine(1.0);
+        let v = e.backoff_for(0, "https://cdn.example.com/v.mp4", 3);
+        assert!((2.0..3.0).contains(&v), "retry=0 → base 2 + jitter: {v}");
+    }
+
+    #[test]
+    fn backoff_jitter_within_bounds() {
+        let e = test_engine(0.5);
+        for retry in 0..6 {
+            let base = (2.0 * 2f64.powi(retry as i32)).min(60.0);
+            for ep in 1..=3 {
+                let v = e.backoff_for(retry, "https://cdn.example.com/v.mp4", ep);
+                let jitter = v - base;
+                assert!(
+                    (0.0..0.5).contains(&jitter),
+                    "retry {retry} ep {ep}: jitter {jitter} must be in [0, 0.5)"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn backoff_deterministic_same_inputs() {
+        let e = test_engine(1.0);
+        let a = e.backoff_for(2, "https://cdn.example.com/v.mp4", 7);
+        let b = e.backoff_for(2, "https://cdn.example.com/v.mp4", 7);
+        assert_eq!(a, b, "identical (retry,url,episode) → identical backoff");
+        // A second engine with the same config is equally deterministic.
+        let e2 = test_engine(1.0);
+        assert_eq!(
+            e2.backoff_for(2, "https://cdn.example.com/v.mp4", 7),
+            a,
+            "same seed across engines"
+        );
+        let c = e.backoff_for(2, "https://cdn.example.com/v.mp4", 8);
+        assert_ne!(a, c, "different episode → different seed");
+    }
+
+    #[test]
+    fn backoff_jitter_disabled_is_exact_capped_base() {
+        let e = test_engine(0.0);
+        assert_eq!(e.backoff_for(0, "https://cdn.example.com/v.mp4", 1), 2.0);
+        assert_eq!(e.backoff_for(3, "https://cdn.example.com/v.mp4", 1), 16.0);
+        assert_eq!(e.backoff_for(5, "https://cdn.example.com/v.mp4", 1), 60.0);
+        assert_eq!(e.backoff_for(8, "https://cdn.example.com/v.mp4", 1), 60.0);
     }
 }
