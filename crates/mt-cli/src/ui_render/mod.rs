@@ -1,13 +1,9 @@
-//! UI renderer dispatch — selects a renderer based on the requested mode.
+//! Dashboard renderer setup.
 //!
-//! All four fancy renderers (Dashboard, Timeline, Scoreboard, Stream) use the
-//! alternate screen via [`TerminalGuard`] and are read-only: no keyboard/mouse
-//! input, no raw mode, no prompt.
+//! Dashboard uses the alternate screen via [`TerminalGuard`] and is read-only:
+//! no keyboard/mouse input, raw mode, or prompt.
 
 mod dashboard;
-mod scoreboard;
-mod stream;
-mod timeline;
 
 use std::io::{self, Stdout};
 
@@ -16,22 +12,10 @@ use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
 pub use dashboard::DashboardRenderer;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-pub use scoreboard::ScoreboardRenderer;
-pub use stream::StreamRenderer;
-pub use timeline::TimelineRenderer;
 use tokio::sync::broadcast;
 
 use crate::download_types::EpEvent;
 use crate::ui_model::UiModel;
-
-/// Fancy renderer modes (no keyboard/mouse input).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UiMode {
-    Dashboard,
-    Timeline,
-    Scoreboard,
-    Stream,
-}
 
 /// Shared trait for all fancy renderers.
 #[async_trait::async_trait]
@@ -40,29 +24,26 @@ pub trait Renderer: Send {
     async fn run(self: Box<Self>) -> io::Result<()>;
 }
 
-/// Factory: build the correct renderer from a mode and event stream.
-///
-/// The caller provides the initial episode numbers; the factory creates a
-/// shared [`UiModel`] and passes a receiver + model to the chosen renderer.
+/// Build dashboard renderer from event stream and initial episode numbers.
 pub fn select_renderer(
-    mode: UiMode,
     rx: broadcast::Receiver<EpEvent>,
     episode_numbers: &[i64],
+    title: Option<&str>,
+    circuit_cooldown_secs: u64,
 ) -> Box<dyn Renderer> {
-    let model = UiModel::new(episode_numbers);
-    match mode {
-        UiMode::Dashboard => Box::new(DashboardRenderer::new(rx, model)),
-        UiMode::Timeline => Box::new(TimelineRenderer::new(rx, model)),
-        UiMode::Scoreboard => Box::new(ScoreboardRenderer::new(rx, model)),
-        UiMode::Stream => Box::new(StreamRenderer::new(rx, model)),
-    }
+    let model = UiModel::new_with_options(
+        episode_numbers,
+        title.map(|t| t.to_string()),
+        circuit_cooldown_secs,
+    );
+    Box::new(DashboardRenderer::new(rx, model))
 }
 
 // ── TerminalGuard (no raw mode) ──────────────────────────────────
 
 /// Guards alternate-screen entry/restore without enabling raw mode.
 ///
-/// All four fancy renderers use this. No keyboard input required, so
+/// Dashboard uses this. No keyboard input required, so
 /// raw mode is omitted. Restores on drop, normal return, or panic.
 pub struct TerminalGuard {
     inner: Option<Terminal<CrosstermBackend<Stdout>>>,

@@ -6,11 +6,13 @@ pub mod commands;
 pub mod common;
 pub mod download_types;
 pub mod downloader;
+pub mod hosts;
+pub mod manifest;
 pub mod plain_output;
 pub mod tui;
-pub mod tui_download;
 pub mod ui_model;
 pub mod ui_render;
+pub mod validator;
 
 #[cfg(test)]
 mod download_tests;

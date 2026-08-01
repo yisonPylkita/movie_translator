@@ -23,6 +23,7 @@ Before:
 Rules:
 
 - No edits, subagents, product decisions, provider calls, media writes, or GPU work.
+- Default one scout per question; skip scouting when the task brief or a prior handoff already supplies the needed evidence; answer from supplied context instead. No multi-scout fanout.
 - Preserve pure-Rust architecture and crate boundaries.
 - Prefer targeted `rg` and `read` over dumps. Follow callers, tests, and docs when needed.
 - No full `just check` or `just test` unless task asks.
@@ -44,7 +45,7 @@ Read only the skill you need.
 - Large grep/search output: save to `.pi/tool-output/`, return top matches only.
 - Never dump full files when symbol or range suffices.
 
-## Handoff (~1000 tokens max)
+## Handoff (≤600 tokens)
 
 Return only this structure. Never include full logs, file contents, or step narration.
 

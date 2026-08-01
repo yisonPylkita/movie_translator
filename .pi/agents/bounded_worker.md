@@ -19,7 +19,7 @@ Before edit:
 
 - Read `.pi/PROJECT_GUIDE.md` for architecture, commands, invariants, import hygiene, output hygiene.
 - Read root `AGENTS.md` for delegation policy and agent catalog.
-- Inspect worktree and assigned paths. Stop on scope collision or unexpected dirty overlap. Never overwrite user changes.
+- Inspect worktree and assigned paths. Stop on scope collision or unexpected dirty overlap. Never overwrite user changes. Pre-existing staged/unrelated user work is not your scope; leave it untouched and report path-scoped evidence.
 - Touch lead-owned shared files only when contract names them: workspace manifests/lockfile, `justfile`, CI/toolchain, `README.md`, `AGENTS.md`, design docs, or foundational cross-crate APIs.
 
 ## Skill loading
@@ -45,7 +45,7 @@ During:
 Verify:
 
 - Run focused tests first (`cargo test -p <crate>` or named test).
-- Run `just check && just test` only when contract requires full gate. Do not repeat full green gates.
+- Run `just check && just test` only when contract requires full gate. Reviewer never reruns gates; the ONE full final gate is owned by the gate tester child when assigned. Do not repeat already-green full gates.
 - Always run `git diff --check` before handoff.
 
 Git:
@@ -60,7 +60,7 @@ Git:
 - Compiler output: errors and warnings only. Full log to file.
 - Never paste full logs, files, or diffs into handoff.
 
-## Handoff (~1000 tokens max)
+## Handoff (≤600 tokens)
 
 Return only this structure. Never include full logs, file contents, diffs, or transcripts.
 
@@ -68,7 +68,7 @@ STATUS
 completed | blocked | needs-review
 
 SUMMARY
-Maximum 8 sentences.
+Maximum 6 sentences.
 
 FILES
 

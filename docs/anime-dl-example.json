@@ -2,32 +2,58 @@
   "episodes": [
     {
       "episode": 1,
-      "quality": {
-        "height": 1080
-      },
-      "urls": [
-        "https://cdn1.example.com/ep01_1080p.mp4",
-        "https://cdn2.example.com/ep01_720p.mp4",
-        "https://backup.example.com/ep01.mp4"
+      "mirrors": [
+        {
+          "host": "cda",
+          "quality": "1080p",
+          "subtitle_group": "MioroSubs",
+          "url": "https://cda.pl/video/example-ep01"
+        },
+        {
+          "host": "rumble",
+          "quality": "720p",
+          "subtitle_group": null,
+          "url": "https://rumble.com/embed/example-ep01"
+        },
+        {
+          "host": "vk",
+          "quality": "1080p",
+          "subtitle_group": "MioroSubs",
+          "url": "https://vkvideo.ru/video-1_1"
+        }
       ]
     },
     {
       "episode": 2,
-      "quality": {
-        "codec": "h265",
-        "height": 1080
-      },
-      "urls": [
-        "https://cdn1.example.com/ep02_1080p.mp4",
-        "https://cdn3.example.com/ep02.mkv"
+      "mirrors": [
+        {
+          "host": "cda",
+          "quality": "1080p",
+          "subtitle_group": "MioroSubs",
+          "url": "https://cda.pl/video/example-ep02"
+        },
+        {
+          "host": "sibnet",
+          "quality": null,
+          "subtitle_group": "NyuSubs",
+          "url": "https://video.sibnet.ru/shell.php?videoid=example"
+        }
       ]
     },
     {
       "episode": 3,
-      "urls": [
-        "https://cdn4.example.com/ep03.mp4"
+      "mirrors": [
+        {
+          "host": "mega",
+          "quality": "1080p",
+          "subtitle_group": null,
+          "url": "https://mega.nz/file/example"
+        }
       ]
     }
   ],
-  "title": "Example Anime — 僕のヒーローアカデミア"
+  "resolved_at": "2026-07-30T12:00:00Z",
+  "schema_version": 2,
+  "source_page": "https://ogladajanime.pl/anime/example-anime",
+  "title": "Example Anime"
 }

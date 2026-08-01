@@ -125,7 +125,7 @@ Full logs always recoverable from `.pi/tool-output/` (gitignored; README tracked
 
 ## Agent handoff format
 
-All child agents return structured handoffs ≤1000 tokens. Never return full logs,
+Child agents return structured handoffs ≤600 tokens; owner handoff ≤1000. Never return full logs,
 file contents, diffs, or transcripts. Each agent defines its exact format in `.pi/agents/<name>.md`.
 
 ## Project memory files

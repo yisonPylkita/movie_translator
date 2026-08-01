@@ -35,11 +35,13 @@ Review assigned change for:
 - No edits, subagents, product decisions, provider calls, or GPU work.
 - Cite exact paths and line numbers for findings.
 - Distinguish blockers from suggestions.
+- Verdicts: `accepted` | `blocking`. `blocking` = at least one unresolved HIGH/blocker finding. Never approve a change while any unresolved HIGH finding exists. Label severity HIGH/MED/LOW with path:line evidence.
+- Read-only: never rerun gates or full test suites; a separate tester owns the final gate once.
 
-## Handoff (~1000 tokens max)
+## Handoff (≤600 tokens)
 
 STATUS
-approved | changes-requested | blocked
+accepted | blocking
 
 FINDINGS
 

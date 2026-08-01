@@ -126,45 +126,147 @@ Run `just check && just test` before committing.
 
 ### Anime downloader
 
-Download anime episodes from ogladajanime.pl using a canonical JSON episode list.
+Download anime episodes from ogladajanime.pl (Polish hardsubs, best quality,
+no translation) from a canonical v2 JSON episode list.
 
 ```bash
 just anime-dl episodes.json
 # or
 just anime-dl episodes.json --ui dashboard --episodes 1,2,3
+# or
+just anime-dl --input episodes.json --out ~/Videos/anime
 ```
 
 ### Resolving episode URLs
 
 ogladajanime.pl is the primary source of anime episodes with Polish hardsubs.
 Player embed URLs are behind Cloudflare Turnstile and anti-debug, so they must
-be resolved in a real browser via a Tampermonkey userscript:
+be resolved in a real browser via the Tampermonkey userscript:
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) (Chrome/Firefox)
-2. Install `scripts/ogladajanime_resolver.user.js` as a new userscript
+2. Install `scripts/ogladajanime_resolver.user.js` (v4) as a new userscript
 3. Navigate to `ogladajanime.pl/anime/{series}` in your browser
 4. Click one of the panel buttons:
    - **⏬ All N episodes** — walks every episode, resolves curated mirrors,
-     downloads `anime-{slug}.json`
+     downloads `anime-{slug}.json` (canonical v2)
    - **▶ This episode** — resolves a single episode, downloads
      `anime-{slug}-ep{N}.json`
 5. Run `just anime-dl anime-{slug}.json` to download the episode files
 
-**Canonical JSON format:**
+**Canonical JSON format (v2):**
 
 ```json
 {
+  "schema_version": 2,
+  "source_page": "https://ogladajanime.pl/anime/one-piece",
+  "resolved_at": "2026-07-30T12:00:00Z",
   "title": "One Piece",
   "episodes": [
-    {"episode": 1, "urls": ["https://cda.pl/video/...", "https://sibnet.ru/..."]},
-    {"episode": 2, "urls": ["https://cda.pl/video/..."]}
+    {
+      "episode": 1,
+      "mirrors": [
+        {
+          "host": "cda",
+          "quality": "1080p",
+          "subtitle_group": "MioroSubs",
+          "url": "https://cda.pl/video/..."
+        },
+        {
+          "host": "rumble",
+          "quality": "720p",
+          "subtitle_group": null,
+          "url": "https://rumble.com/..."
+        }
+      ]
+    }
   ]
 }
 ```
 
-- `episodes[].urls` is required (at least one URL per episode).
-- Optional `quality` metadata per episode: `{"height": 1080}`.
-- Run `anime-dl --help` for all flags (`--out`, `--episodes`, `--ui`, concurrency).
+- `schema_version` must be `2`. v1 files (flat `urls`) are accepted with a
+  warning and normalized; re-export with userscript v4 when possible. Legacy
+  `resolved`/`embed_url` files are rejected with an actionable error.
+- `episodes[].mirrors[]` is required — at least one `{host, quality,
+  subtitle_group, url}` record per episode (matches userscript v4 field
+  names).
+
+### Flags
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--input, -i PATH` / positional `.json` | — | Canonical JSON episode list |
+| `--out DIR` | `./<slug>` | Output directory |
+| `--episodes N,N,...` | all | Episode filter |
+| `--episode-concurrency N` | 4 | Max concurrent episode downloads |
+| `--host-concurrency N` | 1 | Max concurrent downloads per host |
+| `--ui MODE` | auto | `dashboard` (TTY) or `plain` (piped) |
+| `-v` | off | Debug logging |
+| `--resume` | off | Resume from manifest (skip Done, retry Failed) |
+| `--retry-failed` | off | Re-run Failed episodes from manifest |
+| `--validate-only` | off | Validate only; download nothing |
+| `--no-validate` | off | Skip ffprobe validation |
+| `--validate-force` | off | Revalidate despite cached verdict |
+| `--min-size-mb F` | 1.0 | Minimum file size (MiB) |
+| `--min-duration-secs F` | 1.0 | Minimum media duration (s) |
+| `--require-audio` | off | Audio stream required (else warn-only) |
+| `--ffprobe-timeout SECS` | 15 | Per-file ffprobe timeout |
+| `--retry-attempts N` | 3 | Transient-failure retries per episode |
+| `--cb-threshold N` | 3 | Systemic failures before host circuit breaker opens |
+| `--cb-cooldown-secs SECS` | 60 | Circuit-breaker cooldown |
+| `--clean-invalid` | off | Delete invalid files instead of quarantining |
+| `--manifest PATH` | `<out>/<slug>.anime-manifest.json` | Manifest path override |
+| `--ytdlp-extra-args ARGS` | — | Extra arguments to each yt-dlp call |
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | All episodes downloaded and validated |
+| 1 | Fatal error (input, I/O, internal) |
+| 2 | Usage error |
+| 3 | Partial success (some failed) |
+| 4 | All episodes failed |
+| 130 | Cancelled (Ctrl+C) |
+
+### Validation
+
+Downloaded files are verified with `ffprobe`: extension allowlist
+(`mkv/mp4/webm/flv/mov/avi`), min size `--min-size-mb`, min duration
+`--min-duration-secs`, video stream required, audio warn-only unless
+`--require-audio`. Placeholder dimensions/durations are rejected. If ffprobe
+is missing, validation degrades to extension + size with a warning. Verdicts are cached in the manifest keyed by size+mtime; `--validate-force` re-probes.
+Failed files are quarantined to `<out>/.quarantine/` (dotdir; `--clean-invalid` deletes
+them instead).
+
+### Manifest, resume, retry
+
+Each run writes an atomic manifest at `<out>/<slug>.anime-manifest.json`
+(input identity, episode states, ffprobe verdicts, per-episode attempt
+history capped at 8, failure history). Host circuit-breaker state is
+run-scoped only — it is never persisted in the manifest.
+
+```bash
+# Resume an interrupted run: skip done, re-queue failed/cancelled
+just anime-dl episodes.json --resume
+
+# Only retry episodes that failed last run
+just anime-dl episodes.json --retry-failed
+
+# Validate inputs + existing outputs without downloading
+just anime-dl episodes.json --validate-only
+```
+
+Transient download failures retry with exponential backoff
+(`2s × 2ⁿ + jitter`, capped 60 s, `--retry-attempts`). Each host has a
+circuit breaker: after `--cb-threshold` systemic failures it is excluded for
+`--cb-cooldown-secs` (URL-specific failures don't count).
+
+### Host priority
+
+Mirrors are tried in curated order: **cda first, rumble second**, then
+sibnet / vk / mega / ok / dood / myvi / google / hqq / voe / mp4upload.
+`vk` URLs are canonicalized to `vkvideo.ru`. Output naming:
+`<out>/<slug>-E{NN}` (zero-padded).
 
 ## macOS Dependencies
 

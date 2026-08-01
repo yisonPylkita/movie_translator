@@ -1,8 +1,12 @@
 // ==UserScript==
 // @name         ogladajanime player resolver
 // @namespace    movie-translator.hardsub
-// @version      3.0
-// @description  Auto-resolve PL-hardsub player embed URLs for ogladajanime.pl. Walks every episode, resolves curated mirrors (PL subs only, CDA preferred), downloads canonical JSON for the movie-translator pipeline.
+// @version      4.0
+// @description  Auto-resolve PL-hardsub player embed URLs for ogladajanime.pl. Walks every episode, resolves curated mirrors (PL subs only, CDA then Rumble preferred), downloads canonical v2 JSON (schema_version:2) for the movie-translator pipeline.
+// @updateURL    https://raw.githubusercontent.com/yisonPylkita/movie_translator/main/scripts/ogladajanime_resolver.user.js
+// @note         v2: emits canonical v2 JSON schema (schema_version:2, episodes[].mirrors[]), see OUTPUT block below — mirrors the Rust parser contract.
+// @note         v2: HOST_PREFERENCE promotes rumble to #2 (reliable host); CDA stays #1 (PL primary).
+// @note         v2: PER_GROUP raised 2 -> 4, retains more fallback mirrors per PL sub_group.
 // @match        https://ogladajanime.pl/anime/*
 // @run-at       document-idle
 // @grant        none
@@ -16,21 +20,41 @@
  *
  * WHY curated (not all ~28 players): a player's host is just a mirror; the
  * thing that differs in *content* is the translation group (sub_group:
- * MioroSubs / zoro / "Nieznany"). So we keep ONE best player per PL
- * sub_group, preferring CDA (cleanest for yt-dlp), and skip English + the
- * redundant duplicate hosts. Typically 1-3 players/episode instead of 28.
+ * MioroSubs / zoro / "Nieznany"). So we keep up to PER_GROUP mirrors per PL
+ * sub_group, preferring CDA (cleanest for yt-dlp) then Rumble (reliable),
+ * and skip English + redundant duplicate hosts. Typically 1-4 mirrors/
+ * episode instead of 28.
  *
  * Multi-episode job state lives in localStorage so it survives the page
  * navigations between episodes; the script re-inits on each episode page and
  * continues where it left off, then downloads the combined canonical JSON
  * at the end.
  *
- * OUTPUT: canonical format {title?, episodes: [{episode, urls: [...]}]}
+ * OUTPUT — canonical v2 JSON schema (mirrors the Rust parser contract;
+ * emitted for BOTH single-episode files anime-<slug>-ep<N>.json and the
+ * full-season file anime-<slug>.json):
+ *
+ * {
+ *   "schema_version": 2,
+ *   "source_page": "https://ogladajanime.pl/anime/<slug>",
+ *   "resolved_at": "<ISO8601 UTC now, e.g. 2026-07-30T12:00:00Z>",
+ *   "title": "<title>",
+ *   "episodes": [
+ *     {
+ *       "episode": 1,
+ *       "mirrors": [
+ *         { "host": "cda", "quality": "1080p" | null,
+ *           "subtitle_group": "MioroSubs" | null, "url": "https://..." }
+ *       ]
+ *     }
+ *   ]
+ * }
  *
  * Mechanism (capture-verified): get_player_list -> catalog (.data nested
  * JSON, all groups flat); change_player_url -> .data is the embed URL.
  */
 (() => {
+	const SCHEMA_VERSION = 2; // canonical output schema (see OUTPUT block)
 	const SUB = "pl"; // hardsub target language
 	const POLL_MS = 200; // how often we check whether the response arrived
 	const PACE_MS = 800; // small gap between players (the resolve wait already spaces them)
@@ -40,10 +64,11 @@
 	const CATALOG_TIMEOUT_MS = 15000; // MAX wait for the player list (stop early on response)
 	const LS_KEY = "oga_resolver_job";
 
-	// Lower index = more preferred. CDA first (best for yt-dlp), then the other
-	// reliably-resolvable hosts. Unknown hosts sort last.
+	// Lower index = more preferred. CDA first (best for yt-dlp), Rumble #2
+	// (reliable host). Unknown hosts sort last.
 	const HOST_PREFERENCE = [
 		"cda",
+		"rumble",
 		"sibnet",
 		"vk",
 		"mega",
@@ -55,6 +80,53 @@
 		"voe",
 		"mp4upload",
 	];
+
+	// Derive the canonical host label from a player/embed URL. Known host
+	// patterns map to stable labels consumed by the Rust parser; anything
+	// unrecognised becomes "generic". Wildcard TLDs (dood.*, hqq.*, myvi.*,
+	// voe.*) match on the hostname prefix.
+	function hostOf(raw) {
+		const s = String(raw || "").toLowerCase();
+		if (!s) return "generic";
+		let host = s;
+		let full = s;
+		try {
+			const u = new URL(s);
+			host = u.hostname.replace(/^www\./, "");
+			full = u.href;
+		} catch (e) {
+			/* not a full URL — fall back to raw-string matching below */
+		}
+		if (host === "cda.pl" || host.endsWith(".cda.pl")) return "cda";
+		if (host.includes("sibnet.ru")) return "sibnet"; // video.sibnet.ru
+		if (host === "vk.com" || host.endsWith(".vk.com")) return "vk"; // incl. /video_ext.php
+		if (host === "vkvideo.ru" || host.endsWith(".vkvideo.ru")) return "vk";
+		if (host === "rumble.com" || host.endsWith(".rumble.com")) return "rumble";
+		if (/^dood\./.test(host)) return "dood";
+		if (/^hqq\./.test(host)) return "hqq";
+		if (host === "mega.nz" || host.endsWith(".mega.nz")) return "mega";
+		if (host === "ok.ru" || host.endsWith(".ok.ru")) return "ok";
+		if (/^myvi\./.test(host)) return "myvi";
+		if (host === "drive.google.com" || host.endsWith(".drive.google.com"))
+			return "google";
+		if (/^voe\./.test(host)) return "voe";
+		if (host === "mp4upload.com" || host.endsWith(".mp4upload.com"))
+			return "mp4upload";
+		return "generic";
+	}
+
+	// Best-effort quality label from whatever the catalog exposes (e.g.
+	// "1080p", "HD"). Numeric resolutions normalise to "NNNp"; recognised
+	// letter labels pass through upper-cased; otherwise null. No brittle
+	// iframe/source-tag scraping — the catalog field is authoritative.
+	function qualityLabel(q) {
+		const s = String(q || "").trim();
+		if (!s) return null;
+		const m = /\b(\d{3,4})\s*p\b/i.exec(s);
+		if (m) return m[1] + "p";
+		if (/^(hd|fhd|uhd|4k|sd)$/i.test(s)) return s.toUpperCase();
+		return null;
+	}
 
 	// --- per-page resolve state (rebuilt each page load) ---------------------
 	const state = {
@@ -104,10 +176,10 @@
 			state.episodeId = idFromBody(body) || state.episodeId;
 			state.catalog = (inner.players || []).map((p) => ({
 				player_id: p.id,
-				host: p.url,
+				host: hostOf(p.url),
 				audio: p.audio,
 				sub: p.sub,
-				quality: p.quality,
+				quality: qualityLabel(p.quality),
 				sub_group: p.sub_group,
 			}));
 			log(`catalog: ${state.catalog.length} players`);
@@ -124,7 +196,7 @@
 		}
 	}
 
-	// --- curation: one best player per PL translation group ------------------
+	// --- curation: up to PER_GROUP mirrors per PL translation group ----------
 	const hostRank = (e) => {
 		const i = HOST_PREFERENCE.indexOf(e.host);
 		return i === -1 ? HOST_PREFERENCE.length : i;
@@ -132,9 +204,10 @@
 	const heightOf = (e) =>
 		parseInt(String(e.quality || "").replace(/\D/g, ""), 10) || 0;
 
-	// Keep up to this many players per translation group, so the downloader has
-	// a fallback mirror when the best one is dead (e.g. a removed cda upload).
-	const PER_GROUP = 2;
+	// Keep up to this many distinct hosts per translation group, so the
+	// downloader has fallback mirrors when the best one is dead (e.g. a
+	// removed cda upload). Raised 2 -> 4 in v2 to retain more viable mirrors.
+	const PER_GROUP = 4;
 
 	function curate(catalog) {
 		const byGroup = {};
@@ -244,20 +317,51 @@
 		return false;
 	}
 
-	// Build a canonical episode entry from resolved data.
+	// Quality ranking for dedupe: prefer the higher resolution; a labelled
+	// quality beats an unlabelled one.
+	const qualityRank = (q) => {
+		const n = parseInt(String(q || "").replace(/\D/g, ""), 10) || 0;
+		return n || (q ? 1 : 0);
+	};
+
+	// Build a canonical v2 episode entry from resolved data. Each mirror
+	// carries {host, quality, subtitle_group, url}; v1's flat urls[] is gone.
+	// Dedupe on (host, url): same pair kept once, higher quality wins.
+	// Each curated sub_group keeps >= 1 mirror whenever its hosts differ from
+	// already-kept (host, url) pairs.
 	function buildCanonical(episodeNum) {
 		const picks = curate(state.catalog);
-		const urls = [];
-		const seen = new Set();
+		const mirrors = [];
+		const seen = new Map(); // `${host}\u0000${url}` -> index in mirrors
 		for (const p of picks) {
 			const pid = String(p.player_id);
 			const url = state.resolved[pid];
-			if (url && !seen.has(url)) {
-				seen.add(url);
-				urls.push(url);
+			if (!url) continue;
+			const derived = hostOf(url);
+			const host = derived !== "generic" ? derived : p.host || "generic";
+			const key = host + "\u0000" + url;
+			const existing = seen.get(key);
+			if (existing !== undefined) {
+				const prev = mirrors[existing];
+				if (qualityRank(prev.quality) < qualityRank(p.quality)) {
+					mirrors[existing] = {
+						host,
+						quality: p.quality,
+						subtitle_group: p.sub_group || null,
+						url,
+					};
+				}
+				continue;
 			}
+			seen.set(key, mirrors.length);
+			mirrors.push({
+				host,
+				quality: p.quality,
+				subtitle_group: p.sub_group || null,
+				url,
+			});
 		}
-		return { episode: episodeNum, urls };
+		return { episode: episodeNum, mirrors };
 	}
 
 	async function resolveEpisode() {
@@ -293,6 +397,17 @@
 			await sleep(PACE_MS);
 		}
 		return buildCanonical(epOf());
+	}
+
+	// --- v2 canonical payload -------------------------------------------------
+	function v2Payload(title, episodes) {
+		return {
+			schema_version: SCHEMA_VERSION,
+			source_page: `${location.origin}/anime/${slugOf()}`,
+			resolved_at: new Date().toISOString(),
+			title: title || null,
+			episodes,
+		};
 	}
 
 	// --- multi-episode job (persisted across navigations) --------------------
@@ -341,10 +456,7 @@
 	}
 
 	function finalizeJob(job) {
-		const out = {};
-		const title = discoverTitle();
-		if (title) out.title = title;
-		out.episodes = job.results;
+		const out = v2Payload(discoverTitle(), job.results);
 
 		const blob = new Blob([JSON.stringify(out, null, 2)], {
 			type: "application/json",
@@ -354,9 +466,9 @@
 		const filename = `anime-${job.slug}.json`;
 		a.download = filename;
 		a.click();
-		const total = job.results.reduce((n, r) => n + r.urls.length, 0);
+		const total = job.results.reduce((n, r) => n + r.mirrors.length, 0);
 		log(
-			`JOB DONE — ${job.results.length} episodes, ${total} URLs. Downloaded ${filename}.`,
+			`JOB DONE — ${job.results.length} episodes, ${total} mirrors. Downloaded ${filename} (schema v${SCHEMA_VERSION}).`,
 		);
 		clearJob();
 	}
@@ -408,7 +520,7 @@
 		const slug = slugOf();
 		const maxEp = discoverEpisodes(slug);
 		const curEp = epOf();
-		panel.innerHTML = "";
+		panel.textContent = ""; // clear panel (no innerHTML — XSS-safe)
 
 		const title = document.createElement("div");
 		title.textContent = "Polish subtitle finder";
@@ -422,7 +534,7 @@
 
 		const hint = document.createElement("div");
 		hint.textContent =
-			"Finds the best Polish-subbed video link per episode (CDA preferred), saves canonical JSON.";
+			"Finds the best Polish-subbed video link per episode (CDA/Rumble preferred), saves canonical v2 JSON.";
 		hint.style.cssText = "opacity:.55;font-size:11px;margin-bottom:8px";
 		panel.appendChild(hint);
 
@@ -449,8 +561,8 @@
 			oneBtn.disabled = true;
 			const r = await resolveEpisode();
 			if (r) {
-				const out = { episodes: [r] };
 				const slug = slugOf();
+				const out = v2Payload(discoverTitle(), [r]);
 				const blob = new Blob([JSON.stringify(out, null, 2)], {
 					type: "application/json",
 				});
@@ -458,7 +570,7 @@
 				a.href = URL.createObjectURL(blob);
 				a.download = `anime-${slug}-ep${curEp}.json`;
 				a.click();
-				log(`saved ${a.download} (${r.urls.length} URLs)`);
+				log(`saved ${a.download} (${r.mirrors.length} mirrors)`);
 			}
 			oneBtn.disabled = false;
 		};

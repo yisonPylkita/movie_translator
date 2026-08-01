@@ -1,6 +1,15 @@
 # Anime Downloader — Design Document
 
-> **OBSOLETE — 2025-07-29**
+> **ARCHIVED — 2026-07-31**
+> This document is a **historical record** and is no longer authoritative.
+> Superseded by two specs:
+> [`docs/superpowers/specs/2026-06-03-anime-downloader-design.md`](../superpowers/specs/2026-06-03-anime-downloader-design.md)
+> (original approved design) and
+> [`docs/superpowers/specs/2026-07-31-anime-dl-robustness-design.md`](../superpowers/specs/2026-07-31-anime-dl-robustness-design.md)
+> (current approved design). Content below may be stale — do not implement from
+> this file. For current usage see `anime-dl --help` and the README.
+
+> **OBSOLETE — 2026-07-29**
 > This document describes the legacy anime-dl architecture (browser-based resolver,
 > userscript, `--json`/`--file`/name-search flows). The current CLI accepts only
 > canonical JSON via `--input <path>` (or positional `.json`). The resolver
@@ -9,7 +18,7 @@
 > `anime-dl --help` and the README.
 
 **Last updated:** 2026-07-28
-**Status:** Phase 1 implemented + stabilized · Phase 2–3 specified below · Visual renderers A/B/C/D deferred
+**Status:** Historical architecture reference · Dashboard UI retained; alternate B/C/D renderers removed
 
 ---
 
@@ -139,11 +148,12 @@ selected as the **winner**. A full download with progress tracking begins. If
 the winner fails mid-download, the code falls back to the next-fastest measured
 mirror, then to unmeasured mirrors as a last resort.
 
-**▶ TODO (next session):** The measurement download on the winning mirror
-already downloaded ~6 seconds of data. Instead of restarting the download from
-scratch, continue from the partial file. yt-dlp supports resuming partial
-downloads via HTTP Range requests — the winner's temp file from Phase 1 should
-be kept and resumed, not discarded.
+**▶ Future optimization:** The measurement download on the winning mirror
+already downloaded a partial file. The engine now KEEPS the winner's measurement
+file (renames it to `.part` and continues the existing yt-dlp process). yt-dlp
+supports HTTP Range resumes; the current approach renames the measurement output
+and keeps the child alive. A future improvement could use `--continue` for
+cleaner resumption.
 
 ---
 
@@ -228,10 +238,9 @@ the main thread while episode threads run in the background.
 
 - Panel title changes to show the selected host.
 - Progress bar (ratatui `Gauge`) with percentage.
-- **▶ TODO (next session):** Add line showing downloaded / total megabytes
-  (e.g. `248.3 / 417.2 MB`). This requires plumbing the total file size
-  through the progress events — yt-dlp reports it in the first progress line
-  (`of ~498.00MiB`).
+- **▶ DONE (this session):** Downloaded / total megabytes shown as
+  `248.3 / 417.2 MB` on third line in full mode, appended in compact mode.
+  Requires `downloaded`/`total` fields in `EpEvent::Progress`.
 - Speed and ETA on a separate line.
 
 ### 7.3 Completed / Failed
@@ -290,7 +299,8 @@ by the renderer on its own task.
 ```
 crates/mt-cli/src/
 ├── bin/anime_dl.rs        # CLI entry, args, download orchestration
-├── tui_download.rs        # ratatui-based multi-episode progress TUI
+├── ui_model.rs            # dashboard state reducer
+├── ui_render/dashboard.rs # ratatui progress dashboard
 └── lib.rs                 # module declaration
 
 crates/mt-ml/src/
@@ -305,40 +315,31 @@ crates/mt-fetch/src/
 
 ## 10. Next-Session Requirements
 
-### 10.1 Continue measurement download (no restart)
+### 10.1 Continue measurement download (no restart) — PARTIALLY IMPLEMENTED
 
-**Current behavior:** Phase 1 downloads to `/dev/null`, discarding all data.
-Phase 2 starts a fresh download from scratch.
+**Current behavior:** Winner's measurement file is kept and renamed to `.part`,
+and the existing yt-dlp process continues without restarting. Loser measurement
+files are cleaned up.
 
-**Desired behavior:** During Phase 1, the winning mirror's partial download file
-is kept. In Phase 2, yt-dlp resumes from where Phase 1 left off (using HTTP
-Range requests / `--continue` flag). Non-winning mirrors' temp files are
-deleted as before.
+**Remaining:** Explicit `--continue` / HTTP Range resume for cleaner
+resumption when the measurement process exits before download completion. The
+current approach keeps the child alive through measurement into download, which
+works but could be more robust.
 
-This eliminates redundant data transfer on the winning mirror — the ~6 seconds
-of measurement counts toward the full download.
+### 10.2 Progress bar — downloaded / total MB (IMPLEMENTED)
 
-### 10.2 Progress bar — downloaded / total MB
-
-Add a third line to the download panel showing:
-
-```
-     248.3 / 417.2 MB
-```
-
-Requires surfacing `total_bytes` through the `EpEvent::Progress` variant.
-yt-dlp reports the total file size in the first progress line
-(`of ~498.00MiB`). The `DownloadProgress` struct in `mt-ml` already parses
-this; it just needs to be plumbed through to the TUI.
+Third line in download panel showing `248.3 / 417.2 MB`. Surfaced via
+`EpEvent::Progress.downloaded`/`total` fields. Dashboard `render_gauge`
+shows gauge, speed/ETA, and MB line when total > 0. Compact mode appends
+`dl/total MB` to the one-liner.
 
 ### 10.3 Speed in KB/s / MB/s
 
-Already parsed (`parse_speed_bps` in `anime_dl.rs`). The TUI currently shows
-the raw speed string from yt-dlp. Next step: display it on the progress panel
-with appropriate unit scaling:
+Parsed by `parse_speed_bps`. Dashboard displays each episode's current speed
+and combined active throughput in footer:
 
-```
-     7.2 MiB/s     (or 7380 KiB/s for slow connections)
+```text
+     Speed: 7.2 MiB/s
 ```
 
 ### 10.4 Per-host concurrency — formal guarantee
@@ -403,29 +404,15 @@ Validation rejects: zero-url episodes, empty URL strings, missing episode number
 
 ### `--ui` flag and plain output mode
 
-A `--ui <MODE>` flag selects the output renderer. All five modes with their aliases:
+`--ui <MODE>` supports dashboard (`dashboard`, `a`, or `tui`) and pipe-safe
+`plain` output. Alternate B/C/D renderers were removed.
 
-| Alias | Full name   | Description                          |
-|-------|-------------|--------------------------------------|
-| a     | dashboard   | Pinned header/footer, row per ep     |
-| b     | timeline    | Row-per-ep timeline with stage glyphs |
-| c     | scoreboard  | Compact multi-column auto-paging grid |
-| d     | stream      | Styled recent event stream            |
-| tui   | dashboard   | Legacy compatibility alias            |
-| plain | plain       | Pipe-safe structured log lines        |
+**Default selection:** When stdout is a TTY, dashboard is selected. When stdout
+is piped or redirected, `plain` is selected. Explicit `--ui` always wins.
 
-**Default selection:** When stdout is a TTY, the default is `dashboard` (alias `a`
-or `tui`). When stdout is not a TTY (piped, redirected), `plain` is auto-selected.
-Explicit `--ui` always wins over auto-detection.
-
-The plain renderer writes timestamped `[INFO/WARN]` lines to stdout with no
-ANSI codes, suitable for logging or CI. Warnings about lagged events remain on
-stderr.
-
-### Extension seam
-
-Renderers implement an `EpEvent` consumer trait. New renderers can be plugged
-in via the `--ui <name>` flag without modifying engine code.
+Dashboard footer shows combined current throughput in MiB/s. Plain output writes
+timestamped `[INFO/WARN]` lines to stdout without ANSI codes; lag warnings remain
+on stderr.
 
 ### TUI is read-only
 

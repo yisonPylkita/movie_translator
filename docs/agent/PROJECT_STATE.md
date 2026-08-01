@@ -48,3 +48,12 @@ Filename parsing: `anitomy-pure` + regex.
 - Validation: timing-overlap score ≥ 0.8. Leading signs/karaoke skews scores — known weak spot.
 - ML: Apple Translation + OCR macOS-only, Telea inpainting cross-platform.
 - CLI: clap + ratatui TUI. `movie-translator` and `anime-dl` binaries.
+- Anime-dl (2026-07-31): host abstraction, manifest v2 + atomic save, download validation, retry/backoff, circuit breaker, quarantine, cancellation + RAII cleanup, plain output polish, userscript v4 (XSS-safe `textContent`). Full gate green (799 passed / 0 failed), independent review accepted.
+
+## Known Limitations & Technical Debt
+
+- dood.yt not supported by host abstraction (fetch/resolve unsupported).
+- Validate-only exit-code double-counts on mixed runs.
+- Per-host timeout profiles unwired (engine fixed 30s startup timeout).
+- `cargo sort --check` debt in Cargo.toml files.
+- Min-size flag floor at 1 MiB.

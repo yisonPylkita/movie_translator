@@ -8,7 +8,7 @@ One-shot orientation. English→Polish video subtitle translator (MKV/MP4).
 
 ### Hierarchy
 
-- **Parent (GPT-5.6 solo).** Product discussion, discovery, and trivial-to-small (~1–2-file) work directly. May spawn one focused Flash leaf for narrow tasks. No mandatory Pro hop.
+- **Parent (GPT-5.6 solo).** Product discussion, scope clarification, coordination, and concise report synthesis only. Delegates every repo read/search/edit/write/bash/test/gate/commit/push/reinitialization action to Flash agents. May spawn one focused Flash leaf for narrow delegated tasks. No mandatory Pro hop. Parent never edits files directly or runs repo commands.
 - **Initiative Owner (`stage_owner`, DeepSeek v4 Flash).** Reserved for broad, cross-cutting, or risky packages. Sole orchestrator per package. Validates whole result, returns ≤1000-token handoff. Spawns Flash leaf children. Never edits files directly. Escalates only genuine product/architecture/destructive/outward ambiguity.
 - **Leaf Children (DeepSeek v4 Flash).** Execute exclusive scope. Never delegate
   recursively. Contact owner for ambiguity.
@@ -17,16 +17,30 @@ One-shot orientation. English→Polish video subtitle translator (MKV/MP4).
 
 - **Skill loading:** Children load named domain skills (`.pi/skills/<name>/SKILL.md`)
   on demand. Parent never reads full SKILL.md — only references catalog.
-- **Parallelise by disjoint file lanes:** Rust crates (`crates/**`) + tooling/docs
-  (`justfile`, `.github/**`, `docs/**`). Never same-file.
 - **Serialize GPU + outward actions.** `--in-place`, `git lfs`, looped provider
   fetches — confirm, don't parallelise.
 - **Verify via gate chain, cite evidence.** Never assert "done" without
   `just check` / `just test` output.
 - **No code index** — grep/ripgrep. Prefer compiler-driven refactors.
-- **One writer per worktree.** Max 3 concurrent children. Shared manifests, lockfiles,
+- **One writer per cwd/worktree.** Max 3 concurrent children: 1 writer + up to 2
+  read-only, only when useful. Parallel writers only in isolated clean git worktrees.
+  Cargo/build/full gates in same cwd serialize. Shared manifests, lockfiles,
   CI/toolchain, README.md, AGENTS.md, design docs, foundational cross-crate APIs
   require explicit ownership. Stop on dirty overlap or unnamed shared-file changes.
+- **Dispatch:** exactly one subagent invocation per owner turn; concurrent children
+  in ONE parallel call; never issue another while a call is active. Persist child
+  run IDs and named output artifacts; use status by ID, never reconstruct via
+  repo archaeology.
+- **Token discipline:** child handoffs ≤600 tokens; owner ≤1000. Logs to named
+  artifacts file-only. Never set toolBudget/turnBudget in persistent config.
+- **Gates:** targeted tests per lane; one full `just check && just test` per
+  coherent delivery owned by the gate tester; reviewer does not rerun gates;
+  baseline full gate only evidence-driven.
+- **Review cadence:** review engine/process/filesystem/security slices before
+  ~1500-2000 net new core lines; verdicts accepted | blocking; unresolved
+  HIGH/blocker findings block acceptance until resolved before next dependent lane.
+- **Dirty worktree:** preserve unrelated staged/user work; path-scoped evidence;
+  pre-existing staged files never cause rejection; default no commit/push.
 - **Handoff:** one outcome, exact paths, done criteria, constraints, focused checks,
   commit/push permission (default: neither). Report changed paths, results, risks,
   assumptions, unmade decisions.

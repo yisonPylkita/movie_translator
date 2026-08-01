@@ -1,5 +1,14 @@
 # anime-dl — first-class ogladajanime season downloader
 
+> **SUPERSEDED — 2026-07-31**
+> This spec is superseded by
+> [`2026-07-31-anime-dl-robustness-design.md`](./2026-07-31-anime-dl-robustness-design.md)
+> (Approved). The CLI, input schema (v2 canonical), validation, retry/circuit
+> breaker, manifest/resume semantics, and host policy were overhauled; details
+> below may be stale. Kept intact as the historical record of the original
+> design. For current behavior see the new spec, `anime-dl --help`, and the
+> README.
+
 **Date:** 2026-06-03
 **Status:** Approved (brainstorming) → implementation
 

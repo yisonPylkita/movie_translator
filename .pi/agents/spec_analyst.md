@@ -44,7 +44,7 @@ Read only the skill you need.
 - Large command output: save to `.pi/tool-output/`, return summary.
 - Cite paths and line ranges; never dump full files.
 
-## Handoff (~1000 tokens max)
+## Handoff (≤600 tokens)
 
 Return only this structure. Never include full logs, file contents, diffs, or transcripts.
 
